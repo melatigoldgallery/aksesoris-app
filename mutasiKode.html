@@ -1,0 +1,600 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <!-- jQuery first -->
+    <script src="js/jquery-3.6.3.min.js"></script>
+    <!-- Bootstrap CSS and JS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.2.3/dist/css/bootstrap.min.css" rel="stylesheet" />
+    <script src="https://cdn.jsdelivr.net/npm/@popperjs/core@2.11.6/dist/umd/popper.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.2.3/dist/js/bootstrap.bundle.min.js"></script>
+    <!-- Font Awesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
+    <!-- Datepicker CSS and JS -->
+    <link
+      href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-datepicker/1.9.0/css/bootstrap-datepicker.min.css"
+      rel="stylesheet"
+    />
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-datepicker/1.9.0/js/bootstrap-datepicker.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-datepicker/1.9.0/locales/bootstrap-datepicker.id.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <!-- Custom CSS -->
+    <link rel="stylesheet" href="css/pages/absensi-modern.css" />
+    <!-- Favicon sederhana -->
+    <link rel="shortcut icon" href="img/favicon.ico" type="image/x-icon" />
+    <title>Mutasi Kode - Melati Gold Shop</title>
+    <style>
+      .table-container {
+        max-height: 500px;
+        overflow-y: auto;
+      }
+      .badge-mutated {
+        background-color: #6c757d;
+        color: white;
+      }
+      .badge-active {
+        background-color: #28a745;
+        color: white;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="app-container">
+      <!-- Sidebar -->
+      <aside class="sidebar">
+        <div class="sidebar-header">
+          <img src="img/Melati.jfif" alt="Logo" class="logo" />
+          <h1 class="brand-name">Melati Gold Shop</h1>
+        </div>
+        <div class="sidebar-menu">
+          <ul class="nav flex-column" id="sidebarAccordion">
+            <li class="nav-item">
+              <a class="nav-link" href="dashboard.html">
+                <i class="fas fa-tachometer-alt"></i>
+                <span class="menu-text">Dashboard</span>
+              </a>
+            </li>
+            <li class="nav-item">
+              <a class="nav-link" href="buyback.html">
+                <i class="fas fa-exchange-alt"></i>
+                <span class="menu-text">Buyback</span>
+              </a>
+            </li>
+            <li class="nav-item">
+              <a class="nav-link" href="manajemenStok.html">
+                <i class="fa-solid fa-boxes-stacked"></i>
+                <span class="menu-text">Manajemen Stok</span>
+              </a>
+            </li>
+            <li class="nav-item">
+              <a class="nav-link" href="mutasiKode.html">
+                <i class="fa-solid fa-calendar-xmark"></i>
+                <span class="menu-text">Mutasi Kode</span>
+              </a>
+            </li>
+            <li class="nav-item">
+              <a class="nav-link active" href="maintenance.html">
+                <i class="fas fa-tools"></i>
+                <span class="menu-text">Maintenance</span>
+              </a>
+            </li>
+            <li class="nav-item">
+              <a
+                class="nav-link collapsed"
+                href="#"
+                data-bs-toggle="collapse"
+                data-bs-target="#antrianSubmenu"
+                aria-expanded="false"
+              >
+                <i class="fas fa-ticket-alt"></i>
+                <span class="menu-text">Antrian</span>
+                <i class="fas fa-angle-down ms-auto submenu-icon"></i>
+              </a>
+              <div class="collapse" id="antrianSubmenu" data-bs-parent="#sidebarAccordion">
+                <ul class="nav flex-column ms-3">
+                  <li class="nav-item">
+                    <a class="nav-link" href="admin.html">
+                      <i class="fas fa-user-cog"></i>
+                      <span class="menu-text">Admin Antrian</span>
+                    </a>
+                  </li>
+                  <li class="nav-item">
+                    <a class="nav-link" href="display.html">
+                      <i class="fas fa-desktop"></i>
+                      <span class="menu-text">Display Antrian</span>
+                    </a>
+                  </li>
+                  <li class="nav-item">
+                    <a class="nav-link" href="analisis.html">
+                      <i class="fas fa-chart-bar"></i>
+                      <span class="menu-text">Laporan Antrian</span>
+                    </a>
+                  </li>
+                </ul>
+              </div>
+            </li>
+            <li class="nav-item">
+              <a
+                class="nav-link collapsed"
+                href="#"
+                data-bs-toggle="collapse"
+                data-bs-target="#aksesorisSubmenu"
+                aria-expanded="false"
+              >
+                <i class="fas fa-gem"></i>
+                <span class="menu-text">Aksesoris</span>
+                <i class="fas fa-angle-down ms-auto submenu-icon"></i>
+              </a>
+              <div class="collapse" id="aksesorisSubmenu" data-bs-parent="#sidebarAccordion">
+                <ul class="nav flex-column ms-3">
+                  <li class="nav-item">
+                    <a class="nav-link" href="tambahAksesoris.html">
+                      <i class="fas fa-plus-circle"></i>
+                      <span class="menu-text">Tambah Aksesoris</span>
+                    </a>
+                  </li>
+                  <li class="nav-item">
+                    <a class="nav-link" href="dataPenjualan.html">
+                      <i class="fas fa-shopping-cart"></i>
+                      <span class="menu-text">Penjualan Aksesoris</span>
+                    </a>
+                  </li>
+                  <li class="nav-item">
+                    <a class="nav-link" href="laporanPenjualan.html">
+                      <i class="fas fa-chart-line"></i>
+                      <span class="menu-text">Laporan Penjualan</span>
+                    </a>
+                  </li>
+                  <li class="nav-item">
+                    <a class="nav-link" href="laporanStok.html">
+                      <i class="fas fa-boxes"></i>
+                      <span class="menu-text">Laporan Stok</span>
+                    </a>
+                  </li>
+                </ul>
+              </div>
+            </li>
+          </ul>
+        </div>
+        <div class="sidebar-footer">
+          <p>© 2025 Melati Gold Shop</p>
+        </div>
+      </aside>
+
+      <!-- Main Content -->
+      <main class="main-content">
+        <!-- Top Navigation -->
+        <header class="top-nav">
+          <div class="menu-toggle d-md-flex d-none">
+            <i class="fa-solid fa-minimize"></i>
+          </div>
+          <div class="hamburger d-md-none d-flex">
+            <i class="fas fa-bars"></i>
+          </div>
+          <div class="nav-right">
+            <div class="date-time">
+              <div class="current-date" id="current-date"></div>
+              <div class="current-time" id="current-time"></div>
+            </div>
+            <div class="user-profile dropdown">
+              <div class="profile-img" data-bs-toggle="dropdown" aria-expanded="false">
+                <span class="user-avatar">M</span>
+              </div>
+              <ul class="dropdown-menu dropdown-menu-end">
+                <li>
+                  <button class="dropdown-item" id="logoutBtn" onclick="handleLogout()">
+                    <i class="fas fa-sign-out-alt"></i>
+                    Logout
+                  </button>
+                </li>
+              </ul>
+            </div>
+          </div>
+        </header>
+
+        <!-- Page Content -->
+        <div class="page-content">
+          <div class="page-header">
+            <h1>Mutasi Kode</h1>
+            <nav aria-label="breadcrumb">
+              <ol class="breadcrumb">
+                <li class="breadcrumb-item"><a href="dashboard.html">Home</a></li>
+                <li class="breadcrumb-item">Aksesoris</li>
+                <li class="breadcrumb-item active" aria-current="page">Mutasi Kode</li>
+              </ol>
+            </nav>
+          </div>
+
+          <div class="content-wrapper">
+            <!-- Filter Section -->
+            <div class="card mb-4">
+              <div class="card-header">
+                <h2>
+                  <i class="fas fa-filter"></i>
+                  Filter Kode
+                </h2>
+              </div>
+              <div class="card-body">
+                <div class="row g-3">
+                  <div class="col-md-4">
+                    <label for="filterJenis" class="form-label">Jenis Barang</label>
+                    <select class="form-select" id="filterJenis">
+                      <option value="">Semua Jenis</option>
+                      <option value="C">Cincin (C)</option>
+                      <option value="K">Kalung (K)</option>
+                      <option value="L">Liontin (L)</option>
+                      <option value="A">Anting (A)</option>
+                      <option value="G">Gelang (G)</option>
+                      <option value="S">Giwang (S)</option>
+                    </select>
+                  </div>
+                  <div class="col-md-4">
+                    <label for="searchKode" class="form-label">Cari Kode</label>
+                    <input
+                      type="text"
+                      class="form-control"
+                      id="searchKode"
+                      placeholder="Masukkan kode atau nama barang"
+                    />
+                  </div>
+                  <div class="col-md-4 d-flex align-items-end">
+                    <button type="button" class="btn btn-primary" id="btnFilter">
+                      <i class="fas fa-search me-2"></i>
+                      Cari
+                    </button>
+                    <button type="button" class="btn btn-outline-secondary ms-2" id="btnReset">
+                      <i class="fas fa-redo me-2"></i>
+                      Reset
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Tabs for Active and Mutated Codes -->
+            <ul class="nav nav-tabs mb-3" id="myTab" role="tablist">
+              <li class="nav-item" role="presentation">
+                <button
+                  class="nav-link active"
+                  id="active-tab"
+                  data-bs-toggle="tab"
+                  data-bs-target="#active-tab-pane"
+                  type="button"
+                  role="tab"
+                  aria-controls="active-tab-pane"
+                  aria-selected="true"
+                >
+                  <i class="fas fa-check-circle me-2"></i>
+                  Kode Aktif
+                </button>
+              </li>
+              <li class="nav-item" role="presentation">
+                <button
+                  class="nav-link"
+                  id="mutated-tab"
+                  data-bs-toggle="tab"
+                  data-bs-target="#mutated-tab-pane"
+                  type="button"
+                  role="tab"
+                  aria-controls="mutated-tab-pane"
+                  aria-selected="false"
+                >
+                  <i class="fas fa-exchange-alt me-2"></i>
+                  Kode Sudah Dimutasi
+                </button>
+              </li>
+            </ul>
+
+            <div class="tab-content" id="myTabContent">
+              <!-- Active Codes Tab -->
+              <div
+                class="tab-pane fade show active"
+                id="active-tab-pane"
+                role="tabpanel"
+                aria-labelledby="active-tab"
+                tabindex="0"
+              >
+                <div class="card mb-0">
+                  <div class="card-header d-flex justify-content-between align-items-center">
+                    <h2>
+                      <i class="fas fa-list"></i>
+                      Daftar Kode Aktif
+                    </h2>
+                    <div>
+                      <button type="button" class="btn btn-success" id="btnMutasiSelected" disabled>
+                        <i class="fas fa-exchange-alt me-2"></i>
+                        Mutasi Terpilih
+                      </button>
+                    </div>
+                  </div>
+                  <div class="card-body">
+                    <div class="table-container">
+                      <table class="table table-hover" id="tableActiveKode">
+                        <thead class="table-light">
+                          <tr>
+                            <th style="width: 5%">
+                              <input type="checkbox" class="form-check-input" id="selectAllActive" />
+                            </th>
+                            <th style="width: 15%">Kode</th>
+                            <th style="width: 30%">Nama Barang</th>
+                            <th style="width: 15%">Kadar</th>
+                            <th style="width: 10%">Berat</th>
+                            <th style="width: 15%">Tanggal Input</th>
+                            <th style="width: 10%">Aksi</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          <!-- Data kode aktif akan ditampilkan di sini -->
+                        </tbody>
+                      </table>
+                    </div>
+                    <div class="mt-3 mb-0">
+                      <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                          <span id="activeKodeCount" class="badge bg-primary">0</span>
+                          kode aktif ditemukan
+                        </div>
+                        <button type="button" class="btn btn-outline-success btn-sm" id="btnExportActive">
+                          <i class="fas fa-file-export me-2"></i>
+                          Export Excel
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <!-- Mutated Codes Tab -->
+              <div
+                class="tab-pane fade"
+                id="mutated-tab-pane"
+                role="tabpanel"
+                aria-labelledby="mutated-tab"
+                tabindex="0"
+              >
+                <div class="card mb-4">
+                  <div class="card-header d-flex justify-content-between align-items-center">
+                    <h2>
+                      <i class="fas fa-list"></i>
+                      Daftar Kode Sudah Dimutasi
+                    </h2>
+                    <div>
+                      <button type="button" class="btn btn-warning me-2" id="btnRestoreSelected" disabled>
+                        <i class="fas fa-undo me-2"></i>
+                        Kembalikan Terpilih
+                      </button>
+                      <button type="button" class="btn btn-danger" id="btnDeleteSelected" disabled>
+                        <i class="fas fa-trash me-2"></i>
+                        Hapus Terpilih
+                      </button>
+                    </div>
+                  </div>
+                  <div class="card-body">
+                    <div class="table-container">
+                      <table class="table table-hover" id="tableMutatedKode">
+                        <thead class="table-light">
+                          <tr>
+                            <th style="width: 5%">
+                              <input type="checkbox" class="form-check-input" id="selectAllMutated" />
+                            </th>
+                            <th style="width: 15%">Kode</th>
+                            <th style="width: 30%">Nama Barang</th>
+                            <th style="width: 15%">Kadar</th>
+                            <th style="width: 10%">Berat</th>
+                            <th style="width: 15%">Tanggal Mutasi</th>
+                            <th style="width: 10%">Aksi</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          <!-- Data kode yang sudah dimutasi akan ditampilkan di sini -->
+                        </tbody>
+                      </table>
+                    </div>
+                    <div class="mt-3">
+                      <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                          <span id="mutatedKodeCount" class="badge bg-secondary">0</span>
+                          kode sudah dimutasi
+                        </div>
+                        <div>
+                          <button type="button" class="btn btn-outline-success btn-sm" id="btnExportMutated">
+                            <i class="fas fa-file-export me-2"></i>
+                            Export Excel
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </main>
+    </div>
+
+    <!-- Modal Detail Kode - UPDATE ID -->
+    <div
+      class="modal fade"
+      id="kodeDetailModal"
+      tabindex="-1"
+      aria-labelledby="kodeDetailModalLabel"
+      aria-hidden="true"
+    >
+      <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title" id="kodeDetailModalLabel">Detail Kode</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+          </div>
+          <div class="modal-body">
+            <div class="row mb-3">
+              <div class="col-md-6">
+                <div class="mb-3">
+                  <label class="form-label">Kode</label>
+                  <input type="text" class="form-control" id="detailKode" readonly />
+                </div>
+                <div class="mb-3">
+                  <label class="form-label">Nama Barang</label>
+                  <input type="text" class="form-control" id="detailNama" readonly />
+                </div>
+                <div class="mb-3">
+                  <label class="form-label">Kadar</label>
+                  <input type="text" class="form-control" id="detailKadar" readonly />
+                </div>
+              </div>
+              <div class="col-md-6">
+                <div class="mb-3">
+                  <label class="form-label">Berat</label>
+                  <input type="text" class="form-control" id="detailBerat" readonly />
+                </div>
+                <div class="mb-3">
+                  <label class="form-label">Tanggal Input</label>
+                  <input type="text" class="form-control" id="detailTanggal" readonly />
+                </div>
+                <div class="mb-3">
+                  <label class="form-label">Jenis Barang</label>
+                  <input type="text" class="form-control" id="detailJenis" readonly />
+                </div>
+              </div>
+            </div>
+            <div class="mb-3">
+              <label class="form-label">Keterangan</label>
+              <textarea class="form-control" id="detailKeterangan" rows="3" readonly></textarea>
+            </div>
+
+            <!-- Container untuk informasi mutasi -->
+            <div id="mutasiInfoContainer" style="display: none">
+              <hr />
+              <h6 class="mb-3">Informasi Mutasi</h6>
+              <div class="row mb-3">
+                <div class="col-md-6">
+                  <div class="mb-3">
+                    <label class="form-label">Tanggal Mutasi</label>
+                    <input type="text" class="form-control" id="detailTanggalMutasi" readonly />
+                  </div>
+                </div>
+                <div class="col-md-6">
+                  <div class="mb-3">
+                    <label class="form-label">Status</label>
+                    <span class="badge bg-secondary">Sudah Dimutasi</span>
+                  </div>
+                </div>
+              </div>
+              <div class="mb-3">
+                <label class="form-label">Keterangan Mutasi</label>
+                <textarea class="form-control" id="detailKeteranganMutasi" rows="2" readonly></textarea>
+              </div>
+            </div>
+
+            <!-- Container untuk riwayat mutasi -->
+            <div id="mutasiHistoryContainer" style="display: none">
+              <hr />
+              <h6 class="mb-3">Riwayat Mutasi</h6>
+              <div class="table-responsive">
+                <table class="table table-sm">
+                  <thead>
+                    <tr>
+                      <th>Tanggal</th>
+                      <th>Status</th>
+                      <th>Keterangan</th>
+                    </tr>
+                  </thead>
+                  <tbody id="mutasiHistoryTableBody">
+                    <!-- Riwayat mutasi akan ditampilkan di sini oleh JavaScript -->
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Tutup</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal Mutasi Kode -->
+    <div class="modal fade" id="mutasiModal" tabindex="-1" aria-labelledby="mutasiModalLabel" aria-hidden="true">
+      <div class="modal-dialog">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title" id="mutasiModalLabel">Mutasi Kode</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+          </div>
+          <form id="mutasiForm">
+            <div class="modal-body">
+              <div class="mb-3">
+                <label for="tanggalMutasi" class="form-label">Tanggal Mutasi</label>
+                <input type="text" class="form-control" id="tanggalMutasi" readonly />
+              </div>
+              <div class="mb-3">
+                <label for="keteranganMutasi" class="form-label">Keterangan Mutasi</label>
+                <textarea
+                  class="form-control"
+                  id="keteranganMutasi"
+                  rows="3"
+                  placeholder="Masukkan keterangan mutasi"
+                ></textarea>
+              </div>
+              <div id="selectedKodeList" class="mb-3">
+                <label class="form-label">Kode yang akan dimutasi:</label>
+                <ul class="list-group">
+                  <!-- Daftar kode yang akan dimutasi -->
+                </ul>
+              </div>
+            </div>
+            <div class="modal-footer">
+              <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Batal</button>
+              <button type="button" class="btn btn-primary" id="btnSaveMutasi">Konfirmasi Mutasi</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal Konfirmasi Hapus Kode -->
+    <div
+      class="modal fade"
+      id="modalDeleteKode"
+      tabindex="-1"
+      aria-labelledby="modalDeleteKodeLabel"
+      aria-hidden="true"
+    >
+      <div class="modal-dialog">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title" id="modalDeleteKodeLabel">Hapus Kode</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+          </div>
+          <div class="modal-body">
+            <p>Apakah Anda yakin ingin menghapus kode yang dipilih? Tindakan ini tidak dapat dibatalkan.</p>
+            <div id="deleteKodeList" class="mb-3">
+              <label class="form-label">Kode yang akan dihapus:</label>
+              <ul class="list-group">
+                <!-- Daftar kode yang akan dihapus -->
+              </ul>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Batal</button>
+            <button type="button" class="btn btn-danger" id="btnConfirmDelete">Konfirmasi Hapus</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Scripts -->
+    <script type="module" src="js/main.js"></script>
+    <script type="module" src="js/components/sidebar.js"></script>
+    <script type="module" src="js/components/header.js"></script>
+    <script type="module" src="js/mutasiKode.js"></script>
+  </body>
+</html>
