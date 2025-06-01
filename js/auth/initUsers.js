@@ -1,70 +1,67 @@
-import { getDatabase, ref, set, get } from "https://www.gstatic.com/firebasejs/10.4.0/firebase-database.js";
-import app from '../configFirebase.js';
-const db = getDatabase(app);
-const authorizedUsers = {
-    'adminyoung': {
-      password: 'admin',
-      role: 'admin'
-    },
-    'operator': {
-      password: 'operator123',
-      role: 'operator'
-    }
-};
+import { firestore } from '../configFirebase.js';
+import { 
+  collection, 
+  doc, 
+  setDoc, 
+  getDoc, 
+  getDocs 
+} from 'https://www.gstatic.com/firebasejs/10.4.0/firebase-firestore.js';
 
+// Gunakan Firestore methods, BUKAN Realtime Database methods
 export async function initializeUsers() {
-  const db = getDatabase();
-  const usersRef = ref(db, 'authorized_users');
-  
-  // Check if users already exist
-  const snapshot = await get(usersRef);
-  if (!snapshot.exists()) {
-      // Only initialize if no users exist
-      await set(usersRef, authorizedUsers);
+  try {
+    const usersRef = collection(firestore, 'users');
+    const snapshot = await getDocs(usersRef);
+    
+    if (snapshot.empty) {
+      // Create default users
+      await setDoc(doc(firestore, 'users', 'admin'), {
+        username: 'adminmelati',
+        password: 'admin',
+        role: 'admin'
+      });
+      
+      await setDoc(doc(firestore, 'users', 'operator'), {
+        username: 'operator',
+        password: 'operator123',
+        role: 'operator'
+      });
+      
+      console.log('Default users created');
+    }
+  } catch (error) {
+    console.error('Error initializing users:', error);
+    throw error;
   }
-  return true;
 }
+
 export async function loginUser(username, password) {
   try {
-    const db = getDatabase();
-    const usersRef = ref(db, 'authorized_users');
-    const snapshot = await get(usersRef);
+    const usersRef = collection(firestore, 'users');
+    const snapshot = await getDocs(usersRef);
     
-    if (!snapshot.exists()) {
-      // Initialize users if they don't exist
-      await initializeUsers();
-      // Fetch again after initialization
-      const newSnapshot = await get(usersRef);
-      const users = newSnapshot.val();
-      
-      if (users[username] && users[username].password === password) {
-        return {
-          success: true,
-          role: users[username].role,
-          username: username
-        };
+    let userFound = null;
+    snapshot.forEach(doc => {
+      const userData = doc.data();
+      if (userData.username === username && userData.password === password) {
+        userFound = userData;
       }
+    });
+    
+    if (userFound) {
+      return {
+        success: true,
+        username: userFound.username,
+        role: userFound.role
+      };
     } else {
-      const users = snapshot.val();
-      if (users[username] && users[username].password === password) {
-        return {
-          success: true,
-          role: users[username].role,
-          username: username
-        };
-      }
+      return {
+        success: false,
+        message: 'Username atau password salah'
+      };
     }
-    
-    return {
-      success: false,
-      message: 'Username atau password salah'
-    };
-    
   } catch (error) {
     console.error('Login error:', error);
-    return {
-      success: false,
-      message: 'Terjadi kesalahan saat login. Silakan coba lagi.'
-    };
+    throw error;
   }
 }
