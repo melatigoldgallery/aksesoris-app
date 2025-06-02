@@ -164,15 +164,15 @@ const laporanPenjualanHandler = {
           let totalBerat = 0;
           let totalHarga = 0;
           let hasValidBerat = false; // Flag untuk cek apakah ada berat valid
-        
+
           data.forEach((row) => {
             const jumlah = parseInt(row[4]) || 0;
             const hargaStr = row[7].replace(/[^\d]/g, "") || "0";
             const harga = parseInt(hargaStr) || 0;
-        
+
             totalPcs += jumlah;
             totalHarga += harga;
-        
+
             // Cek jika kolom berat bukan "-" dan memiliki nilai
             if (row[5] !== "-") {
               const beratStr = row[5].replace(" gr", "").replace(",", ".") || "0";
@@ -183,7 +183,7 @@ const laporanPenjualanHandler = {
               }
             }
           });
-        
+
           const api = this.api();
           $(api.column(4).footer()).html(totalPcs);
           // Tampilkan total berat jika ada data dengan berat valid, jika tidak tampilkan "-"
@@ -196,25 +196,91 @@ const laporanPenjualanHandler = {
             extend: "excel",
             text: '<i class="fas fa-file-excel"></i> Excel',
             className: "btn btn-success btn-sm",
-            title: "Laporan Penjualan Manual / Aksesoris / Kotak \n Melati Bawah",
+            title: "Laporan Penjualan Manual / Aksesoris / Kotak \n Melati Atas",
             filename: function () {
               const startDate = document.getElementById("startDate").value || "semua";
               const endDate = document.getElementById("endDate").value || "semua";
               return `Laporan_Penjualan_Bawah_${startDate}_${endDate}`;
+            },
+            exportOptions: {
+              columns: ":visible",
+            },
+            customize: function (xlsx) {
+              const sheet = xlsx.xl.worksheets["sheet1.xml"];
+
+              // Ambil nilai footer yang sudah dihitung dari DataTable
+              const footerPcs = $(laporanPenjualanHandler.dataTable.column(4).footer()).text() || "0";
+              const footerBerat = $(laporanPenjualanHandler.dataTable.column(5).footer()).text() || "-";
+              const footerHarga = $(laporanPenjualanHandler.dataTable.column(7).footer()).text() || "Rp 0";
+
+              // Tambahkan baris footer
+              const footerRow = `
+        <row>
+          <c t="inlineStr"><is><t>TOTAL:</t></is></c>
+          <c t="inlineStr"><is><t></t></is></c>
+          <c t="inlineStr"><is><t></t></is></c>
+          <c t="inlineStr"><is><t></t></is></c>
+          <c t="inlineStr"><is><t>${footerPcs}</t></is></c>
+          <c t="inlineStr"><is><t>${footerBerat}</t></is></c>
+          <c t="inlineStr"><is><t></t></is></c>
+          <c t="inlineStr"><is><t>${footerHarga}</t></is></c>
+          <c t="inlineStr"><is><t></t></is></c>
+          <c t="inlineStr"><is><t></t></is></c>
+        </row>
+      `;
+
+              // Insert footer sebelum closing sheetData tag
+              const sheetDataEnd = sheet.indexOf("</sheetData>");
+              if (sheetDataEnd > -1) {
+                const newSheet = sheet.substring(0, sheetDataEnd) + footerRow + sheet.substring(sheetDataEnd);
+                xlsx.xl.worksheets["sheet1.xml"] = newSheet;
+              }
             },
           },
           {
             extend: "pdf",
             text: '<i class="fas fa-file-pdf"></i> PDF',
             className: "btn btn-danger btn-sm",
-            title: "Laporan Penjualan Manual / Aksesoris / Kotak \n Melati Bawah",
+            title: "Laporan Penjualan Manual / Aksesoris / Kotak \n Melati Atas",
             filename: function () {
               const startDate = document.getElementById("startDate").value || "semua";
               const endDate = document.getElementById("endDate").value || "semua";
               return `Laporan_Penjualan_Bawah_${startDate}_${endDate}`;
             },
-            orientation: "potrait",
+            orientation: "landscape",
             pageSize: "A4",
+            exportOptions: {
+              columns: ":visible",
+            },
+            customize: function (doc) {
+              // Ambil nilai footer yang sudah dihitung dari DataTable
+              const footerPcs = $(laporanPenjualanHandler.dataTable.column(4).footer()).text() || "0";
+              const footerBerat = $(laporanPenjualanHandler.dataTable.column(5).footer()).text() || "-";
+              const footerHarga = $(laporanPenjualanHandler.dataTable.column(7).footer()).text() || "Rp 0";
+
+              // Tambahkan baris footer
+              const footerRow = ["TOTAL:", "", "", "", footerPcs, footerBerat, "", footerHarga, "", ""];
+
+              // Tambahkan footer ke table
+              if (doc.content[1].table && doc.content[1].table.body) {
+                doc.content[1].table.body.push(footerRow);
+
+                // Style untuk footer row
+                const footerIndex = doc.content[1].table.body.length - 1;
+                doc.content[1].table.body[footerIndex].forEach((cell, index) => {
+                  if (typeof cell === "object") {
+                    cell.fillColor = "#e3f2fd";
+                    cell.bold = true;
+                  } else {
+                    doc.content[1].table.body[footerIndex][index] = {
+                      text: cell,
+                      fillColor: "#e3f2fd",
+                      bold: true,
+                    };
+                  }
+                });
+              }
+            },
           },
         ],
         order: [[0, "desc"]],
