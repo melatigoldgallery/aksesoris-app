@@ -247,7 +247,7 @@ const laporanPenjualanHandler = {
               const endDate = document.getElementById("endDate").value || "semua";
               return `Laporan_Penjualan_Bawah_${startDate}_${endDate}`;
             },
-            orientation: "landscape",
+            orientation: "potrait",
             pageSize: "A4",
             exportOptions: {
               columns: ":visible",
