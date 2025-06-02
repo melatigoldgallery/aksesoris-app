@@ -1715,6 +1715,9 @@ const penjualanHandler = {
             text-align: left;
             padding: 1mm 2mm;
           }
+          .tanggal {
+          margin-left: 10px;
+          }
           .text-center {
             text-align: center;
           }
@@ -1741,7 +1744,7 @@ const penjualanHandler = {
           <h4>JL. DIPONEGORO NO. 116</h4>
           <h4>NOTA PENJUALAN ${transaction.salesType.toUpperCase()}</h4>
           <hr>
-          <p>Tanggal: ${transaction.tanggal}<br>Sales: ${transaction.sales}</p>
+          <p class="tanggal">Tanggal: ${transaction.tanggal}<br>Sales: ${transaction.sales}</p>
           <hr>
           <table>
             <tr>
