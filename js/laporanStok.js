@@ -15,6 +15,94 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.4.0/firebase-firestore.js";
 import { firestore } from "./configFirebase.js";
 
+// 📦 Caching Logic for Stock Report Module
+const CACHE_KEY_STOCK = 'cachedStockData';
+const CACHE_EXPIRATION_STOCK = 5 * 60 * 1000; // 5 minutes
+const CACHE_TTL_STANDARD = 60 * 60 * 1000; // 1 hour
+const CACHE_TTL_TODAY = 5 * 60 * 1000; // 5 minutes for today's data
+
+// Stock cache management
+const stockCache = new Map();
+const stockCacheMeta = new Map();
+
+// Save stock cache to localStorage
+function saveStockCacheToStorage() {
+  try {
+    const cacheData = {};
+    const metaData = {};
+    
+    stockCache.forEach((value, key) => {
+      cacheData[key] = value;
+    });
+    
+    stockCacheMeta.forEach((value, key) => {
+      metaData[key] = value;
+    });
+    
+    localStorage.setItem('stockCache', JSON.stringify(cacheData));
+    localStorage.setItem('stockCacheMeta', JSON.stringify(metaData));
+  } catch (error) {
+    console.warn('Failed to save stock cache to localStorage:', error);
+  }
+}
+
+// Load stock cache from localStorage
+function loadStockCacheFromStorage() {
+  try {
+    const cacheData = localStorage.getItem('stockCache');
+    const metaData = localStorage.getItem('stockCacheMeta');
+    
+    if (cacheData) {
+      const parsed = JSON.parse(cacheData);
+      Object.entries(parsed).forEach(([key, value]) => {
+        stockCache.set(key, value);
+      });
+    }
+    
+    if (metaData) {
+      const parsed = JSON.parse(metaData);
+      Object.entries(parsed).forEach(([key, value]) => {
+        stockCacheMeta.set(key, value);
+      });
+    }
+  } catch (error) {
+    console.warn('Failed to load stock cache from localStorage:', error);
+  }
+}
+
+// Check if cache should be updated
+function shouldUpdateStockCache(cacheKey) {
+  const timestamp = stockCacheMeta.get(cacheKey);
+  if (!timestamp) return true;
+  
+  const now = Date.now();
+  const lastUpdate = parseInt(timestamp);
+  
+  // If cache key includes today, use shorter TTL
+  const today = getLocalDateString();
+  if (cacheKey.includes(today)) {
+    return (now - lastUpdate) > CACHE_TTL_TODAY;
+  }
+  
+  // For historical data, use standard TTL
+  return (now - lastUpdate) > CACHE_TTL_STANDARD;
+}
+
+// Update cache timestamp
+function updateStockCacheTimestamp(cacheKey) {
+  stockCacheMeta.set(cacheKey, Date.now());
+  saveStockCacheToStorage();
+}
+
+// Get local date string
+function getLocalDateString() {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
 // Utility functions
 const formatRupiah = (angka) => {
   if (!angka && angka !== 0) return "0";
@@ -54,16 +142,21 @@ const laporanStokHandler = {
   transactionCache: new Map(),
   lastTransactionUpdate: 0,
 
-  // Cache properties
-  cache: {},
-
   // Initialize the module
   init() {
+    // Load cache from localStorage
+    loadStockCacheFromStorage();
+    
     this.initDatePickers();
     this.attachEventListeners();
     this.setDefaultDates();
     this.initDataTable();
     this.prepareEmptyTable();
+    
+    // Clean up cache periodically
+    setInterval(() => {
+      this.cleanupCache();
+    }, 5 * 60 * 1000); // Clean up every 5 minutes
   },
 
   // Initialize date pickers
@@ -156,6 +249,14 @@ const laporanStokHandler = {
         this.resetFilters();
       });
     }
+    
+    // Force refresh button
+    const refreshBtn = document.getElementById("refreshStockBtn");
+    if (refreshBtn) {
+      refreshBtn.addEventListener("click", () => {
+        this.forceRefreshData();
+      });
+    }
   },
 
   // Reset filters
@@ -165,8 +266,56 @@ const laporanStokHandler = {
     this.loadAndFilterStockData();
   },
 
+  // Force refresh data
+  forceRefreshData() {
+    if (confirm("Apakah Anda yakin ingin menyegarkan data dari server?")) {
+      const startDateStr = document.getElementById("startDate").value;
+      if (!startDateStr) {
+        this.showError("Tanggal harus diisi");
+        return;
+      }
+      
+      const selectedDate = parseDate(startDateStr);
+      if (!selectedDate) {
+        this.showError("Format tanggal tidak valid");
+        return;
+      }
+      
+      // Clear cache for this date
+      const cacheKey = `stock_${startDateStr}`;
+      stockCache.delete(cacheKey);
+      stockCacheMeta.delete(cacheKey);
+      saveStockCacheToStorage();
+      
+      // Reload data
+      this.loadAndFilterStockData(true);
+      
+      this.showSuccess("Data sedang disegarkan dari server...");
+    }
+  },
+
   async calculateDailyContinuity(selectedDate) {
     try {
+      // Create cache key
+      const dateStr = formatDate(selectedDate).replace(/\//g, '-');
+      const cacheKey = `stock_${dateStr}`;
+      
+      // Check if we should use cache
+      const includesCurrentDay = dateStr === getLocalDateString().replace(/-/g, '-');
+      const shouldRefresh = includesCurrentDay || !stockCache.has(cacheKey) || shouldUpdateStockCache(cacheKey);
+      
+      if (!shouldRefresh) {
+        console.log(`Using cached stock data for ${dateStr}`);
+        this.filteredStockData = stockCache.get(cacheKey);
+        
+        // Show cache indicator
+        this.showCacheIndicator(true);
+        return;
+      }
+      
+      // Hide cache indicator
+      this.showCacheIndicator(false);
+      
       // 1. Hitung stok akhir sampai hari sebelumnya menggunakan sistem prioritas
       const previousDate = new Date(selectedDate);
       previousDate.setDate(previousDate.getDate() - 1);
@@ -245,10 +394,62 @@ const laporanStokHandler = {
         return a.kode.localeCompare(b.kode);
       });
 
+      // Save to cache
+      stockCache.set(cacheKey, [...this.filteredStockData]);
+      updateStockCacheTimestamp(cacheKey);
+
       console.log(`✅ Daily continuity calculated: ${this.filteredStockData.length} items`);
     } catch (error) {
       console.error("Error calculating daily continuity:", error);
-      throw error;
+      
+      // Try to use cache as fallback
+      const dateStr = formatDate(selectedDate).replace(/\//g, '-');
+      const cacheKey = `stock_${dateStr}`;
+      
+      if (stockCache.has(cacheKey)) {
+        console.log("Using cached data as fallback due to error");
+        this.filteredStockData = stockCache.get(cacheKey);
+        this.showError("Terjadi kesalahan saat mengambil data terbaru. Menggunakan data cache.");
+        this.showCacheIndicator(true, 'fallback');
+      } else {
+        throw error;
+      }
+    }
+  },
+
+  // Show/hide cache indicator
+  showCacheIndicator(show, type = 'normal') {
+    let indicator = document.getElementById('stockCacheIndicator');
+    
+    if (show && !indicator) {
+      // Create indicator if it doesn't exist
+      indicator = document.createElement('div');
+      indicator.id = 'stockCacheIndicator';
+      indicator.className = 'alert alert-info mb-2';
+      
+      const tableContainer = document.querySelector('#stockTable').parentElement;
+      tableContainer.insertBefore(indicator, tableContainer.firstChild);
+    }
+    
+    if (indicator) {
+      if (show) {
+        const now = new Date();
+        const timeText = now.toLocaleTimeString('id-ID', {
+          hour: '2-digit',
+          minute: '2-digit'
+        });
+        
+        if (type === 'fallback') {
+          indicator.innerHTML = '<i class="fas fa-database me-2"></i>Menggunakan data cache (fallback)';
+          indicator.className = 'alert alert-warning mb-2';
+        } else {
+          indicator.innerHTML = `<i class="fas fa-database me-2"></i>Menggunakan data cache (${timeText})`;
+          indicator.className = 'alert alert-info mb-2';
+        }
+        indicator.style.display = 'block';
+      } else {
+        indicator.style.display = 'none';
+      }
     }
   },
 
@@ -303,9 +504,20 @@ const laporanStokHandler = {
     }
   },
 
-  // Method helper: Dapatkan transaksi untuk rentang tanggal
+  // Method helper: Dapatkan transaksi untuk rentang tanggal dengan cache
   async getTransactionsForDate(startDate, endDate) {
     const transactionMap = new Map();
+    
+    // Create cache key for transactions
+    const startDateStr = startDate.toISOString().split('T')[0];
+    const endDateStr = endDate.toISOString().split('T')[0];
+    const transCacheKey = `trans_${startDateStr}_${endDateStr}`;
+    
+    // Check cache first
+    if (stockCache.has(transCacheKey) && !shouldUpdateStockCache(transCacheKey)) {
+      console.log(`Using cached transaction data for ${startDateStr} to ${endDateStr}`);
+      return stockCache.get(transCacheKey);
+    }
 
     try {
       // Get stock transactions
@@ -386,6 +598,10 @@ const laporanStokHandler = {
         });
       });
 
+      // Cache the transaction data
+      stockCache.set(transCacheKey, transactionMap);
+      updateStockCacheTimestamp(transCacheKey);
+
       const dateRange =
         startDate.toDateString() === endDate.toDateString()
           ? formatDate(startDate)
@@ -395,12 +611,19 @@ const laporanStokHandler = {
       return transactionMap;
     } catch (error) {
       console.error("Error getting transactions for date:", error);
+      
+      // Try to use cached data as fallback
+      if (stockCache.has(transCacheKey)) {
+        console.log("Using cached transaction data as fallback");
+        return stockCache.get(transCacheKey);
+      }
+      
       return new Map();
     }
   },
 
   // Load and filter stock data
-  async loadAndFilterStockData() {
+  async loadAndFilterStockData(forceRefresh = false) {
     try {
       this.showLoading(true);
 
@@ -419,23 +642,55 @@ const laporanStokHandler = {
         return;
       }
 
-      // Load stock data
-      await this.loadStockData();
+      // Check if today's data - always refresh if includes current day
+      const today = getLocalDateString();
+      const selectedDateStr = formatDate(selectedDate).replace(/\//g, '-');
+      const includesCurrentDay = selectedDateStr === today.replace(/-/g, '-');
+      
+      forceRefresh = forceRefresh || includesCurrentDay;
 
-      // LOGIKA BARU: Hitung dengan kontinuitas harian
+      // Load stock data with cache
+      await this.loadStockData(forceRefresh);
+
+      // Calculate with continuity using cache
       await this.calculateDailyContinuity(selectedDate);
 
       this.renderStockTable();
       this.showLoading(false);
     } catch (error) {
       console.error("Error loading stock data:", error);
-      this.showError("Terjadi kesalahan saat memuat data: " + error.message);
+      
+      // Try to use cache as fallback
+      const startDateStr = document.getElementById("startDate").value;
+      const selectedDate = parseDate(startDateStr);
+      const dateStr = formatDate(selectedDate).replace(/\//g, '-');
+      const cacheKey = `stock_${dateStr}`;
+      
+      if (stockCache.has(cacheKey)) {
+        console.log("Using cached stock data as fallback due to error");
+        this.filteredStockData = stockCache.get(cacheKey);
+        this.renderStockTable();
+        this.showError("Terjadi kesalahan saat mengambil data terbaru. Menggunakan data cache.");
+        this.showCacheIndicator(true, 'fallback');
+      } else {
+        this.showError("Terjadi kesalahan saat memuat data: " + error.message);
+      }
+      
       this.showLoading(false);
     }
   },
 
-  // Load stock data
-  async loadStockData() {
+  // Load stock data with cache
+  async loadStockData(forceRefresh = false) {
+    const stockDataCacheKey = 'stockMasterData';
+    
+    // Check cache first
+    if (!forceRefresh && stockCache.has(stockDataCacheKey) && !shouldUpdateStockCache(stockDataCacheKey)) {
+      console.log("Using cached stock master data");
+      this.stockData = stockCache.get(stockDataCacheKey);
+      return;
+    }
+
     try {
       // Load current stock
       const stockSnapshot = await getDocs(collection(firestore, "stokAksesoris"));
@@ -448,16 +703,49 @@ const laporanStokHandler = {
       // Load all kode aksesoris for complete list
       await this.loadAllKodeAksesoris();
 
+      // Cache the stock data
+      stockCache.set(stockDataCacheKey, [...this.stockData]);
+      updateStockCacheTimestamp(stockDataCacheKey);
+
       console.log(`Loaded ${this.stockData.length} stock items`);
     } catch (error) {
       console.error("Error loading stock data:", error);
-      throw error;
+      
+      // Try to use cache as fallback
+      if (stockCache.has(stockDataCacheKey)) {
+        console.log("Using cached stock master data as fallback");
+        this.stockData = stockCache.get(stockDataCacheKey);
+      } else {
+        throw error;
+      }
     }
   },
 
-  // Load all kode aksesoris
-  async loadAllKodeAksesoris() {
+  // Load all kode aksesoris with cache
+  async loadAllKodeAksesoris(forceRefresh = false) {
+    const kodeAksesorisCacheKey = 'kodeAksesorisData';
+    
+    // Check cache first
+    if (!forceRefresh && stockCache.has(kodeAksesorisCacheKey) && !shouldUpdateStockCache(kodeAksesorisCacheKey)) {
+      console.log("Using cached kode aksesoris data");
+      const cachedKodeData = stockCache.get(kodeAksesorisCacheKey);
+      
+      // Merge with existing stock data
+      cachedKodeData.forEach(item => {
+        const existingIndex = this.stockData.findIndex(stockItem => stockItem.kode === item.kode);
+        if (existingIndex === -1) {
+          this.stockData.push(item);
+        } else {
+          this.stockData[existingIndex].kategori = item.kategori;
+        }
+      });
+      
+      return;
+    }
+
     try {
+      const kodeAksesorisData = [];
+      
       // Get kotak data
       const kotakSnapshot = await getDocs(collection(firestore, "kodeAksesoris", "kategori", "kotak"));
 
@@ -469,23 +757,27 @@ const laporanStokHandler = {
         const data = doc.data();
         const existingIndex = this.stockData.findIndex((item) => item.kode === data.text);
 
+        const kodeItem = {
+          id: null,
+          kode: data.text,
+          nama: data.nama,
+          kategori: "kotak",
+          stokAwal: 0,
+          tambahStok: 0,
+          laku: 0,
+          free: 0,
+          gantiLock: 0,
+          stokAkhir: 0,
+          lastUpdate: new Date(),
+        };
+
         if (existingIndex === -1) {
-          this.stockData.push({
-            id: null,
-            kode: data.text,
-            nama: data.nama,
-            kategori: "kotak",
-            stokAwal: 0,
-            tambahStok: 0,
-            laku: 0,
-            free: 0,
-            gantiLock: 0,
-            stokAkhir: 0,
-            lastUpdate: new Date(),
-          });
+          this.stockData.push(kodeItem);
         } else {
           this.stockData[existingIndex].kategori = "kotak";
         }
+        
+        kodeAksesorisData.push(kodeItem);
       });
 
       // Process aksesoris data
@@ -493,27 +785,52 @@ const laporanStokHandler = {
         const data = doc.data();
         const existingIndex = this.stockData.findIndex((item) => item.kode === data.text);
 
+        const kodeItem = {
+          id: null,
+          kode: data.text,
+          nama: data.nama,
+          kategori: "aksesoris",
+          stokAwal: 0,
+          tambahStok: 0,
+          laku: 0,
+          free: 0,
+          gantiLock: 0,
+          stokAkhir: 0,
+          lastUpdate: new Date(),
+        };
+
         if (existingIndex === -1) {
-          this.stockData.push({
-            id: null,
-            kode: data.text,
-            nama: data.nama,
-            kategori: "aksesoris",
-            stokAwal: 0,
-            tambahStok: 0,
-            laku: 0,
-            free: 0,
-            gantiLock: 0,
-            stokAkhir: 0,
-            lastUpdate: new Date(),
-          });
+          this.stockData.push(kodeItem);
         } else {
           this.stockData[existingIndex].kategori = "aksesoris";
         }
+        
+        kodeAksesorisData.push(kodeItem);
       });
+      
+      // Cache the kode aksesoris data
+      stockCache.set(kodeAksesorisCacheKey, kodeAksesorisData);
+      updateStockCacheTimestamp(kodeAksesorisCacheKey);
+      
     } catch (error) {
       console.error("Error loading kode aksesoris:", error);
-      throw error;
+      
+      // Try to use cache as fallback
+      if (stockCache.has(kodeAksesorisCacheKey)) {
+        console.log("Using cached kode aksesoris data as fallback");
+        const cachedKodeData = stockCache.get(kodeAksesorisCacheKey);
+        
+        cachedKodeData.forEach(item => {
+          const existingIndex = this.stockData.findIndex(stockItem => stockItem.kode === item.kode);
+          if (existingIndex === -1) {
+            this.stockData.push(item);
+          } else {
+            this.stockData[existingIndex].kategori = item.kategori;
+          }
+        });
+      } else {
+        throw error;
+      }
     }
   },
 
@@ -539,10 +856,18 @@ const laporanStokHandler = {
     }
   },
 
-  // Get snapshot data as base stock
+  // Get snapshot data as base stock with cache
   async getSnapshotAsBase(selectedDate) {
     try {
       console.log(`🎯 Getting snapshot base for: ${formatDate(selectedDate)}`);
+      
+      const snapshotCacheKey = `snapshot_${formatDate(selectedDate).replace(/\//g, '-')}`;
+      
+      // Check cache first
+      if (stockCache.has(snapshotCacheKey) && !shouldUpdateStockCache(snapshotCacheKey)) {
+        console.log(`Using cached snapshot data for ${formatDate(selectedDate)}`);
+        return stockCache.get(snapshotCacheKey);
+      }
       
       // Priority 1: Daily snapshot (hari sebelumnya)
       const previousDate = new Date(selectedDate);
@@ -553,6 +878,9 @@ const laporanStokHandler = {
       
       if (dailySnapshot && dailySnapshot.size > 0) {
         console.log(`📅 Using daily snapshot: ${formatDate(previousDate)} (${dailySnapshot.size} items)`);
+        // Cache the result
+        stockCache.set(snapshotCacheKey, dailySnapshot);
+        updateStockCacheTimestamp(snapshotCacheKey);
         return dailySnapshot;
       }
       
@@ -562,6 +890,9 @@ const laporanStokHandler = {
       
       if (sameDaySnapshot && sameDaySnapshot.size > 0) {
         console.log(`📅 Using same-day snapshot: ${formatDate(selectedDate)} (${sameDaySnapshot.size} items)`);
+        // Cache the result
+        stockCache.set(snapshotCacheKey, sameDaySnapshot);
+        updateStockCacheTimestamp(snapshotCacheKey);
         return sameDaySnapshot;
       }
       
@@ -573,23 +904,46 @@ const laporanStokHandler = {
         const prevMonth = new Date(selectedDate);
         prevMonth.setMonth(prevMonth.getMonth() - 1);
         console.log(`📊 Using monthly snapshot: ${prevMonth.getFullYear()}-${String(prevMonth.getMonth() + 1).padStart(2, "0")} (${monthlySnapshot.size} items)`);
+        // Cache the result
+        stockCache.set(snapshotCacheKey, monthlySnapshot);
+        updateStockCacheTimestamp(snapshotCacheKey);
         return monthlySnapshot;
       }
       
       // Priority 4: Empty base (start from zero)
       console.log("⚠️ No snapshot found, starting from zero");
-      return new Map();
+      const emptySnapshot = new Map();
+      // Cache the empty result
+      stockCache.set(snapshotCacheKey, emptySnapshot);
+      updateStockCacheTimestamp(snapshotCacheKey);
+      return emptySnapshot;
       
     } catch (error) {
       console.error("Error getting snapshot base:", error);
+      
+      // Try to use cache as fallback
+      const snapshotCacheKey = `snapshot_${formatDate(selectedDate).replace(/\//g, '-')}`;
+      if (stockCache.has(snapshotCacheKey)) {
+        console.log("Using cached snapshot data as fallback");
+        return stockCache.get(snapshotCacheKey);
+      }
+      
       return new Map();
     }
   },
 
-  // Fungsi baru: Ambil daily snapshot
+  // Fungsi baru: Ambil daily snapshot dengan cache
   async getDailySnapshot(date) {
     try {
       const dateKey = formatDate(date);
+      const dailySnapshotCacheKey = `daily_snapshot_${dateKey.replace(/\//g, '-')}`;
+      
+      // Check cache first
+      if (stockCache.has(dailySnapshotCacheKey) && !shouldUpdateStockCache(dailySnapshotCacheKey)) {
+        console.log(`Using cached daily snapshot for ${dateKey}`);
+        return stockCache.get(dailySnapshotCacheKey);
+      }
+      
       console.log(`🔍 Looking for daily snapshot: ${dateKey}`);
       
       // Gunakan query berdasarkan field 'date' bukan document ID
@@ -602,6 +956,9 @@ const laporanStokHandler = {
       
       if (querySnapshot.empty) {
         console.log(`❌ Daily snapshot not found for: ${dateKey}`);
+        // Cache the null result to avoid repeated queries
+        stockCache.set(dailySnapshotCacheKey, null);
+        updateStockCacheTimestamp(dailySnapshotCacheKey);
         return null;
       }
       
@@ -635,24 +992,48 @@ const laporanStokHandler = {
         });
         
         console.log(`📊 Daily snapshot loaded: ${snapshotMap.size} items`);
+        
+        // Cache the result
+        stockCache.set(dailySnapshotCacheKey, snapshotMap);
+        updateStockCacheTimestamp(dailySnapshotCacheKey);
+        
         return snapshotMap;
       } else {
         console.log(`⚠️ No stockData array in snapshot: ${dateKey}`);
+        // Cache the null result
+        stockCache.set(dailySnapshotCacheKey, null);
+        updateStockCacheTimestamp(dailySnapshotCacheKey);
         return null;
       }
       
     } catch (error) {
       console.error("Error loading daily snapshot:", error);
+      
+      // Try to use cache as fallback
+      const dateKey = formatDate(date);
+      const dailySnapshotCacheKey = `daily_snapshot_${dateKey.replace(/\//g, '-')}`;
+      if (stockCache.has(dailySnapshotCacheKey)) {
+        console.log("Using cached daily snapshot as fallback");
+        return stockCache.get(dailySnapshotCacheKey);
+      }
+      
       return null;
     }
   },
 
-  // Fungsi baru: Ambil monthly snapshot (refactor dari kode existing)
+  // Fungsi baru: Ambil monthly snapshot dengan cache
   async getMonthlySnapshot(selectedDate) {
     try {
       const prevMonth = new Date(selectedDate);
       prevMonth.setMonth(prevMonth.getMonth() - 1);
       const monthKey = `${prevMonth.getFullYear()}-${String(prevMonth.getMonth() + 1).padStart(2, "0")}`;
+      const monthlySnapshotCacheKey = `monthly_snapshot_${monthKey}`;
+      
+      // Check cache first
+      if (stockCache.has(monthlySnapshotCacheKey) && !shouldUpdateStockCache(monthlySnapshotCacheKey)) {
+        console.log(`Using cached monthly snapshot for ${monthKey}`);
+        return stockCache.get(monthlySnapshotCacheKey);
+      }
 
       const snapshotQuery = query(collection(firestore, "stokSnapshot"), where("bulan", "==", monthKey));
 
@@ -668,9 +1049,25 @@ const laporanStokHandler = {
         });
       });
 
+      // Cache the result
+      stockCache.set(monthlySnapshotCacheKey, snapshotMap);
+      updateStockCacheTimestamp(monthlySnapshotCacheKey);
+
       return snapshotMap;
     } catch (error) {
       console.error("Error loading monthly snapshot:", error);
+      
+      // Try to use cache as fallback
+      const prevMonth = new Date(selectedDate);
+      prevMonth.setMonth(prevMonth.getMonth() - 1);
+      const monthKey = `${prevMonth.getFullYear()}-${String(prevMonth.getMonth() + 1).padStart(2, "0")}`;
+      const monthlySnapshotCacheKey = `monthly_snapshot_${monthKey}`;
+      
+      if (stockCache.has(monthlySnapshotCacheKey)) {
+        console.log("Using cached monthly snapshot as fallback");
+        return stockCache.get(monthlySnapshotCacheKey);
+      }
+      
       return new Map();
     }
   },
@@ -933,6 +1330,14 @@ const laporanStokHandler = {
         gantiLock: 0,
       };
 
+      // Create cache key for movements
+      const movementsCacheKey = `movements_${kode}_${startDate.toISOString().split('T')[0]}_${endDate.toISOString().split('T')[0]}`;
+      
+      // Check cache first
+      if (stockCache.has(movementsCacheKey) && !shouldUpdateStockCache(movementsCacheKey)) {
+        return stockCache.get(movementsCacheKey);
+      }
+
       // Query transaksi dalam rentang tanggal untuk kode ini
       const transactionQuery = query(
         collection(firestore, "stokAksesorisTransaksi"),
@@ -964,9 +1369,20 @@ const laporanStokHandler = {
         }
       });
 
+      // Cache the movements
+      stockCache.set(movementsCacheKey, movements);
+      updateStockCacheTimestamp(movementsCacheKey);
+
       return movements;
     } catch (error) {
       console.error("Error calculating stock movements:", error);
+      
+      // Try to use cache as fallback
+      const movementsCacheKey = `movements_${kode}_${startDate.toISOString().split('T')[0]}_${endDate.toISOString().split('T')[0]}`;
+      if (stockCache.has(movementsCacheKey)) {
+        return stockCache.get(movementsCacheKey);
+      }
+      
       return {
         tambahStok: 0,
         laku: 0,
@@ -1450,32 +1866,47 @@ const laporanStokHandler = {
 
   // Clean up cache
   cleanupCache() {
-    const now = new Date().getTime();
+    const now = Date.now();
     const cacheExpiry = 30 * 60 * 1000; // 30 minutes
 
-    // Clean up expired cache
-    Object.keys(this.cache).forEach((key) => {
-      if (key.startsWith("stock_") && this.cache[key].lastFetched && now - this.cache[key].lastFetched > cacheExpiry) {
-        console.log(`Cleaning up expired cache for ${key}`);
-        delete this.cache[key];
+    // Clean up expired cache entries
+    const keysToDelete = [];
+    
+    stockCacheMeta.forEach((timestamp, key) => {
+      if (now - timestamp > cacheExpiry) {
+        keysToDelete.push(key);
       }
     });
 
+    keysToDelete.forEach(key => {
+      stockCache.delete(key);
+      stockCacheMeta.delete(key);
+      console.log(`Cleaning up expired cache for ${key}`);
+    });
+
     // Limit number of cache entries
-    const maxCacheEntries = 10;
-    const cacheKeys = Object.keys(this.cache).filter((key) => key.startsWith("stock_"));
+    const maxCacheEntries = 50;
+    const cacheKeys = Array.from(stockCache.keys());
 
     if (cacheKeys.length > maxCacheEntries) {
-      // Sort by last fetched time (oldest first)
-      cacheKeys.sort((a, b) => this.cache[a].lastFetched - this.cache[b].lastFetched);
+      // Sort by timestamp (oldest first)
+      const sortedKeys = cacheKeys.sort((a, b) => {
+        const timestampA = stockCacheMeta.get(a) || 0;
+        const timestampB = stockCacheMeta.get(b) || 0;
+        return timestampA - timestampB;
+      });
 
       // Remove oldest cache entries
-      const keysToRemove = cacheKeys.slice(0, cacheKeys.length - maxCacheEntries);
+      const keysToRemove = sortedKeys.slice(0, cacheKeys.length - maxCacheEntries);
       keysToRemove.forEach((key) => {
+        stockCache.delete(key);
+        stockCacheMeta.delete(key);
         console.log(`Removing excess cache for ${key}`);
-        delete this.cache[key];
       });
     }
+
+    // Save updated cache to localStorage
+    saveStockCacheToStorage();
   },
 };
 
@@ -1507,12 +1938,10 @@ function showAlert(message, title = "Informasi", type = "info") {
 document.addEventListener("DOMContentLoaded", function () {
   // Initialize the handler
   laporanStokHandler.init();
-
-  // Set interval to clean up cache periodically
-  setInterval(() => {
-    laporanStokHandler.cleanupCache();
-  }, 5 * 60 * 1000); // Clean up cache every 5 minutes
 });
 
 // Export the handler for potential use in other modules
 export default laporanStokHandler;
+
+
+

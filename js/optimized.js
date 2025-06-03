@@ -1,1310 +1,2000 @@
+/**
+ * Maintenance System for Melati Gold Shop
+ * Handles data archiving, snapshots, exports, and cleanup with enhanced caching
+ */
+
 import { firestore } from "./configFirebase.js";
 import {
   collection,
   getDocs,
-  doc,
-  updateDoc,
+  addDoc,
   deleteDoc,
+  doc,
   query,
   where,
   orderBy,
+  limit,
   Timestamp,
+  writeBatch,
   serverTimestamp,
 } from "https://www.gstatic.com/firebasejs/10.4.0/firebase-firestore.js";
 
-const VERIFICATION_PASSWORD = "smlt116";
-
-// Improved cache management dengan TTL yang lebih efisien
-const cacheManager = {
-  prefix: "melati_sales_",
-  defaultTTL: 60 * 60 * 1000, // 1 jam untuk data historis
-  todayTTL: 5 * 60 * 1000,    // 5 menit untuk data hari ini
-
-  set(key, data, ttl = null) {
-    // Tentukan TTL berdasarkan apakah data mencakup hari ini
-    const actualTTL = ttl || (this.isToday(key) ? this.todayTTL : this.defaultTTL);
+/**
+ * Enhanced Cache Manager for Maintenance Operations - Optimized like kehadiran.js
+ */
+class MaintenanceCacheManager {
+  constructor() {
+    this.prefix = 'maintenance_';
+    this.statusTTL = 5 * 60 * 1000; // 5 minutes for status
+    this.dataTTL = 10 * 60 * 1000; // 10 minutes for data
+    this.dataCache = new Map(); // In-memory cache
+    this.cacheTimestamps = new Map(); // Track cache timestamps
     
+    // Load cache from sessionStorage on initialization
+    this.loadCacheFromStorage();
+  }
+
+  /**
+   * Load cache from sessionStorage
+   */
+  loadCacheFromStorage() {
+    try {
+      const cacheData = sessionStorage.getItem(`${this.prefix}cache_data`);
+      const cacheTimestamps = sessionStorage.getItem(`${this.prefix}cache_timestamps`);
+      
+      if (cacheData) {
+        const parsedData = JSON.parse(cacheData);
+        Object.entries(parsedData).forEach(([key, value]) => {
+          this.dataCache.set(key, value);
+        });
+      }
+      
+      if (cacheTimestamps) {
+        const parsedTimestamps = JSON.parse(cacheTimestamps);
+        Object.entries(parsedTimestamps).forEach(([key, value]) => {
+          this.cacheTimestamps.set(key, value);
+        });
+      }
+    } catch (error) {
+      console.warn('Failed to load maintenance cache from storage:', error);
+    }
+  }
+
+  /**
+   * Save cache to sessionStorage
+   */
+  saveCacheToStorage() {
+    try {
+      const cacheData = Object.fromEntries(this.dataCache);
+      const cacheTimestamps = Object.fromEntries(this.cacheTimestamps);
+      
+      sessionStorage.setItem(`${this.prefix}cache_data`, JSON.stringify(cacheData));
+      sessionStorage.setItem(`${this.prefix}cache_timestamps`, JSON.stringify(cacheTimestamps));
+    } catch (error) {
+      console.warn('Failed to save maintenance cache to storage:', error);
+      // Clear old cache if storage is full
+      this.clearOldCache();
+    }
+  }
+
+  /**
+   * Set cache with TTL
+   */
+  set(key, data, ttl = this.dataTTL) {
+    const timestamp = Date.now();
+    
+    // Store in memory
+    this.dataCache.set(key, data);
+    this.cacheTimestamps.set(key, timestamp);
+    
+    // Save to sessionStorage
+    this.saveCacheToStorage();
+  }
+
+  /**
+   * Get cache data
+   */
+  get(key) {
+    const data = this.dataCache.get(key);
+    const timestamp = this.cacheTimestamps.get(key);
+    
+    if (!data || !timestamp) {
+      return null;
+    }
+    
+    // Check if cache is still valid
+    const ttl = key.includes('status') ? this.statusTTL : this.dataTTL;
+    if (Date.now() - timestamp > ttl) {
+      this.remove(key);
+      return null;
+    }
+    
+    return data;
+  }
+
+  /**
+   * Check if cache needs refresh
+   */
+  shouldRefresh(key) {
+    const timestamp = this.cacheTimestamps.get(key);
+    if (!timestamp) return true;
+    
+    const ttl = key.includes('status') ? this.statusTTL : this.dataTTL;
+    return Date.now() - timestamp > ttl;
+  }
+
+  /**
+   * Remove cache entry
+   */
+  remove(key) {
+    this.dataCache.delete(key);
+    this.cacheTimestamps.delete(key);
+    this.saveCacheToStorage();
+  }
+
+  /**
+   * Clear all cache
+   */
+  clear() {
+    this.dataCache.clear();
+    this.cacheTimestamps.clear();
+    try {
+      sessionStorage.removeItem(`${this.prefix}cache_data`);
+      sessionStorage.removeItem(`${this.prefix}cache_timestamps`);
+    } catch (error) {
+      console.warn('Failed to clear cache from storage:', error);
+    }
+  }
+
+  /**
+   * Clear old cache entries
+   */
+  clearOldCache() {
+    const now = Date.now();
+    const keysToRemove = [];
+    
+    for (const [key, timestamp] of this.cacheTimestamps.entries()) {
+      const ttl = key.includes('status') ? this.statusTTL : this.dataTTL;
+      if (now - timestamp > ttl) {
+        keysToRemove.push(key);
+      }
+    }
+    
+    keysToRemove.forEach(key => {
+      this.dataCache.delete(key);
+      this.cacheTimestamps.delete(key);
+    });
+    
+    if (keysToRemove.length > 0) {
+      this.saveCacheToStorage();
+    }
+  }
+
+  /**
+   * Get cache age
+   */
+  getAge(key) {
+    const timestamp = this.cacheTimestamps.get(key);
+    return timestamp ? Date.now() - timestamp : Infinity;
+  }
+
+  /**
+   * Get cache statistics
+   */
+  getStats() {
+    return {
+      memoryEntries: this.dataCache.size,
+      totalSize: JSON.stringify(Object.fromEntries(this.dataCache)).length
+    };
+  }
+}
+
+/**
+ * Main Maintenance Class with Enhanced Caching
+ */
+class MaintenanceSystem {
+  constructor() {
+    this.firestore = firestore;
+    this.loadingModal = null;
+    this.progressBar = null;
+    this.progressLog = null;
+    this.isArchived = false;
+    this.isExported = false;
+    this.cache = new MaintenanceCacheManager();
+    this.isLoading = false;
+    this.currentOperation = null;
+    
+    this.init();
+  }
+
+  /**
+   * Initialize the maintenance system
+   */
+  async init() {
+    try {
+      this.initializeElements();
+      this.attachEventListeners();
+      this.setDefaultDates();
+      await this.loadDatabaseStatus();
+      
+      // Start auto-refresh with cache
+      this.startAutoRefresh();
+      
+      console.log('Maintenance system initialized successfully');
+      console.log('Cache stats:', this.cache.getStats());
+    } catch (error) {
+      console.error('Error initializing maintenance system:', error);
+      this.showAlert('Gagal menginisialisasi sistem maintenance', 'error');
+    }
+  }
+
+  /**
+   * Initialize DOM elements
+   */
+  initializeElements() {
+    this.loadingModal = new bootstrap.Modal(document.getElementById('loadingModal'));
+    this.progressBar = document.getElementById('maintenanceProgress');
+    this.progressLog = document.getElementById('progressLog');
+    
+    // Input elements
+    this.archiveMonthInput = document.getElementById('archiveMonth');
+    this.snapshotMonthInput = document.getElementById('snapshotMonth');
+    this.deleteMonthInput = document.getElementById('deleteMonth');
+    
+    // Button elements
+    this.btnArchiveData = document.getElementById('btnArchiveData');
+    this.btnCreateSnapshot = document.getElementById('btnCreateSnapshot');
+    this.btnDeleteOldData = document.getElementById('btnDeleteOldData');
+    
+    // Export buttons
+    this.btnExportPenjualan = document.getElementById('btnExportPenjualan');
+    this.btnExportStockAdditions = document.getElementById('btnExportStockAdditions');
+    this.btnExportStokTransaksi = document.getElementById('btnExportStokTransaksi');
+    this.btnExportStokAksesoris = document.getElementById('btnExportStokAksesoris');
+    this.btnExportAll = document.getElementById('btnExportAll');
+  }
+
+  /**
+   * Attach event listeners to buttons
+   */
+  attachEventListeners() {
+    // Archive data
+    this.btnArchiveData.addEventListener('click', () => this.handleArchiveData());
+    
+    // Create snapshot
+    this.btnCreateSnapshot.addEventListener('click', () => this.handleCreateSnapshot());
+    
+    // Delete old data
+    this.btnDeleteOldData.addEventListener('click', () => this.handleDeleteOldData());
+    
+    // Export buttons
+    this.btnExportPenjualan.addEventListener('click', () => this.handleExportData('penjualanAksesoris'));
+    this.btnExportStockAdditions.addEventListener('click', () => this.handleExportData('stockAdditions'));
+    this.btnExportStokTransaksi.addEventListener('click', () => this.handleExportData('stokAksesorisTransaksi'));
+    this.btnExportStokAksesoris.addEventListener('click', () => this.handleExportData('stokAksesoris'));
+    this.btnExportAll.addEventListener('click', () => this.handleExportAllData());
+
+    // Add refresh button for manual cache refresh
+    const refreshBtn = document.createElement('button');
+    refreshBtn.className = 'btn btn-outline-secondary btn-sm ms-2';
+    refreshBtn.innerHTML = '<i class="fas fa-sync-alt"></i> Refresh';
+    refreshBtn.onclick = () => this.forceRefreshStatus();
+    
+    const statusContainer = document.querySelector('.maintenance-status')?.parentElement;
+    if (statusContainer) {
+      statusContainer.appendChild(refreshBtn);
+    }
+  }
+
+  /**
+   * Set default dates for inputs
+   */
+  setDefaultDates() {
+    const now = new Date();
+    const lastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    const currentMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    
+    const lastMonthStr = lastMonth.toISOString().slice(0, 7);
+    const currentMonthStr = currentMonth.toISOString().slice(0, 7);
+    
+    this.archiveMonthInput.value = lastMonthStr;
+    this.snapshotMonthInput.value = currentMonthStr;
+    this.deleteMonthInput.value = lastMonthStr;
+  }
+
+  /**
+   * Load and display database status with optimized caching
+   */
+  async loadDatabaseStatus(forceRefresh = false) {
+    const cacheKey = 'database_status';
+    
+    // Check cache first if not forcing refresh
+    if (!forceRefresh && !this.cache.shouldRefresh(cacheKey)) {
+      const cachedStatus = this.cache.get(cacheKey);
+      if (cachedStatus) {
+        console.log('Using cached database status');
+        this.updateStatusDisplay(cachedStatus);
+        this.showCacheIndicator('Menggunakan data cache');
+        return;
+      }
+    }
+
+    try {
+      console.log('Fetching fresh database status');
+      this.hideCacheIndicator();
+      
+      const collections = [
+        'penjualanAksesoris',
+        'stockAdditions', 
+        'stokAksesorisTransaksi',
+        'stokAksesoris'
+      ];
+
+      const statusData = {};
+      
+      // Use Promise.allSettled to handle individual collection failures
+      const promises = collections.map(async (collectionName) => {
+        try {
+          // Use limit(1) and count aggregation for better performance
+          const snapshot = await getDocs(query(collection(this.firestore, collectionName), limit(1000)));
+          return { collectionName, count: snapshot.size };
+        } catch (error) {
+          console.error(`Error loading ${collectionName}:`, error);
+          return { collectionName, count: 0 };
+        }
+      });
+
+      const results = await Promise.allSettled(promises);
+      
+      results.forEach((result) => {
+        if (result.status === 'fulfilled') {
+          const { collectionName, count } = result.value;
+          statusData[collectionName] = count;
+        }
+      });
+
+      // Cache the status with shorter TTL
+      this.cache.set(cacheKey, statusData, this.cache.statusTTL);
+      this.updateStatusDisplay(statusData);
+
+    } catch (error) {
+      console.error('Error loading database status:', error);
+      
+      // Try to use cached data as fallback
+      const cachedStatus = this.cache.get(cacheKey);
+      if (cachedStatus) {
+        console.log('Using cached data as fallback');
+        this.updateStatusDisplay(cachedStatus);
+        this.showCacheIndicator('Menggunakan data cache (fallback)');
+      } else {
+        this.logProgress('Error loading database status: ' + error.message, 'error');
+      }
+    }
+  }
+
+  /**
+   * Show cache indicator
+   */
+  showCacheIndicator(text) {
+    let indicator = document.getElementById('maintenanceCacheIndicator');
+    if (!indicator) {
+      indicator = document.createElement('small');
+      indicator.id = 'maintenanceCacheIndicator';
+      indicator.className = 'text-muted ms-2';
+      
+      const statusContainer = document.querySelector('.maintenance-status');
+      if (statusContainer) {
+        statusContainer.appendChild(indicator);
+      }
+    }
+    
+    indicator.textContent = text;
+    indicator.style.display = 'inline';
+  }
+
+  /**
+   * Hide cache indicator
+   */
+  hideCacheIndicator() {
+    const indicator = document.getElementById('maintenanceCacheIndicator');
+    if (indicator) {
+      indicator.style.display = 'none';
+    }
+  }
+
+  /**
+   * Update status display
+   */
+  updateStatusDisplay(statusData) {
+    const statusElements = [
+      'statusPenjualan',
+      'statusStockAdditions',
+      'statusStokTransaksi', 
+      'statusStokAksesoris'
+    ];
+
+    const collections = [
+      'penjualanAksesoris',
+      'stockAdditions', 
+      'stokAksesorisTransaksi',
+      'stokAksesoris'
+    ];
+
+    collections.forEach((collection, index) => {
+      const element = document.getElementById(statusElements[index]);
+      if (element) {
+        const count = statusData[collection] || 0;
+        element.textContent = count.toLocaleString();
+      }
+    });
+  }
+
+  /**
+   * Force refresh status (clear cache and reload)
+   */
+  async forceRefreshStatus() {
+    this.cache.remove('database_status');
+    await this.loadDatabaseStatus(true);
+    this.showAlert('Status database berhasil diperbarui', 'success');
+  }
+
+  /**
+   * Start auto refresh with intelligent caching
+   */
+  startAutoRefresh() {
+    // Refresh status every 5 minutes, but use cache if available
+    setInterval(async () => {
+      if (!document.hidden && !this.isLoading) {
+        try {          // Only refresh if cache is stale
+          if (this.cache.shouldRefresh('database_status')) {
+            await this.loadDatabaseStatus();
+          }
+        } catch (error) {
+          console.warn('Auto-refresh failed:', error);
+        }
+      }
+    }, 5 * 60 * 1000); // Check every 5 minutes
+
+    // Clean cache every 10 minutes
+    setInterval(() => {
+      this.cache.clearOldCache();
+    }, 10 * 60 * 1000);
+  }
+
+  /**
+   * Enhanced loading management
+   */
+  showLoading(title, subtitle) {
+    if (this.isLoading) {
+      console.warn('Already loading, skipping duplicate loading modal');
+      return;
+    }
+
+    this.isLoading = true;
+    this.currentOperation = title;
+    
+    try {
+      document.getElementById('loadingText').textContent = title;
+      document.getElementById('loadingSubtext').textContent = subtitle;
+      this.loadingModal.show();
+      
+      // Auto-hide after 30 seconds as failsafe
+      setTimeout(() => {
+        if (this.isLoading && this.currentOperation === title) {
+          console.warn('Force hiding loading modal after timeout');
+          this.hideLoading();
+        }
+      }, 30000);
+      
+    } catch (error) {
+      console.error('Error showing loading modal:', error);
+      this.isLoading = false;
+    }
+  }
+
+  /**
+   * Enhanced loading hide with proper state management
+   */
+  hideLoading() {
+    try {
+      // Force hide modal regardless of current state
+      const modalElement = document.getElementById('loadingModal');
+      if (modalElement) {
+        // Remove any existing modal backdrop
+        const backdrops = document.querySelectorAll('.modal-backdrop');
+        backdrops.forEach(backdrop => backdrop.remove());
+        
+        // Force hide modal
+        modalElement.style.display = 'none';
+        modalElement.classList.remove('show');
+        modalElement.setAttribute('aria-hidden', 'true');
+        modalElement.removeAttribute('aria-modal');
+        
+        // Reset body classes
+        document.body.classList.remove('modal-open');
+        document.body.style.overflow = '';
+        document.body.style.paddingRight = '';
+      }
+      
+      // Hide using Bootstrap modal if available
+      if (this.loadingModal) {
+        try {
+          this.loadingModal.hide();
+        } catch (modalError) {
+          console.warn('Bootstrap modal hide failed:', modalError);
+        }
+      }
+      
+      // Reset state
+      this.isLoading = false;
+      this.currentOperation = null;
+      
+      // Reset progress
+      this.updateProgress(0);
+      
+      console.log('Loading modal hidden successfully');
+      
+    } catch (error) {
+      console.error('Error hiding loading modal:', error);
+      // Force reset state even if hiding fails
+      this.isLoading = false;
+      this.currentOperation = null;
+      
+      // Force remove modal elements
+      const modalElement = document.getElementById('loadingModal');
+      if (modalElement) {
+        modalElement.style.display = 'none';
+      }
+      document.body.classList.remove('modal-open');
+      document.body.style.overflow = '';
+    }
+  }
+
+  /**
+   * Handle create snapshot process with proper loading management
+   */
+  async handleCreateSnapshot() {
+    const selectedMonth = this.snapshotMonthInput.value;
+    if (!selectedMonth) {
+      this.showAlert('Pilih bulan untuk snapshot', 'warning');
+      return;
+    }
+  
+    const confirmed = await this.showConfirmation(
+      `Apakah Anda yakin ingin membuat snapshot stok untuk bulan ${selectedMonth}?`,
+      'Konfirmasi Snapshot Stok'
+    );
+  
+    if (!confirmed) return;
+  
+    // Prevent multiple operations
+    if (this.isLoading) {
+      console.warn('Operation already in progress');
+      return;
+    }
+  
+    try {
+      this.showLoading('Membuat Snapshot...', 'Memproses data stok');
+      this.updateProgress(0);
+      this.clearProgressLog();
+  
+      // Add timeout wrapper
+      const timeoutPromise = new Promise((_, reject) => {
+        setTimeout(() => reject(new Error('Operation timeout after 5 minutes')), 5 * 60 * 1000);
+      });
+  
+      const snapshotPromise = this.createStockSnapshot(selectedMonth);
+      
+      await Promise.race([snapshotPromise, timeoutPromise]);
+      
+      this.updateProgress(100);
+      this.showAlert('Snapshot stok berhasil dibuat!', 'success');
+      
+    } catch (error) {
+      console.error('Error creating snapshot:', error);
+      this.logProgress(`Error: ${error.message}`, 'error');
+      this.showAlert('Gagal membuat snapshot: ' + error.message, 'error');
+    } finally {
+      // Force hide loading with delay to ensure completion
+      setTimeout(() => {
+        this.hideLoading();
+      }, 500);
+    }
+  }
+
+  /**
+   * Create stock snapshot for specified month with enhanced caching
+   */
+  async createStockSnapshot(monthStr) {
+    let stockData = null;
+    
+    try {
+      this.logProgress('Mengambil data stok aksesoris...');
+      
+      // Check cache first
+      const cacheKey = `stock_data_${monthStr}`;
+      stockData = this.cache.get(cacheKey);
+      
+      if (!stockData) {
+        this.logProgress('Mengambil data dari database...');
+        const snapshot = await getDocs(collection(this.firestore, 'stokAksesoris'));
+        stockData = snapshot.docs;
+        
+        // Cache for 10 minutes
+        this.cache.set(cacheKey, stockData, this.cache.dataTTL);
+        this.logProgress(`Data diambil dari database: ${stockData.length} item`);
+      } else {
+        this.logProgress(`Data diambil dari cache: ${stockData.length} item`);
+      }
+      
+      this.updateProgress(25);
+  
+      if (stockData.length === 0) {
+        this.logProgress('Tidak ada data stok untuk di-snapshot', 'warning');
+        this.updateProgress(100);
+        return;
+      }
+  
+      // Process in smaller batches with better error handling
+      const batchSize = 25; // Reduced batch size
+      const totalBatches = Math.ceil(stockData.length / batchSize);
+      let processedCount = 0;
+      let successfulBatches = 0;
+  
+      this.logProgress(`Memproses ${stockData.length} item dalam ${totalBatches} batch...`);
+  
+      for (let i = 0; i < totalBatches; i++) {
+        try {
+          const startIndex = i * batchSize;
+          const endIndex = Math.min(startIndex + batchSize, stockData.length);
+          const batchDocs = stockData.slice(startIndex, endIndex);
+  
+          this.logProgress(`Memproses batch ${i + 1}/${totalBatches} (${batchDocs.length} item)...`);
+  
+          // Create batch with retry mechanism
+          let retryCount = 0;
+          const maxRetries = 3;
+          
+          while (retryCount < maxRetries) {
+            try {
+              const batch = writeBatch(this.firestore);
+  
+              batchDocs.forEach((docSnapshot) => {
+                const data = docSnapshot.data();
+                
+                const snapshotItem = {
+                  barang_id: docSnapshot.id,
+                  kode: data.kode || '',
+                  nama: data.nama || '',
+                  kategori: data.kategori || '',
+                  stok_akhir: data.stokAkhir || 0,
+                  harga_jual: data.hargaJual || 0,
+                  bulan: monthStr,
+                  created_at: serverTimestamp(),
+                  original_data: data
+                };
+  
+                const snapshotRef = doc(collection(this.firestore, 'stokSnapshot'));
+                batch.set(snapshotRef, snapshotItem);
+              });
+  
+              // Commit batch with timeout
+              await Promise.race([
+                batch.commit(),
+                new Promise((_, reject) => 
+                  setTimeout(() => reject(new Error('Batch commit timeout')), 30000)
+                )
+              ]);
+              
+              processedCount += batchDocs.length;
+              successfulBatches++;
+              break; // Success, exit retry loop
+              
+            } catch (batchError) {
+              retryCount++;
+              this.logProgress(`Batch ${i + 1} gagal (percobaan ${retryCount}/${maxRetries}): ${batchError.message}`, 'warning');
+              
+              if (retryCount >= maxRetries) {
+                throw new Error(`Batch ${i + 1} gagal setelah ${maxRetries} percobaan: ${batchError.message}`);
+              }
+              
+              // Wait before retry with exponential backoff
+              await new Promise(resolve => setTimeout(resolve, Math.pow(2, retryCount) * 1000));
+            }
+          }
+          
+          // Update progress
+          const progress = 25 + ((i + 1) / totalBatches * 70);
+          this.updateProgress(Math.round(progress));
+          
+          this.logProgress(`Batch ${i + 1} selesai (${processedCount}/${stockData.length} item)`);
+  
+          // Small delay between batches
+          if (i < totalBatches - 1) {
+            await new Promise(resolve => setTimeout(resolve, 200));
+          }
+          
+        } catch (batchError) {
+          this.logProgress(`Error pada batch ${i + 1}: ${batchError.message}`, 'error');
+          // Continue with next batch instead of failing completely
+          continue;
+        }
+      }
+  
+      this.updateProgress(95);
+      
+      if (successfulBatches === 0) {
+        throw new Error('Semua batch gagal diproses');
+      }
+      
+      if (successfulBatches < totalBatches) {
+        this.logProgress(`Peringatan: ${totalBatches - successfulBatches} batch gagal dari ${totalBatches} total batch`, 'warning');
+      }
+  
+      this.updateProgress(100);
+      this.logProgress(`Snapshot selesai! ${processedCount} item disimpan untuk bulan ${monthStr}`, 'success');
+      
+      // Clear related cache
+      this.cache.remove(cacheKey);
+      
+    } catch (error) {
+      this.logProgress(`Error dalam createStockSnapshot: ${error.message}`, 'error');
+      this.updateProgress(100); // Ensure progress reaches 100% even on error
+      throw error;
+    }
+  }
+
+  /**
+   * Handle archive data process with proper loading management
+   */
+  async handleArchiveData() {
+    const selectedMonth = this.archiveMonthInput.value;
+    if (!selectedMonth) {
+      this.showAlert('Pilih bulan yang akan diarsipkan', 'warning');
+      return;
+    }
+
+    const confirmed = await this.showConfirmation(
+      `Apakah Anda yakin ingin mengarsipkan data bulan ${selectedMonth}?`,
+      'Konfirmasi Arsip Data'
+    );
+
+    if (!confirmed) return;
+
+    try {
+      this.showLoading('Mengarsipkan Data...', 'Memproses data untuk diarsipkan');
+      this.updateProgress(0);
+      this.clearProgressLog();
+
+      await this.archiveDataByMonth(selectedMonth);
+      
+      this.isArchived = true;
+      this.updateDeleteButtonState();
+      this.showAlert('Data berhasil diarsipkan!', 'success');
+      
+      // Clear status cache to force refresh
+      this.cache.remove('database_status');
+      
+    } catch (error) {
+      console.error('Error archiving data:', error);
+      this.showAlert('Gagal mengarsipkan data: ' + error.message, 'error');
+    } finally {
+      this.hideLoading();
+    }
+  }
+
+  /**
+   * Archive data by month to archive collections with caching
+   */
+  async archiveDataByMonth(monthStr) {
+    try {
+      const [year, month] = monthStr.split('-');
+      const startDate = new Date(parseInt(year), parseInt(month) - 1, 1);
+      const endDate = new Date(parseInt(year), parseInt(month), 1);
+
+      const collections = [
+        { source: 'penjualanAksesoris', archive: 'penjualanAksesoris_arsip' },
+        { source: 'stockAdditions', archive: 'stockAdditions_arsip' },
+        { source: 'stokAksesorisTransaksi', archive: 'stokAksesorisTransaksi_arsip' }
+      ];
+
+      let totalProcessed = 0;
+      const totalCollections = collections.length;
+
+      for (let i = 0; i < collections.length; i++) {
+        const { source, archive } = collections[i];
+        
+        this.logProgress(`Memproses koleksi ${source}...`);
+        
+        // Check cache first
+        const cacheKey = `archive_${source}_${monthStr}`;
+        let docs = this.cache.get(cacheKey);
+        
+        if (!docs) {
+          // Query data for the specified month
+          const q = query(
+            collection(this.firestore, source),
+            where('timestamp', '>=', Timestamp.fromDate(startDate)),
+            where('timestamp', '<', Timestamp.fromDate(endDate)),
+            orderBy('timestamp', 'asc')
+          );
+
+          const snapshot = await getDocs(q);
+          docs = snapshot.docs;
+          
+          // Cache for 5 minutes
+          this.cache.set(cacheKey, docs, 5 * 60 * 1000);
+        }
+        
+        this.logProgress(`Ditemukan ${docs.length} dokumen di ${source}`);
+
+        if (docs.length > 0) {
+          // Process in smaller batches
+          const batchSize = 50;
+          const totalBatches = Math.ceil(docs.length / batchSize);
+          
+          for (let j = 0; j < totalBatches; j++) {
+            const startIndex = j * batchSize;
+            const endIndex = Math.min(startIndex + batchSize, docs.length);
+            const batchDocs = docs.slice(startIndex, endIndex);
+            
+            await this.processBatch(batchDocs, source, archive);
+            
+            const progress = ((i / totalCollections) + ((j + 1) / totalBatches / totalCollections)) * 100;
+            this.updateProgress(Math.round(progress));
+            
+            this.logProgress(`Batch ${j + 1}/${totalBatches} selesai untuk ${source}`);
+            
+            // Small delay
+            if (j < totalBatches - 1) {
+              await new Promise(resolve => setTimeout(resolve, 100));
+            }
+          }
+
+          // Special handling for penjualanAksesoris
+          if (source === 'penjualanAksesoris') {
+            await this.copyToMutasiKode(docs);
+          }
+        }
+
+        totalProcessed++;
+        this.logProgress(`Selesai memproses ${source} (${docs.length} dokumen)`);
+        
+        // Clear cache after processing
+        this.cache.remove(cacheKey);
+      }
+
+      this.updateProgress(100);
+      this.logProgress(`Arsip selesai! Total ${totalProcessed} koleksi diproses.`, 'success');
+      
+      // Clear status cache to force refresh
+      this.cache.remove('database_status');
+      
+    } catch (error) {
+      this.logProgress(`Error dalam archiveDataByMonth: ${error.message}`, 'error');
+      throw error;
+    }
+  }
+
+  /**
+   * Process batch of documents for archiving
+   */
+  async processBatch(docs, sourceCollection, archiveCollection) {
+    const batch = writeBatch(this.firestore);
+    
+    for (const docSnapshot of docs) {
+      const data = docSnapshot.data();
+      
+      // Add to archive collection
+      const archiveRef = doc(collection(this.firestore, archiveCollection));
+      batch.set(archiveRef, {
+        ...data,
+        originalId: docSnapshot.id,
+        archivedAt: serverTimestamp()
+      });
+    }
+
+    await batch.commit();
+  }
+
+  /**
+   * Copy manual sales with barcode to mutasiKode collection
+   */
+  async copyToMutasiKode(penjualanDocs) {
+    this.logProgress('Memproses data untuk mutasi kode...');
+    
+    const mutasiData = penjualanDocs
+      .map(doc => doc.data())
+      .filter(data => 
+        data.jenisPenjualan === 'manual' && 
+        data.items && 
+        data.items.some(item => item.kodeText && item.kodeText.trim() !== '' && item.kodeText !== '-')
+      );
+
+    if (mutasiData.length > 0) {
+      // Process in batches
+      const batchSize = 50;
+      const totalBatches = Math.ceil(mutasiData.length / batchSize);
+      
+      for (let i = 0; i < totalBatches; i++) {
+        const batch = writeBatch(this.firestore);
+        const startIndex = i * batchSize;
+        const endIndex = Math.min(startIndex + batchSize, mutasiData.length);
+        const batchData = mutasiData.slice(startIndex, endIndex);
+        
+        batchData.forEach(data => {
+          data.items.forEach(item => {
+            if (item.kodeText && item.kodeText.trim() !== '' && item.kodeText !== '-') {
+              const mutasiRef = doc(collection(this.firestore, 'mutasiKode'));
+              batch.set(mutasiRef, {
+                kode: item.kodeText,
+                namaBarang: item.nama || '',
+                kadar: item.kadar || '',
+                berat: item.berat || 0,
+                hargaPerGram: item.hargaPerGram || 0,
+                totalHarga: item.totalHarga || 0,
+                keterangan: item.keterangan || '',
+                timestamp: data.timestamp,
+                penjualanId: data.originalId || '',
+                sales: data.sales || '',
+                createdAt: serverTimestamp()
+              });
+            }
+          });
+        });
+
+        await batch.commit();
+        this.logProgress(`Batch mutasi ${i + 1}/${totalBatches} selesai`);
+      }
+
+      this.logProgress(`${mutasiData.length} data ditambahkan ke mutasiKode`);
+    }
+  }
+
+  /**
+   * Handle export data for specific collection with caching
+   */
+  async handleExportData(collectionName) {
+    try {
+      this.showLoading('Mengexport Data...', `Memproses data ${collectionName}`);
+      this.updateProgress(0);
+      this.clearProgressLog();
+
+      await this.exportCollectionToExcel(collectionName);
+      
+      this.isExported = true;
+      this.updateDeleteButtonState();
+      this.showAlert(`Data ${collectionName} berhasil diexport!`, 'success');
+      
+    } catch (error) {
+      console.error('Error exporting data:', error);
+      this.showAlert('Gagal mengexport data: ' + error.message, 'error');
+    } finally {
+      this.hideLoading();
+    }
+  }
+
+  /**
+   * Handle export all data with proper loading management
+   */
+  async handleExportAllData() {
+    const confirmed = await this.showConfirmation(
+      'Apakah Anda yakin ingin mengexport semua data? Proses ini mungkin memakan waktu lama.',
+      'Konfirmasi Export Semua Data'
+    );
+
+    if (!confirmed) return;
+
+    try {
+      this.showLoading('Mengexport Semua Data...', 'Memproses semua koleksi');
+      this.updateProgress(0);
+      this.clearProgressLog();
+
+      const collections = ['penjualanAksesoris', 'stockAdditions', 'stokAksesorisTransaksi', 'stokAksesoris'];
+      
+      for (let i = 0; i < collections.length; i++) {
+        const collectionName = collections[i];
+        this.logProgress(`Mengexport ${collectionName}...`);
+        
+        await this.exportCollectionToExcel(collectionName, false);
+        
+        const progress = ((i + 1) / collections.length) * 100;
+        this.updateProgress(Math.round(progress));
+      }
+      
+      this.isExported = true;
+      this.updateDeleteButtonState();
+      this.showAlert('Semua data berhasil diexport!', 'success');
+      
+    } catch (error) {
+      console.error('Error exporting all data:', error);
+      this.showAlert('Gagal mengexport semua data: ' + error.message, 'error');
+    } finally {
+      this.hideLoading();
+    }
+  }
+
+  /**
+   * Export collection to Excel file with optimized caching
+   */
+  async exportCollectionToExcel(collectionName, autoDownload = true, customTitle = null) {
+    try {
+      this.logProgress(`Mengambil data dari ${collectionName}...`);
+      
+      // Check cache first
+      const cacheKey = `export_${collectionName}`;
+      let docs = this.cache.get(cacheKey);
+      
+      if (!docs) {
+        const snapshot = await getDocs(collection(this.firestore, collectionName));
+        docs = snapshot.docs;
+        
+        // Cache for 5 minutes
+        this.cache.set(cacheKey, docs, 5 * 60 * 1000);
+        this.logProgress(`Data diambil dari database: ${docs.length} dokumen`);
+      } else {
+        this.logProgress(`Data diambil dari cache: ${docs.length} dokumen`);
+      }
+  
+      if (docs.length === 0) {
+        this.logProgress(`Tidak ada data di ${collectionName}`, 'warning');
+        this.hideLoading();
+        this.showAlert(`Tidak ada data di koleksi ${collectionName}`, 'warning');
+        return;
+      }
+  
+      this.logProgress('Memproses data untuk Excel...');
+  
+      // Generate title
+      const title = customTitle || this.generateExportTitle(collectionName);
+      
+      // Convert Firestore data to Excel format
+      const excelData = docs.map((doc, index) => {
+        const data = doc.data();
+        
+        // Format khusus untuk penjualanAksesoris
+        if (collectionName === 'penjualanAksesoris') {
+          return {
+            tanggal: this.formatDate(data.timestamp?.toDate() || data.tanggal),
+            sales: data.sales || '',
+            jenisPenjualan: data.jenisPenjualan || '',
+            items: this.formatItems(data.items),
+            metodeBayar: data.metodeBayar || '',
+            totalHarga: data.totalHarga || 0
+          };
+        }
+        
+        // Format untuk koleksi lainnya
+        const processedData = {};
+        
+        Object.keys(data).forEach(key => {
+          const value = data[key];
+          
+          if (value && typeof value.toDate === 'function') {
+            processedData[key] = this.formatDate(value.toDate());
+          } else if (Array.isArray(value)) {
+            processedData[key] = JSON.stringify(value);
+          } else if (typeof value === 'object' && value !== null) {
+            processedData[key] = JSON.stringify(value);
+          } else {
+            processedData[key] = value;
+          }
+        });
+        
+        if (index % 100 === 0) {
+          const progress = (index / docs.length) * 50;
+          this.updateProgress(Math.round(progress));
+        }
+        
+        return processedData;
+      });
+  
+      this.logProgress('Membuat file Excel...');
+      this.updateProgress(75);
+  
+      // Create workbook and worksheet
+      const workbook = XLSX.utils.book_new();
+      
+      // Create worksheet dengan title
+      const worksheet = this.createWorksheetWithTitle(excelData, title);
+      
+      // Add worksheet to workbook
+      XLSX.utils.book_append_sheet(workbook, worksheet, this.getSheetName(collectionName));
+  
+      this.updateProgress(90);
+  
+      if (autoDownload) {
+        const timestamp = new Date().toISOString().slice(0, 19).replace(/:/g, '-');
+        const filename = `${collectionName}_${timestamp}.xlsx`;
+        
+        XLSX.writeFile(workbook, filename);
+        this.logProgress(`File ${filename} berhasil didownload`);
+      }
+  
+      this.updateProgress(100);
+      this.logProgress(`Export ${collectionName} selesai (${docs.length} records)`);
+  
+      setTimeout(() => {
+        this.hideLoading();
+        this.showAlert(`Export ${collectionName} berhasil! (${docs.length} records)`, 'success');
+      }, 500);
+  
+      return workbook;
+      
+    } catch (error) {
+      this.logProgress(`Error dalam exportCollectionToExcel: ${error.message}`, 'error');
+      this.hideLoading();
+      this.showAlert(`Gagal export ${collectionName}: ${error.message}`, 'error');
+      throw error;
+    }
+  }
+  
+  /**
+   * Generate title untuk export berdasarkan collection dan bulan
+   */
+  generateExportTitle(collectionName) {
+    const currentDate = new Date();
+    const monthNames = [
+      'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
+      'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'
+    ];
+    
+    const currentMonth = monthNames[currentDate.getMonth()];
+    const currentYear = currentDate.getFullYear();
+    
+    const titles = {
+      'penjualanAksesoris': `Arsip Data Penjualan Bulan ${currentMonth} ${currentYear} - Melati Gold Shop`,
+      'stockAdditions': `Arsip Data Penambahan Stok Bulan ${currentMonth} ${currentYear} - Melati Gold Shop`,
+      'stokAksesorisTransaksi': `Arsip Data Transaksi Stok Bulan ${currentMonth} ${currentYear} - Melati Gold Shop`,
+      'stokAksesoris': `Arsip Data Stok Aksesoris Bulan ${currentMonth} ${currentYear} - Melati Gold Shop`
+    };
+    
+    return titles[collectionName] || `Arsip Data ${collectionName} Bulan ${currentMonth} ${currentYear} - Melati Gold Shop`;
+  }
+  
+  /**
+   * Create worksheet dengan title di bagian atas
+   */
+  createWorksheetWithTitle(data, title) {
+    if (data.length === 0) {
+      return XLSX.utils.json_to_sheet([]);
+    }
+    
+    // Create worksheet dari data
+    const worksheet = XLSX.utils.json_to_sheet(data, { origin: 'A4' });
+    
+    // Add title di baris pertama
+    XLSX.utils.sheet_add_aoa(worksheet, [[title]], { origin: 'A1' });
+    
+    // Add info export di baris kedua
+    const exportInfo = `Diekspor pada: ${this.formatDate(new Date())} | Total Records: ${data.length}`;
+    XLSX.utils.sheet_add_aoa(worksheet, [[exportInfo]], { origin: 'A2' });
+    
+    // Merge cells untuk title
+    if (!worksheet['!merges']) worksheet['!merges'] = [];
+    
+    const headerCols = Object.keys(data[0]).length;
+    worksheet['!merges'].push({
+      s: { r: 0, c: 0 }, // start
+      e: { r: 0, c: headerCols - 1 } // end
+    });
+    
+    worksheet['!merges'].push({
+      s: { r: 1, c: 0 },
+      e: { r: 1, c: headerCols - 1 }
+    });
+    
+    // Style untuk title
+    if (!worksheet['!rows']) worksheet['!rows'] = [];
+    worksheet['!rows'][0] = { hpt: 25 }; // height untuk title
+    worksheet['!rows'][1] = { hpt: 18 }; // height untuk info
+    worksheet['!rows'][2] = { hpt: 5 };  // empty row
+    
+    // Auto-size columns
+    const colWidths = [];
+    Object.keys(data[0]).forEach(key => {
+      const maxLength = Math.max(
+        key.length,
+        ...data.map(row => String(row[key] || '').length)
+      );
+      colWidths.push({ wch: Math.min(maxLength + 2, 50) });
+    });
+    worksheet['!cols'] = colWidths;
+    
+    return worksheet;
+  }
+  
+  /**
+   * Get sheet name berdasarkan collection
+   */
+  getSheetName(collectionName) {
+    const sheetNames = {
+      'penjualanAksesoris': 'Data Penjualan',
+      'stockAdditions': 'Penambahan Stok',
+      'stokAksesorisTransaksi': 'Transaksi Stok',
+      'stokAksesoris': 'Stok Aksesoris'
+    };
+    
+    return sheetNames[collectionName] || collectionName;
+  }
+  
+  /**
+   * Format items array untuk display yang readable
+   */
+  formatItems(items) {
+    if (!Array.isArray(items) || items.length === 0) {
+      return 'Tidak ada item';
+    }
+    
+    return items.map(item => {
+      const parts = [];
+      
+      if (item.nama) parts.push(`${item.nama}`);
+      if (item.kodeText && item.kodeText !== '-') parts.push(`[${item.kodeText}]`);
+      if (item.kadar) parts.push(`${item.kadar}`);
+      if (item.berat) parts.push(`${item.berat}g`);
+      if (item.totalHarga) parts.push(`Rp${item.totalHarga}`);
+      
+      return parts.join(' - ');
+    }).join(' | ');
+  }
+  
+  /**
+   * Format date to readable string
+   */
+  formatDate(date) {
+    if (!date) return '';
+    
+    try {
+      const d = date instanceof Date ? date : new Date(date);
+      if (isNaN(d.getTime())) return '';
+      
+      const day = String(d.getDate()).padStart(2, '0');
+      const month = String(d.getMonth() + 1).padStart(2, '0');
+      const year = d.getFullYear();
+      const hours = String(d.getHours()).padStart(2, '0');
+      const minutes = String(d.getMinutes()).padStart(2, '0');
+      
+      return `${day}/${month}/${year} ${hours}:${minutes}`;
+    } catch (error) {
+      console.error('Error formatting date:', error);
+      return '';
+    }
+  }
+  
+  /**
+   * Handle delete old data process with proper loading management
+   */
+  async handleDeleteOldData() {
+    const selectedMonth = this.deleteMonthInput.value;
+    if (!selectedMonth) {
+      this.showAlert('Pilih bulan yang akan dihapus', 'warning');
+      return;
+    }
+
+    if (!this.isArchived || !this.isExported) {
+      this.showAlert('Data harus diarsipkan dan diexport terlebih dahulu!', 'warning');
+      return;
+    }
+
+    const confirmed = await this.showConfirmation(
+      `PERINGATAN: Apakah Anda yakin ingin menghapus PERMANEN data bulan ${selectedMonth}?\n\nPastikan data sudah diarsipkan dan diexport!`,
+      'Konfirmasi Hapus Data'
+    );
+
+    if (!confirmed) return;
+
+    // Double confirmation
+    const doubleConfirmed = await this.showConfirmation(
+      'Konfirmasi sekali lagi: Data yang dihapus TIDAK DAPAT dikembalikan!',
+      'Konfirmasi Terakhir'
+    );
+
+    if (!doubleConfirmed) return;
+
+    try {
+      this.showLoading('Menghapus Data...', 'Menghapus data lama dari database');
+      this.updateProgress(0);
+      this.clearProgressLog();
+
+      await this.deleteDataByMonth(selectedMonth);
+      
+      this.showAlert('Data lama berhasil dihapus!', 'success');
+      
+      // Clear all cache and force refresh status
+      this.cache.clear();
+      await this.loadDatabaseStatus(true);
+      
+    } catch (error) {
+      console.error('Error deleting data:', error);
+      this.showAlert('Gagal menghapus data: ' + error.message, 'error');
+    } finally {
+      this.hideLoading();
+    }
+  }
+
+  /**
+   * Delete data by month from specified collections
+   */
+  async deleteDataByMonth(monthStr) {
+    try {
+      const [year, month] = monthStr.split('-');
+      const startDate = new Date(parseInt(year), parseInt(month) - 1, 1);
+      const endDate = new Date(parseInt(year), parseInt(month), 1);
+
+      const collections = ['penjualanAksesoris', 'stockAdditions', 'stokAksesorisTransaksi'];
+      let totalDeleted = 0;
+
+      for (let i = 0; i < collections.length; i++) {
+        const collectionName = collections[i];
+        
+        this.logProgress(`Menghapus data dari ${collectionName}...`);
+        
+        // Query data for the specified month
+        const q = query(
+          collection(this.firestore, collectionName),
+          where('timestamp', '>=', Timestamp.fromDate(startDate)),
+          where('timestamp', '<', Timestamp.fromDate(endDate))
+        );
+
+        const snapshot = await getDocs(q);
+        const docs = snapshot.docs;
+        
+        this.logProgress(`Ditemukan ${docs.length} dokumen untuk dihapus di ${collectionName}`);
+
+        if (docs.length > 0) {
+          // Delete in smaller batches
+          const batchSize = 50;
+          const totalBatches = Math.ceil(docs.length / batchSize);
+          
+          for (let j = 0; j < totalBatches; j++) {
+            const batch = writeBatch(this.firestore);
+            const startIndex = j * batchSize;
+            const endIndex = Math.min(startIndex + batchSize, docs.length);
+            const batchDocs = docs.slice(startIndex, endIndex);
+            
+            batchDocs.forEach(docSnapshot => {
+              batch.delete(doc(this.firestore, collectionName, docSnapshot.id));
+            });
+
+            await batch.commit();
+            
+            const progress = ((i / collections.length) + ((j + 1) / totalBatches / collections.length)) * 100;
+            this.updateProgress(Math.round(progress));
+            
+            this.logProgress(`Batch ${j + 1}/${totalBatches} dihapus dari ${collectionName}`);
+            
+            // Small delay
+            if (j < totalBatches - 1) {
+              await new Promise(resolve => setTimeout(resolve, 100));
+            }
+          }
+
+          totalDeleted += docs.length;
+        }
+
+        this.logProgress(`Selesai menghapus ${docs.length} dokumen dari ${collectionName}`);
+      }
+
+      this.updateProgress(100);
+      this.logProgress(`Penghapusan selesai! Total ${totalDeleted} dokumen dihapus.`, 'success');
+      
+    } catch (error) {
+      this.logProgress(`Error dalam deleteDataByMonth: ${error.message}`, 'error');
+      throw error;
+    }
+  }
+
+  /**
+   * Update delete button state based on archive and export status
+   */
+  updateDeleteButtonState() {
+    const canDelete = this.isArchived && this.isExported;
+    this.btnDeleteOldData.disabled = !canDelete;
+    
+    if (canDelete) {
+      this.btnDeleteOldData.classList.remove('btn-secondary');
+      this.btnDeleteOldData.classList.add('btn-danger');
+    }
+  }
+
+  /**
+   * Update progress bar
+   */
+  updateProgress(percentage) {
+    if (this.progressBar) {
+      this.progressBar.style.width = `${percentage}%`;
+      this.progressBar.textContent = `${percentage}%`;
+      this.progressBar.setAttribute('aria-valuenow', percentage);
+    }
+  }
+
+  /**
+   * Log progress message
+   */
+  logProgress(message, type = 'info') {
+    const timestamp = new Date().toLocaleTimeString();
+    const logClass = type === 'error' ? 'text-danger' : 
+                     type === 'success' ? 'text-success' : 
+                     type === 'warning' ? 'text-warning' : 'text-dark';
+    
+    const logEntry = document.createElement('div');
+    logEntry.className = `mb-1 ${logClass}`;
+    logEntry.innerHTML = `<small>[${timestamp}] ${message}</small>`;
+    
+    if (this.progressLog) {
+      this.progressLog.appendChild(logEntry);
+      this.progressLog.scrollTop = this.progressLog.scrollHeight;
+    }
+    
+    console.log(`[Maintenance] ${message}`);
+  }
+
+  /**
+   * Clear progress log
+   */
+  clearProgressLog() {
+    if (this.progressLog) {
+      this.progressLog.innerHTML = '<p class="text-muted mb-0">Memulai proses maintenance...</p>';
+    }
+  }
+
+  /**
+   * Show alert using SweetAlert2
+   */
+  showAlert(message, type = 'info') {
+    const iconMap = {
+      'success': 'success',
+      'error': 'error',
+      'warning': 'warning',
+      'info': 'info'
+    };
+
+    return Swal.fire({
+      title: type === 'error' ? 'Error' : 
+             type === 'success' ? 'Berhasil' : 
+             type === 'warning' ? 'Peringatan' : 'Informasi',
+      text: message,
+      icon: iconMap[type] || 'info',
+      confirmButtonText: 'OK',
+      confirmButtonColor: '#0d6efd'
+    });
+  }
+
+  /**
+   * Show confirmation dialog
+   */
+  showConfirmation(message, title = 'Konfirmasi') {
+    return Swal.fire({
+      title: title,
+      text: message,
+      icon: 'question',
+      showCancelButton: true,
+      confirmButtonText: 'Ya',
+      cancelButtonText: 'Batal',
+      confirmButtonColor: '#0d6efd',
+      cancelButtonColor: '#6c757d'
+    }).then(result => result.isConfirmed);
+  }
+
+  /**
+   * Cleanup when page unloads
+   */
+  cleanup() {
+    // Force hide loading if still showing
+    if (this.isLoading) {
+      this.hideLoading();
+    }
+    
+    // Clear cache
+    this.cache.clear();
+    
+    console.log('Maintenance system cleanup completed');
+  }
+}
+
+/**
+ * Shared Cache Manager for cross-module caching
+ */
+class SharedCacheManager {
+  constructor() {
+    this.prefix = 'shared_maintenance_';
+    this.defaultTTL = 5 * 60 * 1000; // 5 minutes
+  }
+
+  setVersioned(key, data, ttl = this.defaultTTL) {
     const item = {
       data,
       timestamp: Date.now(),
-      ttl: actualTTL,
-      version: Date.now() // Untuk versioning
+      ttl,
+      version: Date.now()
     };
-    
-    try {
-      localStorage.setItem(this.prefix + key, JSON.stringify(item));
-      // Simpan metadata terpisah untuk tracking
-      localStorage.setItem(this.prefix + key + "_meta", Date.now().toString());
-    } catch (error) {
-      console.warn("Cache storage failed, clearing old cache:", error);
-      this.clearOldCache();
-      try {
-        localStorage.setItem(this.prefix + key, JSON.stringify(item));
-        localStorage.setItem(this.prefix + key + "_meta", Date.now().toString());
-      } catch (retryError) {
-        console.error("Cache storage failed after cleanup:", retryError);
-      }
-    }
-  },
 
-  get(key) {
     try {
-      const item = JSON.parse(localStorage.getItem(this.prefix + key));
+      sessionStorage.setItem(this.prefix + key, JSON.stringify(item));
+    } catch (error) {
+      console.warn('Shared cache set failed:', error);
+      this.clearOldCache();
+    }
+  }
+
+  getVersioned(key) {
+    try {
+      const item = JSON.parse(sessionStorage.getItem(this.prefix + key));
       if (!item) return null;
 
-      const now = Date.now();
-      const age = now - item.timestamp;
-      
-      // Cek apakah cache masih valid
+      const age = Date.now() - item.timestamp;
       if (age > item.ttl) {
         this.remove(key);
         return null;
       }
 
-      // Untuk data hari ini, cek juga apakah ada update terbaru
-      if (this.isToday(key)) {
-        const lastUpdate = localStorage.getItem("lastSalesUpdate");
-        if (lastUpdate && parseInt(lastUpdate) > item.timestamp) {
-          this.remove(key);
-          return null;
-        }
-      }
-
-      return item.data;
+      return { data: item.data, age };
     } catch (error) {
-      console.error("Cache get error:", error);
+      console.warn('Shared cache get failed:', error);
       this.remove(key);
       return null;
     }
-  },
+  }
 
   remove(key) {
-    localStorage.removeItem(this.prefix + key);
-    localStorage.removeItem(this.prefix + key + "_meta");
-  },
+    try {
+      sessionStorage.removeItem(this.prefix + key);
+    } catch (error) {
+      console.warn('Shared cache remove failed:', error);
+    }
+  }
 
-  clear() {
-    Object.keys(localStorage)
-      .filter((key) => key.startsWith(this.prefix))
-      .forEach((key) => localStorage.removeItem(key));
-  },
+  invalidateRelated(pattern) {
+    try {
+      Object.keys(sessionStorage)
+        .filter(key => key.startsWith(this.prefix) && key.includes(pattern))
+        .forEach(key => sessionStorage.removeItem(key));
+    } catch (error) {
+      console.warn('Shared cache invalidate failed:', error);
+    }
+  }
 
-  // Cek apakah key mencakup data hari ini
-  isToday(key) {
-    const today = new Date().toISOString().split('T')[0];
-    return key.includes(today) || key === "salesData";
-  },
-
-  // Bersihkan cache lama untuk menghemat storage
   clearOldCache() {
     const now = Date.now();
-    const maxAge = 24 * 60 * 60 * 1000; // 24 jam
-    
-    Object.keys(localStorage)
-      .filter(key => key.startsWith(this.prefix) && key.endsWith("_meta"))
-      .forEach(metaKey => {
-        try {
-          const timestamp = parseInt(localStorage.getItem(metaKey));
-          if (now - timestamp > maxAge) {
-            const dataKey = metaKey.replace("_meta", "");
-            localStorage.removeItem(dataKey);
-            localStorage.removeItem(metaKey);
-          }
-        } catch (error) {
-          localStorage.removeItem(metaKey);
-        }
-      });
-  },
-
-  // Cek apakah cache perlu diupdate
-  shouldUpdate(key) {
-    const metaKey = this.prefix + key + "_meta";
-    const timestamp = localStorage.getItem(metaKey);
-    
-    if (!timestamp) return true;
-    
-    const now = Date.now();
-    const lastUpdate = parseInt(timestamp);
-    const ttl = this.isToday(key) ? this.todayTTL : this.defaultTTL;
-    
-    return (now - lastUpdate) > ttl;
-  },
-
-  // Update timestamp untuk cache invalidation
-  updateTimestamp(key) {
-    localStorage.setItem(this.prefix + key + "_meta", Date.now().toString());
-  }
-};
-
-// Utility functions (tetap sama)
-const utils = {
-  showAlert: (message, title = "Informasi", type = "info") =>
-    Swal.fire({ title, text: message, icon: type, confirmButtonText: "OK", confirmButtonColor: "#0d6efd" }),
-
-  showLoading: (show) => {
-    const loader = document.getElementById("loadingIndicator");
-    if (loader) loader.style.display = show ? "flex" : "none";
-  },
-
-  formatDate: (date) => {
-    if (!date) return "-";
     try {
-      const d = date.toDate ? date.toDate() : date instanceof Date ? date : new Date(date);
-      return `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}/${d.getFullYear()}`;
-    } catch {
-      return "-";
-    }
-  },
-
-  parseDate: (dateString) => {
-    if (!dateString) return null;
-    const [day, month, year] = dateString.split("/");
-    return new Date(year, month - 1, day);
-  },
-
-  formatRupiah: (angka) => {
-    const number = typeof angka === "string" ? parseInt(angka.replace(/\./g, "")) : angka || 0;
-    return new Intl.NumberFormat("id-ID").format(number);
-  },
-
-  debounce: (func, wait) => {
-    let timeout;
-    return function executedFunction(...args) {
-      const later = () => {
-        clearTimeout(timeout);
-        func(...args);
-      };
-      clearTimeout(timeout);
-      timeout = setTimeout(later, wait);
-    };
-  },
-
-  throttle: (func, limit) => {
-    let inThrottle;
-    return function () {
-      const args = arguments;
-      const context = this;
-      if (!inThrottle) {
-        func.apply(context, args);
-        inThrottle = true;
-        setTimeout(() => (inThrottle = false), limit);
-      }
-    };
-  },
-};
-
-// Main application class
-class DataPenjualanApp {
-  constructor() {
-    this.salesData = [];
-    this.filteredData = [];
-    this.dataTable = null;
-    this.currentTransaction = null;
-    this.isLoading = false;
-
-    // Bind methods
-    this.refreshData = utils.debounce(this.refreshData.bind(this), 1000);
-    this.filterData = utils.throttle(this.filterData.bind(this), 500);
-  }
-
-  // Initialize application
-  async init() {
-    this.setupEventListeners();
-    this.initDatePickers();
-    this.setDefaultDates();
-    await this.loadSalesData();
-    this.initDataTable();
-    this.populateSalesFilter();
-
-    // Load filter from URL or set default
-    this.loadFilterFromURL();
-
-    // If no URL params, set default date
-    const params = new URLSearchParams(window.location.search);
-    if (!params.get("date")) {
-      this.setDefaultDates();
-    }
-
-    // Apply filter
-    this.filterData();
-  }
-
-  // Setup all event listeners (tetap sama)
-  setupEventListeners() {
-    const events = {
-      btnTambahTransaksi: () => (window.location.href = "penjualanAksesoris.html"),
-      btnRefreshData: () => this.refreshData(true),
-      btnPrintReceipt: () => this.printDocument("receipt"),
-      btnPrintInvoice: () => this.printDocument("invoice"),
-      btnSaveEdit: () => this.saveEditTransaction(),
-      btnConfirmDelete: () => this.confirmDeleteTransaction(),
-    };
-
-    Object.entries(events).forEach(([id, handler]) => {
-      const element = document.getElementById(id);
-      if (element) element.addEventListener("click", handler);
-    });
-
-    // Auto filter when filter inputs change
-    this.setupAutoFilter();
-
-    // Table action handlers
-    $(document)
-      .off("click", ".btn-reprint")
-      .on(
-        "click",
-        ".btn-reprint",
-        utils.debounce((e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          const id = e.target.closest("button").dataset.id;
-          if (id) this.handleReprint(id);
-        }, 300)
-      );
-
-    $(document)
-      .off("click", ".btn-edit")
-      .on(
-        "click",
-        ".btn-edit",
-        utils.debounce((e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          const id = e.target.closest("button").dataset.id;
-          if (id) this.handleEdit(id);
-        }, 300)
-      );
-
-    $(document)
-      .off("click", ".btn-delete")
-      .on(
-        "click",
-        ".btn-delete",
-        utils.debounce((e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          const id = e.target.closest("button").dataset.id;
-          if (id) this.handleDelete(id);
-        }, 300)
-      );
-  }
-
-  // Setup auto filter functionality (tetap sama)
-  setupAutoFilter() {
-    // Auto filter on date change
-    $("#filterTanggal").on("changeDate", () => {
-      this.filterData();
-    });
-
-    // Auto filter on manual date input
-    $("#filterTanggal").on("blur", () => {
-      this.filterData();
-    });
-
-    // Auto filter on dropdown change
-    $("#filterJenisPenjualan, #filterSales").on("change", () => {
-      this.filterData();
-    });
-  }
-
-  // Initialize date pickers (tetap sama)
-  initDatePickers() {
-    const today = new Date();
-
-    // Initialize single date picker
-    $("#filterTanggal")
-      .datepicker({
-        format: "dd/mm/yyyy",
-        autoclose: true,
-        language: "id",
-        todayHighlight: true,
-        endDate: today, // Tidak bisa pilih tanggal masa depan
-      })
-      .on("changeDate", () => {
-        // Trigger filter when date changes
-        setTimeout(() => this.filterData(), 100);
-      });
-
-    // Manual input validation
-    $("#filterTanggal").on("blur", (e) => {
-      const inputDate = utils.parseDate(e.target.value);
-      if (inputDate && inputDate > today) {
-        utils.showAlert("Tanggal tidak boleh melebihi hari ini", "Peringatan", "warning");
-        e.target.value = utils.formatDate(today);
-      }
-      this.filterData();
-    });
-  }
-
-  // Set default date range (tetap sama)
-  setDefaultDates() {
-    const today = new Date();
-    const todayFormatted = utils.formatDate(today);
-
-    document.getElementById("filterTanggal").value = todayFormatted;
-  }
-
-  // PERBAIKAN: Load sales data dengan cache yang lebih efisien
-  async loadSalesData(forceRefresh = false) {
-    if (this.isLoading) return;
-
-    try {
-      this.isLoading = true;
-      utils.showLoading(true);
-
-      const cacheKey = "salesData";
-      
-      // Cek apakah perlu refresh berdasarkan berbagai kondisi
-      const needsRefresh = forceRefresh || 
-                          cacheManager.shouldUpdate(cacheKey) ||
-                          this.checkForDataUpdates();
-
-      // Cek cache terlebih dahulu jika tidak perlu refresh
-      if (!needsRefresh) {
-        const cachedData = cacheManager.get(cacheKey);
-        if (cachedData && Array.isArray(cachedData)) {
-          console.log("Using cached sales data");
-          this.salesData = cachedData;
-          this.filterData();
-          return;
-        }
-      }
-
-      console.log("Fetching fresh sales data from Firestore");
-      const salesSnapshot = await getDocs(
-        query(collection(firestore, "penjualanAksesoris"), orderBy("timestamp", "desc"))
-      );
-
-      this.salesData = salesSnapshot.docs.map((doc) => {
-        const data = doc.data();
-        // Standardize jenis penjualan
-        if (data.jenisPenjualan === "gantiLock") {
-          data.jenisPenjualan = "manual";
-          data.isGantiLock = true;
-        }
-        return { id: doc.id, ...data };
-      });
-
-      // Simpan ke cache dengan TTL yang sesuai
-      cacheManager.set(cacheKey, this.salesData);
-      
-      // Update timestamp untuk tracking
-      localStorage.setItem("lastSalesUpdate", Date.now().toString());
-
-    } catch (error) {
-      console.error("Error loading sales data:", error);
-      
-      // Fallback ke cache jika ada error
-      const cachedData = cacheManager.get("salesData");
-      if (cachedData && Array.isArray(cachedData)) {
-        console.log("Fallback to cached data due to error");
-        utils.showAlert("Gagal memuat data terbaru. Menggunakan data cache.", "Peringatan", "warning");
-        this.salesData = cachedData;
-      } else {
-        utils.showAlert("Gagal memuat data penjualan: " + error.message, "Error", "error");
-        this.salesData = [];
-      }
-    } finally {
-      this.isLoading = false;
-      utils.showLoading(false);
-    }
-  }
-
-  // TAMBAHAN: Cek apakah ada update data yang memerlukan refresh
-  checkForDataUpdates() {
-    // Cek apakah ada transaksi baru yang ditambahkan
-    const lastTransactionTime = localStorage.getItem("lastTransactionTime");
-    const cacheTimestamp = localStorage.getItem(cacheManager.prefix + "salesData_meta");
-    
-    if (lastTransactionTime && cacheTimestamp) {
-      return parseInt(lastTransactionTime) > parseInt(cacheTimestamp);
-    }
-    
-    return false;
-  }
-
-  // Initialize DataTable (tetap sama)
-  initDataTable() {
-    if (this.dataTable) {
-      this.dataTable.off();
-      this.dataTable.destroy();
-      this.dataTable = null;
-    }
-
-    $("#dataPenjualanTable").empty();
-
-    this.dataTable = $("#dataPenjualanTable").DataTable({
-      data: [],
-      columns: [
-        { title: "Tanggal", width: "90px", className: "text-center" },
-        { title: "Sales", width: "80px", className: "text-center" },
-        { title: "Jenis", width: "85px", className: "text-center" },
-        { title: "Kode", width: "100px", className: "text-center" },
-        { title: "Nama", width: "180px" },
-        { title: "Jumlah", width: "60px", className: "text-center" },
-        { title: "Berat", width: "70px", className: "text-center" },
-        { title: "Kadar", width: "65px", className: "text-center" },
-        { title: "Harga", width: "110px", className: "text-end" },
-        { title: "Status", width: "90px", className: "text-center" },
-        { title: "Keterangan", width: "150px" },
-        { title: "Aksi", width: "110px", orderable: false, className: "text-center" },
-      ],
-      order: [[0, "desc"]],
-      pageLength: 25,
-      scrollX: true,
-      scrollCollapse: true,
-      fixedColumns: false,
-      autoWidth: false,
-      columnDefs: [
-        {
-          targets: "_all",
-          className: "text-nowrap",
-        },
-        {
-          targets: [10], // Kolom keterangan
-          className: "text-wrap",
-        },
-      ],
-      language: {
-        decimal: "",
-        emptyTable: "Tidak ada data yang tersedia pada tabel ini",
-        info: "Menampilkan _START_ sampai _END_ dari _TOTAL_ entri",
-        infoEmpty: "Menampilkan 0 sampai 0 dari 0 entri",
-        infoFiltered: "(disaring dari _MAX_ entri keseluruhan)",
-        infoPostFix: "",
-        thousands: ".",
-        lengthMenu: "Tampilkan _MENU_ entri",
-        loadingRecords: "Sedang memuat...",
-        processing: "Sedang memproses...",
-        search: "Cari:",
-        zeroRecords: "Tidak ditemukan data yang sesuai",
-        paginate: {
-          first: "Pertama",
-          last: "Terakhir",
-          next: "Selanjutnya",
-          previous: "Sebelumnya",
-        },
-        aria: {
-          sortAscending: ": aktifkan untuk mengurutkan kolom naik",
-          sortDescending: ": aktifkan untuk mengurutkan kolom turun",
-        },
-      },
-      responsive: false,
-      processing: true,
-      deferRender: true,
-      destroy: true,
-    });
-  }
-
-  // Filter data based on form inputs (tetap sama)
-  filterData() {
-    const filters = {
-      selectedDate: utils.parseDate(document.getElementById("filterTanggal").value),
-      jenis: document.getElementById("filterJenisPenjualan").value,
-      sales: document.getElementById("filterSales").value,
-    };
-
-    // PERBAIKAN: Jika tidak ada tanggal, tampilkan data kosong
-    if (!filters.selectedDate) {
-      this.filteredData = []; // UBAH dari [...this.salesData] ke []
-      this.updateDataTable();
-      this.updateSummary();
-      return; // Early return
-    }
-
-    // Set tanggal ke awal dan akhir hari
-    const startOfDay = new Date(filters.selectedDate);
-    startOfDay.setHours(0, 0, 0, 0);
-    const endOfDay = new Date(filters.selectedDate);
-    endOfDay.setHours(23, 59, 59, 999);
-
-    this.filteredData = this.salesData.filter((transaction) => {
-      const transactionDate = transaction.timestamp
-        ? transaction.timestamp.toDate()
-        : utils.parseDate(transaction.tanggal);
-
-      if (!transactionDate) return false;
-
-      // Date filter - hanya untuk hari yang dipilih
-      if (transactionDate < startOfDay || transactionDate > endOfDay) return false;
-
-      // Jenis filter
-      if (filters.jenis !== "all" && transaction.jenisPenjualan !== filters.jenis) return false;
-
-      // Sales filter
-      if (filters.sales !== "all" && transaction.sales !== filters.sales) return false;
-
-      return true;
-    });
-
-    this.updateDataTable();
-    this.updateSummary();
-    this.updateURLParams(filters);
-  }
-
-  // Update URL parameters to maintain filter state (tetap sama)
-  updateURLParams(filters) {
-    const params = new URLSearchParams();
-
-    if (filters.selectedDate) {
-      params.set("date", document.getElementById("filterTanggal").value);
-    }
-    if (filters.jenis !== "all") {
-      params.set("jenis", filters.jenis);
-    }
-    if (filters.sales !== "all") {
-      params.set("sales", filters.sales);
-    }
-
-    // Update URL without page reload
-    const newURL = params.toString() ? `${window.location.pathname}?${params.toString()}` : window.location.pathname;
-    window.history.replaceState({}, "", newURL);
-  }
-
-  // Load filter state from URL parameters (tetap sama)
-  loadFilterFromURL() {
-    const params = new URLSearchParams(window.location.search);
-
-    if (params.get("date")) {
-      document.getElementById("filterTanggal").value = params.get("date");
-    }
-    if (params.get("jenis")) {
-      document.getElementById("filterJenisPenjualan").value = params.get("jenis");
-    }
-    if (params.get("sales")) {
-      document.getElementById("filterSales").value = params.get("sales");
-    }
-  }
-
-  // Update DataTable with filtered data (tetap sama)
-  updateDataTable() {
-    const tableData = this.prepareTableData();
-
-    if (this.dataTable) {
-      this.dataTable.clear().rows.add(tableData).draw();
-    }
-  }
-
-  // Prepare data for DataTable (tetap sama)
-  prepareTableData() {
-    const tableData = [];
-    this.filteredData.forEach((transaction) => {
-      const baseData = {
-        date: utils.formatDate(transaction.timestamp || transaction.tanggal),
-        sales: transaction.sales || "Admin",
-        jenis: this.formatJenisPenjualan(transaction),
-        status: this.getStatusBadge(transaction),
-        actions: this.getActionButtons(transaction.id),
-      };
-
-      if (transaction.items?.length > 0) {
-        transaction.items.forEach((item) => {
-          tableData.push([
-            baseData.date,
-            baseData.sales,
-            baseData.jenis,
-            item.kodeText || item.barcode || "-",
-            item.nama || "-",
-            item.jumlah || 1,
-            item.berat ? `${item.berat} gr` : "-",
-            item.kadar || "-",
-            `Rp ${utils.formatRupiah(item.totalHarga || 0)}`,
-            baseData.status,
-            item.keterangan || transaction.keterangan || "-",
-            baseData.actions,
-          ]);
-        });
-      } else {
-        tableData.push([
-          baseData.date,
-          baseData.sales,
-          baseData.jenis,
-          "-",
-          "-",
-          "-",
-          "-",
-          "-",
-          `Rp ${utils.formatRupiah(transaction.totalHarga || 0)}`,
-          baseData.status,
-          transaction.keterangan || "-",
-          baseData.actions,
-        ]);
-      }
-    });
-    return tableData;
-  }
-
-  // Format jenis penjualan (tetap sama)
-  formatJenisPenjualan(transaction) {
-    if (transaction.isGantiLock || transaction.jenisPenjualan === "gantiLock") {
-      const kodeAksesoris = transaction.items?.find((item) => item.kodeLock)?.kodeLock || "";
-      return kodeAksesoris ? `Manual<br><small>(${kodeAksesoris})</small>` : "Manual";
-    }
-
-    if (transaction.jenisPenjualan === "manual") {
-      const kodeAksesoris = transaction.items?.find((item) => item.kodeLock)?.kodeLock;
-      return kodeAksesoris ? `Manual<br><small>(${kodeAksesoris})</small>` : "Manual";
-    }
-
-    const jenis = transaction.jenisPenjualan || "Tidak diketahui";
-    return jenis.charAt(0).toUpperCase() + jenis.slice(1);
-  }
-
-  // Get status badge HTML (tetap sama)
-  getStatusBadge(transaction) {
-    const status = transaction.statusPembayaran || "Lunas";
-
-    const badges = {
-      DP: `<span class="badge bg-warning">DP: Rp ${utils.formatRupiah(transaction.nominalDP)}</span>
-             <br><small>Sisa: Rp ${utils.formatRupiah(transaction.sisaPembayaran)}</small>`,
-      Lunas: `<span class="badge bg-success">Lunas</span>`,
-      Free: `<span class="badge bg-info">Gratis</span>`,
-    };
-    return badges[status] || `<span class="badge bg-secondary">${status}</span>`;
-  }
-
-  // Get action buttons HTML (tetap sama)
-  getActionButtons(transactionId) {
-    return `
-    <div class="action-buttons">
-      <button class="btn btn-sm btn-warning btn-reprint" data-id="${transactionId}" title="Cetak Ulang">
-        <i class="fas fa-print"></i>
-      </button>
-      <button class="btn btn-sm btn-primary btn-edit" data-id="${transactionId}" title="Edit">
-        <i class="fas fa-edit"></i>
-      </button>
-      <button class="btn btn-sm btn-danger btn-delete" data-id="${transactionId}" title="Hapus">
-        <i class="fas fa-trash-alt"></i>
-      </button>
-    </div>
-  `;
-  }
-
-  // Update summary cards (tetap sama)
-  updateSummary() {
-    const totalTransaksi = this.filteredData.length;
-    const totalPendapatan = this.calculateTotalRevenue(this.filteredData);
-
-    document.getElementById("totalTransaksi").textContent = totalTransaksi;
-    document.getElementById("totalPendapatan").textContent = `Rp ${utils.formatRupiah(totalPendapatan)}`;
-  }
-
-  // Helper function to calculate actual revenue (tetap sama)
-  calculateActualRevenue(transaction) {
-    if (transaction.metodeBayar === "free" || transaction.statusPembayaran === "Free") {
-      return 0;
-    }
-
-    // Untuk transaksi manual dengan DP, hitung sisa pembayaran
-    if (
-      transaction.jenisPenjualan === "manual" &&
-      (transaction.metodeBayar === "dp" || transaction.statusPembayaran === "DP")
-    ) {
-      return transaction.sisaPembayaran || 0;
-    }
-
-    // For completed transactions, return full amount
-    return transaction.totalHarga || 0;
-  }
-
-  // Calculate total revenue (tetap sama)
-  calculateTotalRevenue(transactions) {
-    return transactions.reduce((total, transaction) => {
-      return total + this.calculateActualRevenue(transaction);
-    }, 0);
-  }
-
-  // Populate sales filter dropdown (tetap sama)
-  populateSalesFilter() {
-    const salesPersons = [...new Set(this.salesData.map((item) => item.sales).filter(Boolean))];
-    const dropdown = document.getElementById("filterSales");
-
-    // Clear existing options except first one
-    while (dropdown.options.length > 1) {
-      dropdown.remove(1);
-    }
-
-    salesPersons.forEach((person) => {
-      const option = new Option(person, person);
-      dropdown.add(option);
-    });
-  }
-
-  // Handle reprint action (tetap sama)
-  handleReprint(transactionId) {
-    this.currentTransaction = this.salesData.find((t) => t.id === transactionId);
-    if (!this.currentTransaction) {
-      return utils.showAlert("Transaksi tidak ditemukan", "Error", "error");
-    }
-    $("#printModal").modal("show");
-  }
-
-  // Handle edit action (tetap sama)
-  handleEdit(transactionId) {
-    this.currentTransaction = this.salesData.find((t) => t.id === transactionId);
-    if (!this.currentTransaction) {
-      return utils.showAlert("Transaksi tidak ditemukan", "Error", "error");
-    }
-    this.showEditModal();
-  }
-
-  // Handle delete action (tetap sama)
-  handleDelete(transactionId) {
-    this.currentTransaction = this.salesData.find((t) => t.id === transactionId);
-    if (!this.currentTransaction) {
-      return utils.showAlert("Transaksi tidak ditemukan", "Error", "error");
-    }
-    this.showDeleteModal();
-  }
-
-  // Show edit modal (tetap sama)
-  showEditModal() {
-    const transaction = this.currentTransaction;
-    const jenisPenjualan = transaction.jenisPenjualan;
-
-    const formHtml = this.generateEditForm(transaction, jenisPenjualan);
-    document.getElementById("editModalBody").innerHTML = formHtml;
-
-    // Attach form events
-    this.attachEditFormEvents(transaction);
-
-    $("#editModal").modal("show");
-  }
-
-  // Generate edit form HTML (tetap sama)
-  generateEditForm(transaction, jenisPenjualan) {
-    let formHtml = `
-      <div class="mb-3">
-        <label for="editSales" class="form-label">Sales:</label>
-        <input type="text" class="form-control" id="editSales" value="${transaction.sales || ""}">
-      </div>
-    `;
-
-    if (transaction.items && transaction.items.length > 0) {
-      formHtml += `<div class="mb-3"><label class="form-label">Detail Barang:</label></div>`;
-
-      transaction.items.forEach((item, index) => {
-        formHtml += `
-          <div class="border p-3 mb-3 rounded">
-            <h6>Item ${index + 1}</h6>
-            <div class="row">
-              <div class="col-md-6">
-                <label for="editNama_${index}" class="form-label">Nama Barang:</label>
-                <input type="text" class="form-control" id="editNama_${index}" value="${item.nama || ""}">
-              </div>
-              ${
-                jenisPenjualan !== "kotak"
-                  ? `
-                <div class="col-md-6">
-                  <label for="editKadar_${index}" class="form-label">Kadar:</label>
-                  <input type="text" class="form-control" id="editKadar_${index}" value="${item.kadar || ""}">
-                </div>
-              `
-                  : ""
-              }
-            </div>
-            ${
-              jenisPenjualan !== "kotak"
-                ? `
-              <div class="row mt-2">
-                <div class="col-md-6">
-                  <label for="editBerat_${index}" class="form-label">Berat (gr):</label>
-                  <input type="text" class="form-control" id="editBerat_${index}" value="${item.berat || ""}">
-                </div>
-                <div class="col-md-6">
-                  <label for="editHarga_${index}" class="form-label">Harga:</label>
-                  <input type="text" class="form-control" id="editHarga_${index}" value="${utils.formatRupiah(
-                    item.totalHarga || 0
-                  )}">
-                </div>
-              </div>
-            `
-                : `
-              <div class="row mt-2">
-                <div class="col-md-12">
-                  <label for="editHarga_${index}" class="form-label">Harga:</label>
-                  <input type="text" class="form-control" id="editHarga_${index}" value="${utils.formatRupiah(
-                    item.totalHarga || 0
-                  )}">
-                </div>
-              </div>
-            `
+      Object.keys(sessionStorage)
+        .filter(key => key.startsWith(this.prefix))
+        .forEach(key => {
+          try {
+            const item = JSON.parse(sessionStorage.getItem(key));
+            if (item && now - item.timestamp > item.ttl) {
+              sessionStorage.removeItem(key);
             }
-            ${
-              jenisPenjualan === "manual"
-                ? `
-              <div class="row mt-2">
-                <div class="col-md-12">
-                  <label for="editKeterangan_${index}" class="form-label">Keterangan:</label>
-                  <textarea class="form-control" id="editKeterangan_${index}" rows="2">${
-                    item.keterangan || ""
-                  }</textarea>
-                </div>
-              </div>
-            `
-                : ""
-            }
-          </div>
-        `;
-      });
-    }
-
-    return formHtml;
-  }
-
-  // Attach edit form events (tetap sama)
-  attachEditFormEvents(transaction) {
-    if (transaction.items) {
-      transaction.items.forEach((item, index) => {
-        const hargaInput = document.getElementById(`editHarga_${index}`);
-        if (hargaInput) {
-          hargaInput.addEventListener("blur", () => {
-            const value = hargaInput.value.replace(/\./g, "");
-            hargaInput.value = utils.formatRupiah(parseInt(value || 0));
-          });
-        }
-      });
-    }
-  }
-
-  // PERBAIKAN: Save edit transaction dengan cache invalidation
-  async saveEditTransaction() {
-    try {
-      utils.showLoading(true);
-
-      const updateData = {
-        sales: document.getElementById("editSales").value.trim(),
-        lastUpdated: serverTimestamp(),
-      };
-
-      if (this.currentTransaction.items && this.currentTransaction.items.length > 0) {
-        updateData.items = this.currentTransaction.items.map((item, index) => {
-          const updatedItem = { ...item };
-
-          updatedItem.nama = document.getElementById(`editNama_${index}`)?.value || item.nama;
-
-          if (this.currentTransaction.jenisPenjualan !== "kotak") {
-            updatedItem.kadar = document.getElementById(`editKadar_${index}`)?.value || item.kadar;
-            updatedItem.berat = document.getElementById(`editBerat_${index}`)?.value || item.berat;
+          } catch (error) {
+            sessionStorage.removeItem(key);
           }
-
-          if (this.currentTransaction.jenisPenjualan === "manual") {
-            updatedItem.keterangan = document.getElementById(`editKeterangan_${index}`)?.value || item.keterangan;
-          }
-
-          const hargaValue = document.getElementById(`editHarga_${index}`)?.value.replace(/\./g, "") || "0";
-          updatedItem.totalHarga = parseInt(hargaValue);
-
-          return updatedItem;
         });
-
-        updateData.totalHarga = updateData.items.reduce((sum, item) => sum + (item.totalHarga || 0), 0);
-      }
-
-      // Update in Firestore
-      await updateDoc(doc(firestore, "penjualanAksesoris", this.currentTransaction.id), updateData);
-
-      // Update local data
-      this.updateLocalData(this.currentTransaction.id, updateData);
-
-      // PERBAIKAN: Invalidate cache setelah update
-      cacheManager.clear();
-      localStorage.setItem("lastTransactionTime", Date.now().toString());
-
-      $("#editModal").modal("hide");
-      utils.showAlert("Transaksi berhasil diperbarui", "Sukses", "success");
     } catch (error) {
-      console.error("Error updating transaction:", error);
-      utils.showAlert("Terjadi kesalahan saat memperbarui transaksi: " + error.message, "Error", "error");
-    } finally {
-      utils.showLoading(false);
+      console.warn('Clear old shared cache failed:', error);
     }
-  }
-
-  // Update local data (tetap sama)
-  updateLocalData(transactionId, updateData) {
-    // Update salesData
-    const salesIndex = this.salesData.findIndex((item) => item.id === transactionId);
-    if (salesIndex !== -1) {
-      this.salesData[salesIndex] = { ...this.salesData[salesIndex], ...updateData };
-      delete this.salesData[salesIndex].lastUpdated;
-    }
-
-    // Update filteredData
-    const filteredIndex = this.filteredData.findIndex((item) => item.id === transactionId);
-    if (filteredIndex !== -1) {
-      this.filteredData[filteredIndex] = { ...this.filteredData[filteredIndex], ...updateData };
-      delete this.filteredData[filteredIndex].lastUpdated;
-    }
-
-    // Re-render table
-    this.updateDataTable();
-    this.updateSummary();
-  }
-
-  // Show delete modal (tetap sama)
-  showDeleteModal() {
-    const transaction = this.currentTransaction;
-    const date = utils.formatDate(transaction.timestamp || transaction.tanggal);
-
-    document.getElementById("deleteTransactionInfo").innerHTML = `
-    <div class="text-start">
-      <p><strong>Tanggal:</strong> ${date}</p>
-      <p><strong>Sales:</strong> ${transaction.sales || "Admin"}</p>
-      <p><strong>Total Harga:</strong> Rp ${utils.formatRupiah(transaction.totalHarga || 0)}</p>
-    </div>
-  `;
-
-    // Clear password field
-    const passwordInput = document.getElementById("deleteVerificationPassword");
-    if (passwordInput) {
-      passwordInput.value = "";
-    }
-
-    $("#deleteModal").modal("show");
-  }
-
-  // PERBAIKAN: Confirm delete transaction dengan cache invalidation
-  async confirmDeleteTransaction() {
-    const password = document.getElementById("deleteVerificationPassword").value;
-
-    if (!password) {
-      return utils.showAlert("Masukkan kata sandi verifikasi terlebih dahulu.", "Peringatan", "warning");
-    }
-
-    if (password !== VERIFICATION_PASSWORD) {
-      return utils.showAlert("Kata sandi verifikasi salah.", "Error", "error");
-    }
-
-    try {
-      utils.showLoading(true);
-
-      await deleteDoc(doc(firestore, "penjualanAksesoris", this.currentTransaction.id));
-
-      // Remove from local arrays
-      this.salesData = this.salesData.filter((item) => item.id !== this.currentTransaction.id);
-      this.filteredData = this.filteredData.filter((item) => item.id !== this.currentTransaction.id);
-
-      // PERBAIKAN: Invalidate cache setelah delete
-      cacheManager.clear();
-      localStorage.setItem("lastTransactionTime", Date.now().toString());
-
-      this.updateDataTable();
-      this.updateSummary();
-
-      $("#deleteModal").modal("hide");
-      utils.showAlert("Transaksi berhasil dihapus", "Sukses", "success");
-    } catch (error) {
-      console.error("Error deleting transaction:", error);
-      utils.showAlert("Terjadi kesalahan saat menghapus transaksi: " + error.message, "Error", "error");
-    } finally {
-      utils.showLoading(false);
-    }
-  }
-
-  // Print document (receipt or invoice) (tetap sama)
-  printDocument(type) {
-    if (!this.currentTransaction) {
-      return utils.showAlert("Tidak ada data transaksi untuk dicetak!");
-    }
-
-    const transaction = this.currentTransaction;
-    const printWindow = window.open("", "_blank");
-
-    if (!printWindow) {
-      return utils.showAlert("Popup diblokir oleh browser. Mohon izinkan popup untuk mencetak.", "Error", "error");
-    }
-
-    const html = type === "receipt" ? this.generateReceiptHTML(transaction) : this.generateInvoiceHTML(transaction);
-
-    printWindow.document.write(html);
-    printWindow.document.close();
-  }
-
-  // Generate receipt HTML (tetap sama)
-  generateReceiptHTML(transaction) {
-    const tanggal = utils.formatDate(transaction.timestamp || transaction.tanggal);
-    let salesType = transaction.jenisPenjualan || "aksesoris";
-    if (salesType === "manual") salesType = "layanan";
-
-    let receiptHTML = `
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <title>Struk Kasir</title>
-        <style>
-          body { font-family: Roboto; font-size: 14px; margin: 0; padding: 0; width: 80mm; }
-          .receipt { margin: 0 auto; padding: 5mm; }
-          .receipt h3, .receipt h4 { text-align: center; margin: 2mm 0; }
-          .receipt hr { border-top: 1px dashed #000; }
-          .receipt table { width: 100%; border-collapse: collapse; }
-          .receipt th, .receipt td { text-align: left; padding: 1mm 2mm; }
-          .tanggal {margin-left: 10px}
-          .text-center { text-align: center; }
-          .text-right { text-align: right; }
-          .keterangan { font-style: italic; font-size: 10px; margin-top: 2mm; border-top: 1px dotted #000; padding-top: 2mm; }
-          .payment-info { margin-top: 2mm; border-top: 1px dotted #000; padding-top: 2mm; }
-        </style>
-      </head>
-      <body>
-        <div class="receipt">
-          <h3>MELATI 3</h3>
-          <h4>JL. DIPONEGORO NO. 116</h4>
-          <h4>NOTA PENJUALAN ${salesType.toUpperCase()}</h4>
-          <hr>
-          <p class="tanggal">Tanggal: ${tanggal}<br>Sales: ${transaction.sales || "-"}</p>
-          <hr>
-          <table>
-            <tr>
-              <th>Kode</th>
-              <th>Nama</th>
-              <th>Kadar</th>
-              <th>Gr</th>
-              <th>Harga</th>
-            </tr>
-    `;
-
-    let hasKeterangan = false;
-    let keteranganText = "";
-
-    transaction.items?.forEach((item) => {
-      const itemHarga = parseInt(item.totalHarga || 0);
-      receiptHTML += `
-        <tr>
-          <td>${item.kodeText || "-"}</td>
-          <td>${item.nama || "-"}</td>
-          <td>${item.kadar || "-"}</td>
-          <td>${item.berat || "-"}</td>
-          <td class="text-right">${utils.formatRupiah(itemHarga)}</td>
-        </tr>
-      `;
-
-      if (item.keterangan && item.keterangan.trim() !== "") {
-        hasKeterangan = true;
-        keteranganText += item.keterangan + " ";
-      }
-    });
-
-    const totalHarga = parseInt(transaction.totalHarga || 0);
-    receiptHTML += `
-            <tr>
-              <td colspan="4" class="text-right"><strong>Total:</strong></td>
-              <td class="text-right"><strong>${utils.formatRupiah(totalHarga)}</strong></td>
-            </tr>
-          </table>
-    `;
-
-    // Add DP information if applicable
-    if (transaction.metodeBayar === "dp" || transaction.statusPembayaran === "DP") {
-      const dpAmount = parseInt(transaction.nominalDP || 0);
-      const remainingAmount = parseInt(transaction.sisaPembayaran || 0);
-
-      receiptHTML += `
-        <div class="payment-info">
-          <table>
-            <tr>
-              <td>Total Harga:</td>
-              <td class="text-right">${utils.formatRupiah(totalHarga)}</td>
-            </tr>
-            <tr>
-              <td>DP:</td>
-              <td class="text-right">${utils.formatRupiah(dpAmount)}</td>
-            </tr>
-            <tr>
-              <td><strong>SISA:</strong></td>
-              <td class="text-right"><strong>${utils.formatRupiah(remainingAmount)}</strong></td>
-            </tr>
-          </table>
-        </div>
-      `;
-    }
-
-    if (hasKeterangan && transaction.jenisPenjualan === "manual") {
-      receiptHTML += `
-        <div class="keterangan">
-          <strong>Keterangan:</strong> ${keteranganText.trim()}
-        </div>
-      `;
-    }
-
-    receiptHTML += `
-          <hr>
-          <p class="text-center">Terima Kasih<br>Atas Kunjungan Anda</p>
-        </div>
-        <script>
-          window.onload = function() {
-            window.print();
-            setTimeout(function() { window.close(); }, 500);
-          };
-        </script>
-      </body>
-      </html>
-    `;
-
-    return receiptHTML;
-  }
-
-  // Generate invoice HTML (tetap sama)
-  generateInvoiceHTML(transaction) {
-    const tanggal = utils.formatDate(transaction.timestamp || transaction.tanggal);
-
-    let invoiceHTML = `
-    <!DOCTYPE html>
-    <html>
-    <head>
-      <title>Invoice Customer</title>
-      <style>
-        @page { size: 10cm 20cm; margin: 0; }
-        body { font-family: Arial, sans-serif; font-size: 12px; margin: 0; padding: 5mm; width: 20cm; box-sizing: border-box; }
-        .invoice { width: 100%; }
-        .header-info { text-align: right; margin-bottom: 2cm; margin-right: 3cm; margin-top: 0.8cm; }
-        .total-row { margin-top: 0.7cm; text-align: right; font-weight: bold; margin-right: 3cm; }
-        .sales { text-align: right; margin-top: 0.6cm; margin-right: 2cm; }
-                .keterangan { font-style: italic; font-size: 10px; margin-top: 1cm; margin-bottom: 0.5cm; padding-top: 2mm; text-align: left; margin-left: 0.5cm; margin-right: 3cm; }
-        .keterangan-spacer { height: 1.6cm; }
-        .item-details { display: flex; flex-wrap: wrap; }
-        .item-data { display: grid; grid-template-columns: 2cm 1.8cm 5cm 2cm 2cm 2cm; width: 100%; column-gap: 0.2cm; margin-left: 0.5cm; margin-top: 1cm; margin-right: 3cm; }
-        .item-data span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-      </style>
-    </head>
-    <body>
-      <div class="invoice">
-        <div class="header-info">
-          <p>${tanggal}</p>
-        </div>
-        <hr>
-  `;
-
-    let hasKeterangan = false;
-    let keteranganText = "";
-    let totalHarga = 0;
-
-    // Loop untuk menampilkan semua item-data terlebih dahulu
-    transaction.items?.forEach((item) => {
-      const itemHarga = parseInt(item.totalHarga || 0);
-      totalHarga += itemHarga;
-
-      invoiceHTML += `
-      <div class="item-details">
-        <div class="item-data">
-          <span>${item.kodeText || "-"}</span>
-          <span>${item.jumlah || "1"}pcs</span>
-          <span>${item.nama || "-"}</span>
-          <span>${item.kadar || "-"}</span>
-          <span>${item.berat || "-"}gr</span>
-          <span>${utils.formatRupiah(itemHarga)}</span>
-        </div>
-      </div>
-    `;
-
-      // Kumpulkan keterangan
-      if (item.keterangan && item.keterangan.trim() !== "") {
-        hasKeterangan = true;
-        keteranganText += `${item.keterangan}; `;
-      }
-    });
-
-    // Tampilkan keterangan atau spacer untuk menjaga posisi total-row
-    if (hasKeterangan && transaction.jenisPenjualan === "manual") {
-      invoiceHTML += `
-      <div class="keterangan">
-        <strong>Keterangan:</strong><br>
-        ${keteranganText.trim()}
-      </div>
-    `;
-    } else {
-      // Tambahkan spacer jika tidak ada keterangan untuk menjaga posisi total-row
-      invoiceHTML += `
-      <div class="keterangan-spacer"></div>
-    `;
-    }
-
-    // Tampilkan total dan sales
-    invoiceHTML += `
-      <div class="total-row">
-        Rp ${utils.formatRupiah(totalHarga)}
-      </div>
-      <div class="sales">${transaction.sales || "-"}</div>
-  `;
-
-    invoiceHTML += `
-      </div>
-      <script>
-        window.onload = function() {
-          window.print();
-          setTimeout(function() { window.close(); }, 500);
-        };
-      </script>
-    </body>
-    </html>
-  `;
-
-    return invoiceHTML;
-  }
-
-  // PERBAIKAN: Refresh data dengan cache management yang lebih baik
-  async refreshData(forceRefresh = false) {
-    // Clear cache sebelum refresh untuk memastikan data terbaru
-    if (forceRefresh) {
-      cacheManager.clear();
-    }
-    
-    await this.loadSalesData(forceRefresh);
-    this.populateSalesFilter();
-    utils.showAlert("Data berhasil diperbarui", "Sukses", "success");
   }
 }
 
-// PERBAIKAN: Initialize application dengan cache cleanup
-$(document).ready(async function () {
-  // Bersihkan cache lama saat aplikasi dimulai
-  cacheManager.clearOldCache();
-  
-  // Initialize the application
-  const app = new DataPenjualanApp();
-  await app.init();
+// Create shared cache instance
+const sharedCacheManager = new SharedCacheManager();
 
-  // PERBAIKAN: Auto-refresh yang lebih efisien - hanya jika diperlukan
-  setInterval(() => {
-    // Hanya refresh jika cache sudah expired atau ada indikasi data baru
-    const needsRefresh = cacheManager.shouldUpdate("salesData") || 
-                        app.checkForDataUpdates();
+/**
+ * Utility functions for backward compatibility
+ */
+const maintenanceUtils = {
+  showAlert: (message, type = 'info') => {
+    return Swal.fire({
+      title: type === 'error' ? 'Error' : type === 'success' ? 'Berhasil' : 'Informasi',
+      text: message,
+      icon: type,
+      confirmButtonText: 'OK'
+    });
+  },
+
+  showConfirm: (message, title = 'Konfirmasi') => {
+    return Swal.fire({
+      title: title,
+      text: message,
+      icon: 'question',
+      showCancelButton: true,
+      confirmButtonText: 'Ya',
+      cancelButtonText: 'Batal'
+    }).then(result => result.isConfirmed);
+  },
+
+  formatDate: (date) => {
+    if (!date) return '';
+    try {
+      const d = date.toDate ? date.toDate() : date instanceof Date ? date : new Date(date);
+      const day = String(d.getDate()).padStart(2, '0');
+      const month = String(d.getMonth() + 1).padStart(2, '0');
+      const year = d.getFullYear();
+      return `${day}/${month}/${year}`;
+    } catch (error) {
+      console.error('Error formatting date:', error);
+      return '';
+    }
+  }
+};
+
+/**
+ * Performance monitoring for maintenance operations
+ */
+const MaintenancePerformance = {
+  operations: new Map(),
+
+  start: (operationName) => {
+    const startTime = performance.now();
+    MaintenancePerformance.operations.set(operationName, {
+      startTime,
+      endTime: null,
+      duration: null
+    });
+    console.log(`Started monitoring: ${operationName}`);
+  },
+
+  end: (operationName) => {
+    const operation = MaintenancePerformance.operations.get(operationName);
+    if (operation) {
+      const endTime = performance.now();
+      const duration = endTime - operation.startTime;
+      
+      operation.endTime = endTime;
+      operation.duration = duration;
+      
+      console.log(`Completed: ${operationName} in ${(duration / 1000).toFixed(2)} seconds`);
+      
+      if (duration > 30000) {
+        console.warn(`Slow operation detected: ${operationName} took ${(duration / 1000).toFixed(2)} seconds`);
+      }
+    }
+  },
+
+  getSummary: () => {
+    const summary = {};
+    MaintenancePerformance.operations.forEach((operation, name) => {
+      if (operation.duration !== null) {
+        summary[name] = {
+          duration: operation.duration,
+          durationSeconds: (operation.duration / 1000).toFixed(2)
+        };
+      }
+    });
+    return summary;
+  },
+
+  clear: () => {
+    MaintenancePerformance.operations.clear();
+  }
+};
+
+/**
+ * Enhanced error handling and recovery
+ */
+const MaintenanceErrorHandler = {
+  handleBatchError: async (error, operation, retryCount = 0) => {
+    console.error(`Batch operation error in ${operation}:`, error);
     
-    if (needsRefresh) {
-      app.refreshData();
+    const maxRetries = 3;
+    const retryDelay = Math.pow(2, retryCount) * 1000;
+    
+    if (retryCount < maxRetries && error.code !== 'permission-denied') {
+      console.log(`Retrying ${operation} in ${retryDelay}ms (attempt ${retryCount + 1}/${maxRetries})`);
+      
+      await new Promise(resolve => setTimeout(resolve, retryDelay));
+      return { shouldRetry: true, retryCount: retryCount + 1 };
     }
-  }, 5 * 60 * 1000); // Check setiap 5 menit
+    
+    return { shouldRetry: false, error };
+  },
 
-  // PERBAIKAN: Clear cache yang lebih selektif saat page unload
-  window.addEventListener("beforeunload", () => {
-    // Hanya clear cache yang sudah expired
-    const now = Date.now();
-    Object.keys(localStorage)
-      .filter(key => key.startsWith(cacheManager.prefix))
-      .forEach(key => {
-        try {
-          const item = JSON.parse(localStorage.getItem(key));
-          if (item && item.timestamp && (now - item.timestamp) > item.ttl) {
-            localStorage.removeItem(key);
+  handleQuotaError: (error) => {
+    if (error.code === 'resource-exhausted') {
+      return {
+        message: 'Kuota Firestore terlampaui. Coba lagi nanti atau hubungi administrator.',
+        suggestion: 'Pertimbangkan untuk mengurangi ukuran batch atau menjalankan operasi di luar jam sibuk.'
+      };
+    }
+    return null;
+  },
+
+  handleNetworkError: (error) => {
+    if (error.code === 'unavailable' || error.message.includes('network')) {
+      return {
+        message: 'Koneksi jaringan bermasalah. Periksa koneksi internet Anda.',
+        suggestion: 'Coba lagi setelah koneksi stabil.'
+      };
+    }
+    return null;
+  }
+};
+
+/**
+ * Additional utility functions for maintenance operations
+ */
+const MaintenanceHelpers = {
+  validateMonthInput: (monthStr) => {
+    if (!monthStr) return false;
+    const regex = /^\d{4}-\d{2}$/;
+    return regex.test(monthStr);
+  },
+
+  getMonthRange: (monthStr) => {
+    const [year, month] = monthStr.split('-');
+    const startDate = new Date(parseInt(year), parseInt(month) - 1, 1);
+    const endDate = new Date(parseInt(year), parseInt(month), 1);
+    return { startDate, endDate };
+  },
+
+  estimateStorageSize: (docs) => {
+    let totalSize = 0;
+    docs.forEach(doc => {
+      const dataStr = JSON.stringify(doc.data());
+      totalSize += new Blob([dataStr]).size;
+    });
+    return totalSize;
+  },
+
+  formatFileSize: (bytes) => {
+    if (bytes === 0) return '0 Bytes';
+    const k = 1024;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+  },
+
+  generateBackupFilename: (collectionName, type = 'backup') => {
+    const now = new Date();
+    const timestamp = now.toISOString().slice(0, 19).replace(/:/g, '-');
+    return `${collectionName}_${type}_${timestamp}`;
+  },
+
+  validateFirebaseConnection: async () => {
+    try {
+      const testQuery = query(
+        collection(firestore, 'stokAksesoris'),
+        orderBy('__name__'),
+        limit(1)
+      );
+      await getDocs(testQuery);
+      return true;
+    } catch (error) {
+      console.error('Firebase connection test failed:', error);
+      return false;
+    }
+  },
+
+  createMaintenanceLog: (operation, details, status = 'success') => {
+    const logEntry = {
+      timestamp: new Date().toISOString(),
+      operation: operation,
+      details: details,
+      status: status,
+      user: 'maintenance_system'
+    };
+
+    const logKey = `maintenance_log_${Date.now()}`;
+    try {
+      sessionStorage.setItem(logKey, JSON.stringify(logEntry));
+    } catch (error) {
+      console.warn('Could not store maintenance log:', error);
+    }
+
+    return logEntry;
+  },
+
+  getMaintenanceHistory: () => {
+    const logs = [];
+    try {
+      Object.keys(sessionStorage)
+        .filter(key => key.startsWith('maintenance_log_'))
+        .forEach(key => {
+          try {
+            const log = JSON.parse(sessionStorage.getItem(key));
+            logs.push(log);
+          } catch (error) {
+            console.warn('Invalid maintenance log entry:', key);
           }
-        } catch (error) {
-          // Jika ada error parsing, hapus item tersebut
-          localStorage.removeItem(key);
-        }
-      });
-  });
-
-  // TAMBAHAN: Event listener untuk mendeteksi perubahan data dari tab lain
-  window.addEventListener("storage", (e) => {
-    if (e.key === "lastTransactionTime") {
-      // Ada transaksi baru dari tab lain, refresh data
-      app.refreshData(true);
+        });
+    } catch (error) {
+      console.warn('Could not retrieve maintenance history:', error);
     }
-  });
 
-  console.log("Data Penjualan application initialized with improved cache management");
+    return logs.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+  },
+
+  clearOldMaintenanceLogs: () => {
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+
+    try {
+      Object.keys(sessionStorage)
+        .filter(key => key.startsWith('maintenance_log_'))
+        .forEach(key => {
+          try {
+            const log = JSON.parse(sessionStorage.getItem(key));
+            const logDate = new Date(log.timestamp);
+            if (logDate < thirtyDaysAgo) {
+              sessionStorage.removeItem(key);
+            }
+          } catch (error) {
+            sessionStorage.removeItem(key);
+          }
+        });
+    } catch (error) {
+      console.warn('Could not clear old maintenance logs:', error);
+    }
+  }
+};
+
+// Initialize maintenance system when document is ready
+let maintenanceSystem;
+
+document.addEventListener('DOMContentLoaded', async function() {
+  try {
+    console.log('Initializing maintenance system...');
+    maintenanceSystem = new MaintenanceSystem();
+  } catch (error) {
+    console.error('Error initializing maintenance system:', error);
+    maintenanceUtils.showAlert('Gagal menginisialisasi sistem maintenance: ' + error.message, 'error');
+  }
+});
+
+// Cleanup when page unloads
+window.addEventListener('beforeunload', () => {
+  if (maintenanceSystem) {
+    maintenanceSystem.cleanup();
+  }
+});
+
+// Handle visibility change to refresh status when tab becomes active
+document.addEventListener('visibilitychange', async () => {
+  if (!document.hidden && maintenanceSystem) {
+    try {
+      // Only refresh if cache is stale
+      if (maintenanceSystem.cache.shouldRefresh('database_status')) {
+        await maintenanceSystem.loadDatabaseStatus();
+      }
+    } catch (error) {
+      console.warn('Failed to refresh database status:', error);
+    }
+  }
 });
 
 // Export for potential use in other modules
-export default DataPenjualanApp;
+window.maintenanceSystem = maintenanceSystem;
+window.maintenanceUtils = maintenanceUtils;
+window.sharedCacheManager = sharedCacheManager;
+window.MaintenanceHelpers = MaintenanceHelpers;
+window.MaintenanceErrorHandler = MaintenanceErrorHandler;
+window.MaintenancePerformance = MaintenancePerformance;
 
+// Auto-refresh database status every 5 minutes with cache check
+setInterval(async () => {
+  if (maintenanceSystem && !document.hidden && !maintenanceSystem.isLoading) {
+    try {
+      // Only refresh if cache is stale
+      if (maintenanceSystem.cache.shouldRefresh('database_status')) {
+        await maintenanceSystem.loadDatabaseStatus();
+        console.log('Auto-refreshed database status');
+      }
+    } catch (error) {
+      console.warn('Auto-refresh database status failed:', error);
+    }
+  }
+}, 5 * 60 * 1000); // Check every 5 minutes
+
+// Clean cache every 10 minutes
+setInterval(() => {
+  if (maintenanceSystem) {
+    maintenanceSystem.cache.clearOldCache();
+    sharedCacheManager.clearOldCache();
+    console.log('Performed automatic cache cleanup');
+  }
+}, 10 * 60 * 1000);
+
+// Clean old maintenance logs on page load
+document.addEventListener('DOMContentLoaded', () => {
+  MaintenanceHelpers.clearOldMaintenanceLogs();
+});
+
+// Monitor sessionStorage usage for maintenance
+setInterval(() => {
+  try {
+    const usage = JSON.stringify(sessionStorage).length;
+    const maxSize = 5 * 1024 * 1024; // 5MB typical limit
+
+    if (usage > maxSize * 0.8) { // 80% of limit
+      console.warn('sessionStorage usage high:', usage, 'bytes');
+      // Clear old cache if storage is full
+      if (maintenanceSystem) {
+        maintenanceSystem.cache.clearOldCache();
+      }
+      sharedCacheManager.clearOldCache();
+      MaintenanceHelpers.clearOldMaintenanceLogs();
+    }
+  } catch (error) {
+    console.warn('Could not check sessionStorage usage:', error);
+  }
+}, 10 * 60 * 1000); // Check every 10 minutes
+
+// Add keyboard shortcuts for maintenance operations
+document.addEventListener('keydown', (event) => {
+  // Only if maintenance system is loaded and not currently loading
+  if (!maintenanceSystem || maintenanceSystem.isLoading) return;
+
+  // Ctrl + Shift + A for Archive
+  if (event.ctrlKey && event.shiftKey && event.key === 'A') {
+    event.preventDefault();
+    if (maintenanceSystem.btnArchiveData && !maintenanceSystem.btnArchiveData.disabled) {
+      maintenanceSystem.btnArchiveData.click();
+    }
+  }
+  
+  // Ctrl + Shift + S for Snapshot
+  if (event.ctrlKey && event.shiftKey && event.key === 'S') {
+    event.preventDefault();
+    if (maintenanceSystem.btnCreateSnapshot && !maintenanceSystem.btnCreateSnapshot.disabled) {
+      maintenanceSystem.btnCreateSnapshot.click();
+    }
+  }
+  
+  // Ctrl + Shift + E for Export All
+  if (event.ctrlKey && event.shiftKey && event.key === 'E') {
+    event.preventDefault();
+    if (maintenanceSystem.btnExportAll && !maintenanceSystem.btnExportAll.disabled) {
+      maintenanceSystem.btnExportAll.click();
+    }
+  }
+
+  // Ctrl + Shift + R for Refresh Status
+  if (event.ctrlKey && event.shiftKey && event.key === 'R') {
+    event.preventDefault();
+    maintenanceSystem.forceRefreshStatus();
+  }
+});
+
+// Add connection monitoring
+let isOnline = navigator.onLine;
+
+window.addEventListener('online', () => {
+  isOnline = true;
+  console.log('Connection restored');
+  if (maintenanceSystem && !maintenanceSystem.isLoading) {
+    // Refresh status when connection is restored
+    setTimeout(() => {
+      maintenanceSystem.forceRefreshStatus();
+    }, 1000);
+  }
+});
+
+window.addEventListener('offline', () => {
+  isOnline = false;
+  console.log('Connection lost');
+  if (maintenanceSystem) {
+    maintenanceSystem.showAlert('Koneksi internet terputus. Beberapa fitur mungkin tidak berfungsi.', 'warning');
+  }
+});
+
+// Enhanced error boundary for maintenance operations
+window.addEventListener('error', (event) => {
+  console.error('Global error in maintenance:', event.error);
+  
+  // If loading modal is stuck, force hide it
+  if (maintenanceSystem && maintenanceSystem.isLoading) {
+    console.warn('Force hiding loading modal due to error');
+    maintenanceSystem.hideLoading();
+  }
+});
+
+// Unhandled promise rejection handler
+window.addEventListener('unhandledrejection', (event) => {
+  console.error('Unhandled promise rejection in maintenance:', event.reason);
+  
+  // If loading modal is stuck, force hide it
+  if (maintenanceSystem && maintenanceSystem.isLoading) {
+    console.warn('Force hiding loading modal due to unhandled rejection');
+    maintenanceSystem.hideLoading();
+  }
+});

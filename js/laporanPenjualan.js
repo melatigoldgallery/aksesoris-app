@@ -32,43 +32,168 @@ const tableConfigs = {
   },
 };
 
-// Cache management
+// Enhanced cache management with localStorage persistence
 const cacheManager = {
-  salesData: {
-    data: null,
-    lastFetched: null,
-    ttl: 5 * 60 * 1000, // 5 minutes
-  },
+  // Cache TTL constants
+  CACHE_TTL_TODAY: 5 * 60 * 1000,     // 5 menit untuk data hari ini
+  CACHE_TTL_STANDARD: 60 * 60 * 1000, // 1 jam untuk data historis
 
+  // Check if cache is valid
   isValid(cacheKey) {
-    const cache = this[cacheKey];
-    if (!cache || !cache.data || !cache.lastFetched) return false;
-    return Date.now() - cache.lastFetched < cache.ttl;
+    const metaKey = `${cacheKey}_timestamp`;
+    const timestamp = localStorage.getItem(metaKey);
+    
+    if (!timestamp) return false;
+    
+    const now = Date.now();
+    const lastUpdate = parseInt(timestamp);
+    
+    // Jika cache key mencakup hari ini, gunakan TTL yang lebih pendek
+    const today = this.getLocalDateString();
+    if (cacheKey.includes(today)) {
+      return (now - lastUpdate) < this.CACHE_TTL_TODAY;
+    }
+    
+    // Untuk data historis, gunakan TTL standar
+    return (now - lastUpdate) < this.CACHE_TTL_STANDARD;
   },
 
+  // Set cache data with localStorage persistence
   set(cacheKey, data) {
-    this[cacheKey] = {
-      data: data,
-      lastFetched: Date.now(),
-      ttl: this[cacheKey]?.ttl || 5 * 60 * 1000,
-    };
+    try {
+      // Simpan data ke localStorage dengan kompresi
+      const compressedData = this.compressData(data);
+      localStorage.setItem(cacheKey, compressedData);
+      
+      // Simpan timestamp
+      const metaKey = `${cacheKey}_timestamp`;
+      localStorage.setItem(metaKey, Date.now().toString());
+      
+      console.log(`Cache saved for key: ${cacheKey}`);
+    } catch (error) {
+      console.error("Error saving cache:", error);
+      // Jika localStorage penuh, hapus cache lama
+      this.clearOldCache();
+      try {
+        const compressedData = this.compressData(data);
+        localStorage.setItem(cacheKey, compressedData);
+        localStorage.setItem(`${cacheKey}_timestamp`, Date.now().toString());
+      } catch (retryError) {
+        console.error("Failed to save cache after cleanup:", retryError);
+      }
+    }
   },
 
+  // Get cache data from localStorage
   get(cacheKey) {
-    return this.isValid(cacheKey) ? this[cacheKey].data : null;
+    if (!this.isValid(cacheKey)) {
+      this.clear(cacheKey);
+      return null;
+    }
+    
+    try {
+      const compressedData = localStorage.getItem(cacheKey);
+      if (!compressedData) return null;
+      
+      return this.decompressData(compressedData);
+    } catch (error) {
+      console.error("Error retrieving cache:", error);
+      this.clear(cacheKey);
+      return null;
+    }
   },
 
+  // Clear specific cache or all cache
   clear(cacheKey = null) {
     if (cacheKey) {
-      this[cacheKey] = { data: null, lastFetched: null, ttl: this[cacheKey]?.ttl || 5 * 60 * 1000 };
+      localStorage.removeItem(cacheKey);
+      localStorage.removeItem(`${cacheKey}_timestamp`);
     } else {
-      Object.keys(this).forEach((key) => {
-        if (typeof this[key] === "object" && this[key].hasOwnProperty("data")) {
-          this[key] = { data: null, lastFetched: null, ttl: this[key].ttl };
+      // Clear all sales cache
+      const keys = Object.keys(localStorage);
+      keys.forEach(key => {
+        if (key.startsWith('salesData_') || key.includes('_timestamp')) {
+          localStorage.removeItem(key);
         }
       });
     }
   },
+
+  // Clear old cache entries (older than 24 hours)
+  clearOldCache() {
+    const now = Date.now();
+    const maxAge = 24 * 60 * 60 * 1000; // 24 hours
+    
+    const keys = Object.keys(localStorage);
+    keys.forEach(key => {
+      if (key.endsWith('_timestamp')) {
+        const timestamp = parseInt(localStorage.getItem(key));
+        if (now - timestamp > maxAge) {
+          const dataKey = key.replace('_timestamp', '');
+          localStorage.removeItem(key);
+          localStorage.removeItem(dataKey);
+        }
+      }
+    });
+  },
+
+  // Compress data before storing
+  compressData(data) {
+  try {
+    // Convert Firestore Timestamps to ISO strings before caching
+    const processedData = JSON.parse(JSON.stringify(data, (key, value) => {
+      // Handle Firestore Timestamp objects
+      if (value && typeof value === 'object' && value.seconds && value.nanoseconds) {
+        // Convert Firestore Timestamp to ISO string
+        return new Date(value.seconds * 1000 + value.nanoseconds / 1000000).toISOString();
+      }
+      return value;
+    }));
+    
+    const jsonString = JSON.stringify(processedData);
+    return jsonString.replace(/\s+/g, "");
+  } catch (error) {
+    console.error("Error compressing data:", error);
+    return JSON.stringify(data);
+  }
+},
+
+  // Decompress data after retrieving
+decompressData(compressedData) {
+  try {
+    const parsed = JSON.parse(compressedData);
+    
+    // Restore timestamp fields to Date objects
+    if (Array.isArray(parsed)) {
+      return parsed.map(item => {
+        if (item.timestamp && typeof item.timestamp === 'string') {
+          item.timestamp = new Date(item.timestamp);
+        }
+        return item;
+      });
+    }
+    
+    return parsed;
+  } catch (error) {
+    console.error("Error decompressing data:", error);
+    return null;
+  }
+},
+
+  // Get local date string in YYYY-MM-DD format
+  getLocalDateString() {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const day = String(now.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  },
+
+  // Check if date range includes today
+  includesCurrentDay(startDate, endDate) {
+    const today = this.getLocalDateString();
+    return (startDate <= today && today <= endDate);
+  }
 };
 
 // Main handler object
@@ -95,19 +220,33 @@ const laporanPenjualanHandler = {
     }
   },
 
-  // Load data with cache management
+  // Enhanced load data with improved cache management
   async loadSalesData(forceRefresh = false) {
     try {
+      // Create cache key based on current context
+      const cacheKey = 'salesData_all';
+      
+      // Check if we need to force refresh for current day data
+      const includesCurrentDay = true; // Sales data always includes current day potentially
+      forceRefresh = forceRefresh || (includesCurrentDay && !cacheManager.isValid(cacheKey));
+
       if (!forceRefresh) {
-        const cachedData = cacheManager.get("salesData");
+        const cachedData = cacheManager.get(cacheKey);
         if (cachedData) {
           console.log("Using cached sales data");
+          
+          // Show cache indicator
+          this.showCacheIndicator('Menggunakan data cache');
+          
           this.salesData = cachedData;
           this.populateSalesPersonFilter();
           return;
         }
       }
 
+      // Hide cache indicator when fetching fresh data
+      this.hideCacheIndicator();
+      
       this.showLoading(true);
       console.log("Fetching fresh sales data from Firestore");
 
@@ -125,14 +264,73 @@ const laporanPenjualanHandler = {
         salesData.push({ id: doc.id, ...data });
       });
 
-      cacheManager.set("salesData", salesData);
+      // Save to cache
+      cacheManager.set(cacheKey, salesData);
+      
       this.salesData = salesData;
       this.populateSalesPersonFilter();
     } catch (error) {
       console.error("Error loading sales data:", error);
-      this.showAlert("Gagal memuat data penjualan: " + error.message, "Error", "error");
+      
+      // Try to use cache as fallback
+      const cacheKey = 'salesData_all';
+      const cachedData = cacheManager.get(cacheKey);
+      
+      if (cachedData) {
+        console.log("Using cached data as fallback due to error");
+        this.showAlert("Terjadi kesalahan saat mengambil data terbaru. Menggunakan data cache.", "Peringatan", "warning");
+        this.showCacheIndicator('Menggunakan data cache (fallback)');
+        this.salesData = cachedData;
+        this.populateSalesPersonFilter();
+      } else {
+        this.showAlert("Gagal memuat data penjualan: " + error.message, "Error", "error");
+      }
     } finally {
       this.showLoading(false);
+    }
+  },
+
+  // Show cache indicator
+  showCacheIndicator(message) {
+    let cacheIndicator = document.getElementById('cacheIndicator');
+    if (!cacheIndicator) {
+      cacheIndicator = document.createElement('small');
+      cacheIndicator.id = 'cacheIndicator';
+      cacheIndicator.className = 'text-muted ms-2';
+      
+      // Add to appropriate location (near filter button or table header)
+      const filterBtn = document.getElementById('filterSalesBtn');
+      if (filterBtn && filterBtn.parentNode) {
+        filterBtn.parentNode.appendChild(cacheIndicator);
+      }
+    }
+    
+    cacheIndicator.textContent = message;
+    cacheIndicator.style.display = 'inline-block';
+  },
+
+  // Hide cache indicator
+  hideCacheIndicator() {
+    const cacheIndicator = document.getElementById('cacheIndicator');
+    if (cacheIndicator) {
+      cacheIndicator.style.display = 'none';
+    }
+  },
+
+  // Force refresh data function
+  forceRefreshData() {
+    if (confirm("Apakah Anda yakin ingin menyegarkan data dari server?")) {
+      // Clear cache
+      cacheManager.clear('salesData_all');
+      
+      // Load fresh data
+      this.loadSalesData(true).then(() => {
+        if (this.filteredSalesData && this.filteredSalesData.length > 0) {
+          this.renderSalesTable();
+        }
+      });
+      
+      this.showAlert("Data sedang disegarkan dari server...", "Info", "info");
     }
   },
 
@@ -196,7 +394,7 @@ const laporanPenjualanHandler = {
             extend: "excel",
             text: '<i class="fas fa-file-excel"></i> Excel',
             className: "btn btn-success btn-sm",
-            title: "Laporan Penjualan Manual / Aksesoris / Kotak \n Melati Atas",
+            title: "Laporan Penjualan Manual / Aksesoris / Kotak \n Melati Bawah",
             filename: function () {
               const startDate = document.getElementById("startDate").value || "semua";
               const endDate = document.getElementById("endDate").value || "semua";
@@ -211,7 +409,7 @@ const laporanPenjualanHandler = {
               // Ambil nilai footer yang sudah dihitung dari DataTable
               const footerPcs = $(laporanPenjualanHandler.dataTable.column(4).footer()).text() || "0";
               const footerBerat = $(laporanPenjualanHandler.dataTable.column(5).footer()).text() || "-";
-              const footerHarga = $(laporanPenjualanHandler.dataTable.column(7).footer()).text() || "Rp 0";
+                            const footerHarga = $(laporanPenjualanHandler.dataTable.column(7).footer()).text() || "Rp 0";
 
               // Tambahkan baris footer
               const footerRow = `
@@ -241,7 +439,7 @@ const laporanPenjualanHandler = {
             extend: "pdf",
             text: '<i class="fas fa-file-pdf"></i> PDF',
             className: "btn btn-danger btn-sm",
-            title: "Laporan Penjualan Manual / Aksesoris / Kotak \n Melati Atas",
+            title: "Laporan Penjualan Manual / Aksesoris / Kotak \n Melati Bawah",
             filename: function () {
               const startDate = document.getElementById("startDate").value || "semua";
               const endDate = document.getElementById("endDate").value || "semua";
@@ -362,75 +560,90 @@ const laporanPenjualanHandler = {
 
   // Prepare data for DataTable
   prepareTableData() {
-    const salesType = document.getElementById("salesType").value;
-    const configKey = "manual";
-    const config = tableConfigs[configKey];
-    if (!config) return [];
+  const salesType = document.getElementById("salesType").value;
+  const configKey = "manual";
+  const config = tableConfigs[configKey];
+  if (!config) return [];
 
-    const summaryMap = new Map();
+  const summaryMap = new Map();
 
-    this.filteredSalesData.forEach((transaction) => {
-      const date = transaction.timestamp ? formatDate(transaction.timestamp.toDate()) : transaction.tanggal || "-";
-      const jenisPenjualan = this.formatJenisPenjualan(transaction);
-      const status = this.getStatusBadge(transaction);
-      const keterangan = transaction.keterangan || "-";
+  this.filteredSalesData.forEach((transaction) => {
+    // Enhanced date formatting with better timestamp handling
+    let date = "-";
+    if (transaction.timestamp) {
+      if (typeof transaction.timestamp.toDate === 'function') {
+        date = formatDate(transaction.timestamp.toDate());
+      } else if (transaction.timestamp instanceof Date) {
+        date = formatDate(transaction.timestamp);
+      } else if (typeof transaction.timestamp === 'string') {
+        date = formatDate(new Date(transaction.timestamp));
+      } else if (typeof transaction.timestamp === 'object' && transaction.timestamp.seconds) {
+        date = formatDate(new Date(transaction.timestamp.seconds * 1000));
+      }
+    } else if (transaction.tanggal) {
+      date = transaction.tanggal;
+    }
 
-      if (!transaction.items) return;
+    const jenisPenjualan = this.formatJenisPenjualan(transaction);
+    const status = this.getStatusBadge(transaction);
+    const keterangan = transaction.keterangan || "-";
 
-      transaction.items.forEach((item) => {
-        const key = item.kodeText || item.barcode || "-";
-        const name = item.nama || "-";
-        const kadar = item.kadar || "-";
-        const berat = parseFloat(item.berat) || 0;
-        const jumlah = parseInt(item.jumlah) || 1;
-        let harga = parseInt(item.totalHarga) || 0;
+    if (!transaction.items) return;
 
-        if (transaction.metodeBayar === "dp" && transaction.statusPembayaran === "DP") {
-          const prop = harga / transaction.totalHarga;
-          harga = Math.round(prop * transaction.sisaPembayaran);
-        } else if (transaction.metodeBayar === "free") {
-          harga = 0;
-        }
+    transaction.items.forEach((item) => {
+      const key = item.kodeText || item.barcode || "-";
+      const name = item.nama || "-";
+      const kadar = item.kadar || "-";
+      const berat = parseFloat(item.berat) || 0;
+      const jumlah = parseInt(item.jumlah) || 1;
+      let harga = parseInt(item.totalHarga) || 0;
 
-        if (summaryMap.has(key)) {
-          const existing = summaryMap.get(key);
-          existing.jumlah += jumlah;
-          existing.berat += berat;
-          existing.harga += harga;
-        } else {
-          summaryMap.set(key, {
-            tanggal: date,
-            jenis: jenisPenjualan,
-            kode: key,
-            nama: name,
-            jumlah,
-            berat,
-            kadar,
-            harga,
-            status,
-            keterangan: item.keterangan || keterangan,
-            jenisPenjualan: transaction.jenisPenjualan,
-          });
-        }
-      });
+      if (transaction.metodeBayar === "dp" && transaction.statusPembayaran === "DP") {
+        const prop = harga / transaction.totalHarga;
+        harga = Math.round(prop * transaction.sisaPembayaran);
+      } else if (transaction.metodeBayar === "free") {
+        harga = 0;
+      }
+
+      if (summaryMap.has(key)) {
+        const existing = summaryMap.get(key);
+        existing.jumlah += jumlah;
+        existing.berat += berat;
+        existing.harga += harga;
+      } else {
+        summaryMap.set(key, {
+          tanggal: date,
+          jenis: jenisPenjualan,
+          kode: key,
+          nama: name,
+          jumlah,
+          berat,
+          kadar,
+          harga,
+          status,
+          keterangan: item.keterangan || keterangan,
+          jenisPenjualan: transaction.jenisPenjualan,
+        });
+      }
     });
+  });
 
-    return Array.from(summaryMap.values()).map((item) => {
-      const beratDisplay = item.jenisPenjualan === "kotak" ? "-" : `${item.berat.toFixed(2)} gr`;
-      return [
-        item.tanggal,
-        item.jenis,
-        item.kode,
-        item.nama,
-        item.jumlah,
-        beratDisplay, // Gunakan beratDisplay yang sudah dimodifikasi
-        item.kadar,
-        `Rp ${item.harga.toLocaleString("id-ID")}`,
-        item.status,
-        item.keterangan,
-      ];
-    });
-  },
+  return Array.from(summaryMap.values()).map((item) => {
+    const beratDisplay = item.jenisPenjualan === "kotak" ? "-" : `${item.berat.toFixed(2)} gr`;
+    return [
+      item.tanggal,
+      item.jenis,
+      item.kode,
+      item.nama,
+      item.jumlah,
+      beratDisplay,
+      item.kadar,
+      `Rp ${item.harga.toLocaleString("id-ID")}`,
+      item.status,
+      item.keterangan,
+    ];
+  });
+},
 
   getStatusBadge(transaction) {
     const status = transaction.statusPembayaran || "Lunas";
@@ -459,61 +672,102 @@ const laporanPenjualanHandler = {
     }
   },
 
-  // Filter data
+  // Enhanced filter data with cache consideration
   filterSalesData() {
-    if (!this.salesData || !this.salesData.length) return;
+  if (!this.salesData || !this.salesData.length) return;
 
-    this.showLoading(true);
+  this.showLoading(true);
 
-    try {
-      const startDateStr = document.getElementById("startDate").value;
-      const endDateStr = document.getElementById("endDate").value;
-      const salesType = document.getElementById("salesType").value;
-      const salesPerson = document.getElementById("salesPerson").value;
+  try {
+    const startDateStr = document.getElementById("startDate").value;
+    const endDateStr = document.getElementById("endDate").value;
+    const salesType = document.getElementById("salesType").value;
+    const salesPerson = document.getElementById("salesPerson").value;
 
-      const startDate = parseDate(startDateStr);
-      const endDate = parseDate(endDateStr);
-      if (endDate) endDate.setDate(endDate.getDate() + 1);
+    const startDate = parseDate(startDateStr);
+    const endDate = parseDate(endDateStr);
+    if (endDate) endDate.setDate(endDate.getDate() + 1);
 
-      this.filteredSalesData = this.salesData.filter((item) => {
-        if (!item) return false;
+    this.filteredSalesData = this.salesData.filter((item) => {
+      if (!item) return false;
 
-        const transactionDate = item.timestamp ? item.timestamp.toDate() : parseDate(item.tanggal);
-        if (!transactionDate) return false;
+      // Enhanced timestamp handling
+      let transactionDate = null;
+      
+      if (item.timestamp) {
+        // Handle different timestamp formats
+        if (typeof item.timestamp.toDate === 'function') {
+          // Firestore Timestamp object
+          transactionDate = item.timestamp.toDate();
+        } else if (item.timestamp instanceof Date) {
+          // Already a Date object
+          transactionDate = item.timestamp;
+        } else if (typeof item.timestamp === 'string') {
+          // ISO string from cache
+          transactionDate = new Date(item.timestamp);
+        } else if (typeof item.timestamp === 'object' && item.timestamp.seconds) {
+          // Firestore Timestamp-like object
+          transactionDate = new Date(item.timestamp.seconds * 1000);
+        }
+      } else if (item.tanggal) {
+        // Fallback to tanggal field
+        transactionDate = parseDate(item.tanggal);
+      }
 
-        const dateInRange = (!startDate || transactionDate >= startDate) && (!endDate || transactionDate < endDate);
+      if (!transactionDate || isNaN(transactionDate.getTime())) {
+        console.warn("Invalid transaction date for item:", item);
+        return false;
+      }
 
-        let typeMatches = true;
-        if (salesType !== "all") {
-          if (salesType === "layanan") {
-            typeMatches = item.jenisPenjualan === "manual";
-          } else {
-            typeMatches = item.jenisPenjualan === salesType;
+      const dateInRange = (!startDate || transactionDate >= startDate) && (!endDate || transactionDate < endDate);
+
+      let typeMatches = true;
+      if (salesType !== "all") {
+        if (salesType === "layanan") {
+          typeMatches = item.jenisPenjualan === "manual";
+        } else {
+          typeMatches = item.jenisPenjualan === salesType;
+        }
+      }
+
+      let salesMatches = true;
+      if (salesPerson !== "all") {
+        salesMatches = item.sales === salesPerson;
+      }
+
+      return dateInRange && typeMatches && salesMatches;
+    });
+
+    this.filteredSalesData.sort((a, b) => {
+      // Enhanced sorting with better timestamp handling
+      const getDate = (item) => {
+        if (item.timestamp) {
+          if (typeof item.timestamp.toDate === 'function') {
+            return item.timestamp.toDate();
+          } else if (item.timestamp instanceof Date) {
+            return item.timestamp;
+          } else if (typeof item.timestamp === 'string') {
+            return new Date(item.timestamp);
+          } else if (typeof item.timestamp === 'object' && item.timestamp.seconds) {
+            return new Date(item.timestamp.seconds * 1000);
           }
         }
+        return parseDate(item.tanggal) || new Date(0);
+      };
 
-        let salesMatches = true;
-        if (salesPerson !== "all") {
-          salesMatches = item.sales === salesPerson;
-        }
+      const dateA = getDate(a);
+      const dateB = getDate(b);
+      return dateB - dateA;
+    });
 
-        return dateInRange && typeMatches && salesMatches;
-      });
-
-      this.filteredSalesData.sort((a, b) => {
-        const dateA = a.timestamp ? a.timestamp.toDate() : parseDate(a.tanggal);
-        const dateB = b.timestamp ? b.timestamp.toDate() : parseDate(b.tanggal);
-        return dateB - dateA;
-      });
-
-      this.renderSalesTable();
-    } catch (error) {
-      console.error("Error filtering sales data:", error);
-      this.showAlert("Terjadi kesalahan saat memfilter data", "Error", "error");
-    } finally {
-      this.showLoading(false);
-    }
-  },
+    this.renderSalesTable();
+  } catch (error) {
+    console.error("Error filtering sales data:", error);
+    this.showAlert("Terjadi kesalahan saat memfilter data", "Error", "error");
+  } finally {
+    this.showLoading(false);
+  }
+},
 
   updateFooterSummary() {
     const totalPcsEl = document.getElementById("totalPcs");
@@ -576,7 +830,7 @@ const laporanPenjualanHandler = {
       option.value = person;
       option.textContent = person;
       dropdown.appendChild(option);
-    });
+          });
   },
 
   // Initialize date pickers
@@ -598,7 +852,7 @@ const laporanPenjualanHandler = {
     });
   },
 
-  // Attach event listeners
+  // Enhanced attach event listeners with refresh button
   attachEventListeners() {
     document.getElementById("filterSalesBtn")?.addEventListener("click", () => {
       this.loadSalesData().then(() => {
@@ -611,6 +865,28 @@ const laporanPenjualanHandler = {
         this.renderSalesTable();
       }
     });
+
+    // Add refresh button functionality
+    this.addRefreshButton();
+  },
+
+  // Add refresh button to UI
+  addRefreshButton() {
+    // Check if refresh button already exists
+    if (document.getElementById('refreshSalesData')) return;
+
+    // Find appropriate location to add refresh button
+    const filterBtn = document.getElementById('filterSalesBtn');
+    if (filterBtn && filterBtn.parentNode) {
+      const refreshButton = document.createElement('button');
+      refreshButton.id = 'refreshSalesData';
+      refreshButton.className = 'btn btn-outline-secondary ms-2';
+      refreshButton.innerHTML = '<i class="fas fa-sync-alt"></i> Refresh Data';
+      refreshButton.addEventListener('click', () => this.forceRefreshData());
+      
+      // Insert after filter button
+      filterBtn.parentNode.insertBefore(refreshButton, filterBtn.nextSibling);
+    }
   },
 
   // Initialize
@@ -630,9 +906,23 @@ const laporanPenjualanHandler = {
       `;
     }
 
+    // Clear old cache periodically (every 10 minutes)
     setInterval(() => {
-      cacheManager.clear();
+      cacheManager.clearOldCache();
     }, 10 * 60 * 1000);
+
+    // Clear cache when page is about to unload (optional)
+    window.addEventListener('beforeunload', () => {
+      // Only clear today's cache to ensure fresh data on next visit
+      const today = cacheManager.getLocalDateString();
+      const keys = Object.keys(localStorage);
+      keys.forEach(key => {
+        if (key.includes(today) && key.startsWith('salesData_')) {
+          localStorage.removeItem(key);
+          localStorage.removeItem(`${key}_timestamp`);
+        }
+      });
+    });
   },
 };
 
@@ -667,3 +957,5 @@ document.addEventListener("DOMContentLoaded", function () {
 });
 
 export default laporanPenjualanHandler;
+
+

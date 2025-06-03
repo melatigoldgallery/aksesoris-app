@@ -20,72 +20,107 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.4.0/firebase-firestore.js";
 
 /**
- * Enhanced Cache Manager for Maintenance Operations
+ * Enhanced Cache Manager for Maintenance Operations - Optimized like kehadiran.js
  */
 class MaintenanceCacheManager {
   constructor() {
     this.prefix = 'maintenance_';
-    this.defaultTTL = 5 * 60 * 1000; // 5 minutes default
-    this.statusTTL = 2 * 60 * 1000; // 2 minutes for status
+    this.statusTTL = 5 * 60 * 1000; // 5 minutes for status
+    this.dataTTL = 10 * 60 * 1000; // 10 minutes for data
     this.dataCache = new Map(); // In-memory cache
-    this.lastUpdate = new Map(); // Track last update times
+    this.cacheTimestamps = new Map(); // Track cache timestamps
+    
+    // Load cache from sessionStorage on initialization
+    this.loadCacheFromStorage();
+  }
+
+  /**
+   * Load cache from sessionStorage
+   */
+  loadCacheFromStorage() {
+    try {
+      const cacheData = sessionStorage.getItem(`${this.prefix}cache_data`);
+      const cacheTimestamps = sessionStorage.getItem(`${this.prefix}cache_timestamps`);
+      
+      if (cacheData) {
+        const parsedData = JSON.parse(cacheData);
+        Object.entries(parsedData).forEach(([key, value]) => {
+          this.dataCache.set(key, value);
+        });
+      }
+      
+      if (cacheTimestamps) {
+        const parsedTimestamps = JSON.parse(cacheTimestamps);
+        Object.entries(parsedTimestamps).forEach(([key, value]) => {
+          this.cacheTimestamps.set(key, value);
+        });
+      }
+    } catch (error) {
+      console.warn('Failed to load maintenance cache from storage:', error);
+    }
+  }
+
+  /**
+   * Save cache to sessionStorage
+   */
+  saveCacheToStorage() {
+    try {
+      const cacheData = Object.fromEntries(this.dataCache);
+      const cacheTimestamps = Object.fromEntries(this.cacheTimestamps);
+      
+      sessionStorage.setItem(`${this.prefix}cache_data`, JSON.stringify(cacheData));
+      sessionStorage.setItem(`${this.prefix}cache_timestamps`, JSON.stringify(cacheTimestamps));
+    } catch (error) {
+      console.warn('Failed to save maintenance cache to storage:', error);
+      // Clear old cache if storage is full
+      this.clearOldCache();
+    }
   }
 
   /**
    * Set cache with TTL
    */
-  set(key, data, ttl = this.defaultTTL) {
-    const item = {
-      data,
-      timestamp: Date.now(),
-      ttl,
-      version: Date.now()
-    };
-
+  set(key, data, ttl = this.dataTTL) {
+    const timestamp = Date.now();
+    
     // Store in memory
-    this.dataCache.set(key, item);
-    this.lastUpdate.set(key, Date.now());
-
-    // Store in localStorage as backup
-    try {
-      localStorage.setItem(this.prefix + key, JSON.stringify(item));
-    } catch (error) {
-      console.warn('Cache localStorage set failed:', error);
-      this.clearOldCache();
-    }
+    this.dataCache.set(key, data);
+    this.cacheTimestamps.set(key, timestamp);
+    
+    // Save to sessionStorage
+    this.saveCacheToStorage();
   }
 
   /**
    * Get cache data
    */
   get(key) {
-    // Check in-memory cache first
-    const memoryItem = this.dataCache.get(key);
-    if (memoryItem && this.isValid(memoryItem)) {
-      return memoryItem.data;
+    const data = this.dataCache.get(key);
+    const timestamp = this.cacheTimestamps.get(key);
+    
+    if (!data || !timestamp) {
+      return null;
     }
-
-    // Check localStorage
-    try {
-      const item = JSON.parse(localStorage.getItem(this.prefix + key));
-      if (item && this.isValid(item)) {
-        // Restore to memory cache
-        this.dataCache.set(key, item);
-        return item.data;
-      }
-    } catch (error) {
-      console.warn('Cache localStorage get failed:', error);
+    
+    // Check if cache is still valid
+    const ttl = key.includes('status') ? this.statusTTL : this.dataTTL;
+    if (Date.now() - timestamp > ttl) {
+      this.remove(key);
+      return null;
     }
-
-    return null;
+    
+    return data;
   }
 
   /**
-   * Check if cache item is valid
+   * Check if cache needs refresh
    */
-  isValid(item) {
-    if (!item) return false;
-    return Date.now() - item.timestamp < item.ttl;
+  shouldRefresh(key) {
+    const timestamp = this.cacheTimestamps.get(key);
+    if (!timestamp) return true;
+    
+    const ttl = key.includes('status') ? this.statusTTL : this.dataTTL;
+    return Date.now() - timestamp > ttl;
   }
 
   /**
@@ -93,12 +128,8 @@ class MaintenanceCacheManager {
    */
   remove(key) {
     this.dataCache.delete(key);
-    this.lastUpdate.delete(key);
-    try {
-      localStorage.removeItem(this.prefix + key);
-    } catch (error) {
-      console.warn('Cache remove failed:', error);
-    }
+    this.cacheTimestamps.delete(key);
+    this.saveCacheToStorage();
   }
 
   /**
@@ -106,13 +137,12 @@ class MaintenanceCacheManager {
    */
   clear() {
     this.dataCache.clear();
-    this.lastUpdate.clear();
+    this.cacheTimestamps.clear();
     try {
-      Object.keys(localStorage)
-        .filter(key => key.startsWith(this.prefix))
-        .forEach(key => localStorage.removeItem(key));
+      sessionStorage.removeItem(`${this.prefix}cache_data`);
+      sessionStorage.removeItem(`${this.prefix}cache_timestamps`);
     } catch (error) {
-      console.warn('Cache clear failed:', error);
+      console.warn('Failed to clear cache from storage:', error);
     }
   }
 
@@ -121,31 +151,22 @@ class MaintenanceCacheManager {
    */
   clearOldCache() {
     const now = Date.now();
+    const keysToRemove = [];
     
-    // Clear memory cache
-    for (const [key, item] of this.dataCache.entries()) {
-      if (!this.isValid(item)) {
-        this.dataCache.delete(key);
-        this.lastUpdate.delete(key);
+    for (const [key, timestamp] of this.cacheTimestamps.entries()) {
+      const ttl = key.includes('status') ? this.statusTTL : this.dataTTL;
+      if (now - timestamp > ttl) {
+        keysToRemove.push(key);
       }
     }
-
-    // Clear localStorage cache
-    try {
-      Object.keys(localStorage)
-        .filter(key => key.startsWith(this.prefix))
-        .forEach(key => {
-          try {
-            const item = JSON.parse(localStorage.getItem(key));
-            if (!this.isValid(item)) {
-              localStorage.removeItem(key);
-            }
-          } catch (error) {
-            localStorage.removeItem(key);
-          }
-        });
-    } catch (error) {
-      console.warn('Clear old cache failed:', error);
+    
+    keysToRemove.forEach(key => {
+      this.dataCache.delete(key);
+      this.cacheTimestamps.delete(key);
+    });
+    
+    if (keysToRemove.length > 0) {
+      this.saveCacheToStorage();
     }
   }
 
@@ -153,39 +174,18 @@ class MaintenanceCacheManager {
    * Get cache age
    */
   getAge(key) {
-    const lastUpdate = this.lastUpdate.get(key);
-    return lastUpdate ? Date.now() - lastUpdate : Infinity;
-  }
-
-  /**
-   * Check if cache needs refresh
-   */
-  needsRefresh(key, maxAge = this.defaultTTL) {
-    return this.getAge(key) > maxAge;
+    const timestamp = this.cacheTimestamps.get(key);
+    return timestamp ? Date.now() - timestamp : Infinity;
   }
 
   /**
    * Get cache statistics
    */
   getStats() {
-    const stats = {
+    return {
       memoryEntries: this.dataCache.size,
-      localStorageEntries: 0,
-      totalSize: 0
+      totalSize: JSON.stringify(Object.fromEntries(this.dataCache)).length
     };
-
-    try {
-      Object.keys(localStorage)
-        .filter(key => key.startsWith(this.prefix))
-        .forEach(key => {
-          stats.localStorageEntries++;
-          stats.totalSize += localStorage.getItem(key).length;
-        });
-    } catch (error) {
-      console.warn('Could not get cache stats:', error);
-    }
-
-    return stats;
   }
 }
 
@@ -201,8 +201,8 @@ class MaintenanceSystem {
     this.isArchived = false;
     this.isExported = false;
     this.cache = new MaintenanceCacheManager();
-    this.isLoading = false; // Track loading state
-    this.currentOperation = null; // Track current operation
+    this.isLoading = false;
+    this.currentOperation = null;
     
     this.init();
   }
@@ -303,23 +303,26 @@ class MaintenanceSystem {
   }
 
   /**
-   * Load and display database status with caching
+   * Load and display database status with optimized caching
    */
   async loadDatabaseStatus(forceRefresh = false) {
     const cacheKey = 'database_status';
     
-    // Check cache first
-    if (!forceRefresh) {
+    // Check cache first if not forcing refresh
+    if (!forceRefresh && !this.cache.shouldRefresh(cacheKey)) {
       const cachedStatus = this.cache.get(cacheKey);
       if (cachedStatus) {
         console.log('Using cached database status');
         this.updateStatusDisplay(cachedStatus);
+        this.showCacheIndicator('Menggunakan data cache');
         return;
       }
     }
 
     try {
       console.log('Fetching fresh database status');
+      this.hideCacheIndicator();
+      
       const collections = [
         'penjualanAksesoris',
         'stockAdditions', 
@@ -328,25 +331,74 @@ class MaintenanceSystem {
       ];
 
       const statusData = {};
+      
+      // Use Promise.allSettled to handle individual collection failures
       const promises = collections.map(async (collectionName) => {
         try {
-          const snapshot = await getDocs(collection(this.firestore, collectionName));
-          statusData[collectionName] = snapshot.size;
+          // Use limit(1) and count aggregation for better performance
+          const snapshot = await getDocs(query(collection(this.firestore, collectionName), limit(1000)));
+          return { collectionName, count: snapshot.size };
         } catch (error) {
           console.error(`Error loading ${collectionName}:`, error);
-          statusData[collectionName] = 0;
+          return { collectionName, count: 0 };
         }
       });
 
-      await Promise.all(promises);
+      const results = await Promise.allSettled(promises);
+      
+      results.forEach((result) => {
+        if (result.status === 'fulfilled') {
+          const { collectionName, count } = result.value;
+          statusData[collectionName] = count;
+        }
+      });
 
-      // Cache the status
+      // Cache the status with shorter TTL
       this.cache.set(cacheKey, statusData, this.cache.statusTTL);
       this.updateStatusDisplay(statusData);
 
     } catch (error) {
       console.error('Error loading database status:', error);
-      this.logProgress('Error loading database status: ' + error.message, 'error');
+      
+      // Try to use cached data as fallback
+      const cachedStatus = this.cache.get(cacheKey);
+      if (cachedStatus) {
+        console.log('Using cached data as fallback');
+        this.updateStatusDisplay(cachedStatus);
+        this.showCacheIndicator('Menggunakan data cache (fallback)');
+      } else {
+        this.logProgress('Error loading database status: ' + error.message, 'error');
+      }
+    }
+  }
+
+  /**
+   * Show cache indicator
+   */
+  showCacheIndicator(text) {
+    let indicator = document.getElementById('maintenanceCacheIndicator');
+    if (!indicator) {
+      indicator = document.createElement('small');
+      indicator.id = 'maintenanceCacheIndicator';
+      indicator.className = 'text-muted ms-2';
+      
+      const statusContainer = document.querySelector('.maintenance-status');
+      if (statusContainer) {
+        statusContainer.appendChild(indicator);
+      }
+    }
+    
+    indicator.textContent = text;
+    indicator.style.display = 'inline';
+  }
+
+  /**
+   * Hide cache indicator
+   */
+  hideCacheIndicator() {
+    const indicator = document.getElementById('maintenanceCacheIndicator');
+    if (indicator) {
+      indicator.style.display = 'none';
     }
   }
 
@@ -390,16 +442,18 @@ class MaintenanceSystem {
    * Start auto refresh with intelligent caching
    */
   startAutoRefresh() {
-    // Refresh status every 2 minutes, but use cache if available
+    // Refresh status every 5 minutes, but use cache if available
     setInterval(async () => {
       if (!document.hidden && !this.isLoading) {
-        try {
-          await this.loadDatabaseStatus();
+        try {          // Only refresh if cache is stale
+          if (this.cache.shouldRefresh('database_status')) {
+            await this.loadDatabaseStatus();
+          }
         } catch (error) {
           console.warn('Auto-refresh failed:', error);
         }
       }
-    }, 2 * 60 * 1000);
+    }, 5 * 60 * 1000); // Check every 5 minutes
 
     // Clean cache every 10 minutes
     setInterval(() => {
@@ -549,7 +603,7 @@ class MaintenanceSystem {
   }
 
   /**
-   * Create stock snapshot for specified month with enhanced error handling
+   * Create stock snapshot for specified month with enhanced caching
    */
   async createStockSnapshot(monthStr) {
     let stockData = null;
@@ -567,12 +621,12 @@ class MaintenanceSystem {
         stockData = snapshot.docs;
         
         // Cache for 10 minutes
-        this.cache.set(cacheKey, stockData, 10 * 60 * 1000);
+        this.cache.set(cacheKey, stockData, this.cache.dataTTL);
+        this.logProgress(`Data diambil dari database: ${stockData.length} item`);
       } else {
-        this.logProgress('Menggunakan data dari cache...');
+        this.logProgress(`Data diambil dari cache: ${stockData.length} item`);
       }
       
-      this.logProgress(`Ditemukan ${stockData.length} item stok`);
       this.updateProgress(25);
   
       if (stockData.length === 0) {
@@ -718,6 +772,9 @@ class MaintenanceSystem {
       this.updateDeleteButtonState();
       this.showAlert('Data berhasil diarsipkan!', 'success');
       
+      // Clear status cache to force refresh
+      this.cache.remove('database_status');
+      
     } catch (error) {
       console.error('Error archiving data:', error);
       this.showAlert('Gagal mengarsipkan data: ' + error.message, 'error');
@@ -749,16 +806,25 @@ class MaintenanceSystem {
         
         this.logProgress(`Memproses koleksi ${source}...`);
         
-        // Query data for the specified month
-        const q = query(
-          collection(this.firestore, source),
-          where('timestamp', '>=', Timestamp.fromDate(startDate)),
-          where('timestamp', '<', Timestamp.fromDate(endDate)),
-          orderBy('timestamp', 'asc')
-        );
+        // Check cache first
+        const cacheKey = `archive_${source}_${monthStr}`;
+        let docs = this.cache.get(cacheKey);
+        
+        if (!docs) {
+          // Query data for the specified month
+          const q = query(
+            collection(this.firestore, source),
+            where('timestamp', '>=', Timestamp.fromDate(startDate)),
+            where('timestamp', '<', Timestamp.fromDate(endDate)),
+            orderBy('timestamp', 'asc')
+          );
 
-        const snapshot = await getDocs(q);
-        const docs = snapshot.docs;
+          const snapshot = await getDocs(q);
+          docs = snapshot.docs;
+          
+          // Cache for 5 minutes
+          this.cache.set(cacheKey, docs, 5 * 60 * 1000);
+        }
         
         this.logProgress(`Ditemukan ${docs.length} dokumen di ${source}`);
 
@@ -793,6 +859,9 @@ class MaintenanceSystem {
 
         totalProcessed++;
         this.logProgress(`Selesai memproses ${source} (${docs.length} dokumen)`);
+        
+        // Clear cache after processing
+        this.cache.remove(cacheKey);
       }
 
       this.updateProgress(100);
@@ -883,7 +952,7 @@ class MaintenanceSystem {
   }
 
   /**
-   * Handle export data for specific collection with proper loading management
+   * Handle export data for specific collection with caching
    */
   async handleExportData(collectionName) {
     try {
@@ -946,7 +1015,7 @@ class MaintenanceSystem {
   }
 
   /**
-   * Export collection to Excel file with caching
+   * Export collection to Excel file with optimized caching
    */
   async exportCollectionToExcel(collectionName, autoDownload = true, customTitle = null) {
     try {
@@ -1193,764 +1262,739 @@ class MaintenanceSystem {
     }
   }
   
-    /**
-     * Handle delete old data process with proper loading management
-     */
-    async handleDeleteOldData() {
-      const selectedMonth = this.deleteMonthInput.value;
-      if (!selectedMonth) {
-        this.showAlert('Pilih bulan yang akan dihapus', 'warning');
-        return;
-      }
-  
-      if (!this.isArchived || !this.isExported) {
-        this.showAlert('Data harus diarsipkan dan diexport terlebih dahulu!', 'warning');
-        return;
-      }
-  
-      const confirmed = await this.showConfirmation(
-        `PERINGATAN: Apakah Anda yakin ingin menghapus PERMANEN data bulan ${selectedMonth}?\n\nPastikan data sudah diarsipkan dan diexport!`,
-        'Konfirmasi Hapus Data'
-      );
-  
-      if (!confirmed) return;
-  
-      // Double confirmation
-      const doubleConfirmed = await this.showConfirmation(
-        'Konfirmasi sekali lagi: Data yang dihapus TIDAK DAPAT dikembalikan!',
-        'Konfirmasi Terakhir'
-      );
-  
-      if (!doubleConfirmed) return;
-  
-      try {
-        this.showLoading('Menghapus Data...', 'Menghapus data lama dari database');
-        this.updateProgress(0);
-        this.clearProgressLog();
-  
-        await this.deleteDataByMonth(selectedMonth);
-        
-        this.showAlert('Data lama berhasil dihapus!', 'success');
-        await this.loadDatabaseStatus(true); // Force refresh status
-        
-      } catch (error) {
-        console.error('Error deleting data:', error);
-        this.showAlert('Gagal menghapus data: ' + error.message, 'error');
-      } finally {
-        this.hideLoading();
-      }
+  /**
+   * Handle delete old data process with proper loading management
+   */
+  async handleDeleteOldData() {
+    const selectedMonth = this.deleteMonthInput.value;
+    if (!selectedMonth) {
+      this.showAlert('Pilih bulan yang akan dihapus', 'warning');
+      return;
     }
-  
-    /**
-     * Delete data by month from specified collections
-     */
-    async deleteDataByMonth(monthStr) {
-      try {
-        const [year, month] = monthStr.split('-');
-        const startDate = new Date(parseInt(year), parseInt(month) - 1, 1);
-        const endDate = new Date(parseInt(year), parseInt(month), 1);
-  
-        const collections = ['penjualanAksesoris', 'stockAdditions', 'stokAksesorisTransaksi'];
-        let totalDeleted = 0;
-  
-        for (let i = 0; i < collections.length; i++) {
-          const collectionName = collections[i];
-          
-          this.logProgress(`Menghapus data dari ${collectionName}...`);
-          
-          // Query data for the specified month
-          const q = query(
-            collection(this.firestore, collectionName),
-            where('timestamp', '>=', Timestamp.fromDate(startDate)),
-            where('timestamp', '<', Timestamp.fromDate(endDate))
-          );
-  
-          const snapshot = await getDocs(q);
-          const docs = snapshot.docs;
-          
-          this.logProgress(`Ditemukan ${docs.length} dokumen untuk dihapus di ${collectionName}`);
-  
-          if (docs.length > 0) {
-            // Delete in smaller batches
-            const batchSize = 50;
-            const totalBatches = Math.ceil(docs.length / batchSize);
-            
-            for (let j = 0; j < totalBatches; j++) {
-              const batch = writeBatch(this.firestore);
-              const startIndex = j * batchSize;
-              const endIndex = Math.min(startIndex + batchSize, docs.length);
-              const batchDocs = docs.slice(startIndex, endIndex);
-              
-              batchDocs.forEach(docSnapshot => {
-                batch.delete(doc(this.firestore, collectionName, docSnapshot.id));
-              });
-  
-              await batch.commit();
-              
-              const progress = ((i / collections.length) + ((j + 1) / totalBatches / collections.length)) * 100;
-              this.updateProgress(Math.round(progress));
-              
-              this.logProgress(`Batch ${j + 1}/${totalBatches} dihapus dari ${collectionName}`);
-              
-              // Small delay
-              if (j < totalBatches - 1) {
-                await new Promise(resolve => setTimeout(resolve, 100));
-              }
-            }
-  
-            totalDeleted += docs.length;
-          }
-  
-          this.logProgress(`Selesai menghapus ${docs.length} dokumen dari ${collectionName}`);
-        }
-  
-        this.updateProgress(100);
-        this.logProgress(`Penghapusan selesai! Total ${totalDeleted} dokumen dihapus.`, 'success');
-        
-        // Clear all related cache
-        this.cache.clear();
-        
-      } catch (error) {
-        this.logProgress(`Error dalam deleteDataByMonth: ${error.message}`, 'error');
-        throw error;
-      }
+
+    if (!this.isArchived || !this.isExported) {
+      this.showAlert('Data harus diarsipkan dan diexport terlebih dahulu!', 'warning');
+      return;
     }
-  
-    /**
-     * Update delete button state based on archive and export status
-     */
-    updateDeleteButtonState() {
-      const canDelete = this.isArchived && this.isExported;
-      this.btnDeleteOldData.disabled = !canDelete;
+
+    const confirmed = await this.showConfirmation(
+      `PERINGATAN: Apakah Anda yakin ingin menghapus PERMANEN data bulan ${selectedMonth}?\n\nPastikan data sudah diarsipkan dan diexport!`,
+      'Konfirmasi Hapus Data'
+    );
+
+    if (!confirmed) return;
+
+    // Double confirmation
+    const doubleConfirmed = await this.showConfirmation(
+      'Konfirmasi sekali lagi: Data yang dihapus TIDAK DAPAT dikembalikan!',
+      'Konfirmasi Terakhir'
+    );
+
+    if (!doubleConfirmed) return;
+
+    try {
+      this.showLoading('Menghapus Data...', 'Menghapus data lama dari database');
+      this.updateProgress(0);
+      this.clearProgressLog();
+
+      await this.deleteDataByMonth(selectedMonth);
       
-      if (canDelete) {
-        this.btnDeleteOldData.classList.remove('btn-secondary');
-        this.btnDeleteOldData.classList.add('btn-danger');
-      }
-    }
-  
-    /**
-     * Update progress bar
-     */
-    updateProgress(percentage) {
-      if (this.progressBar) {
-        this.progressBar.style.width = `${percentage}%`;
-        this.progressBar.textContent = `${percentage}%`;
-        this.progressBar.setAttribute('aria-valuenow', percentage);
-      }
-    }
-  
-    /**
-     * Log progress message
-     */
-    logProgress(message, type = 'info') {
-      const timestamp = new Date().toLocaleTimeString();
-      const logClass = type === 'error' ? 'text-danger' : 
-                       type === 'success' ? 'text-success' : 
-                       type === 'warning' ? 'text-warning' : 'text-dark';
+      this.showAlert('Data lama berhasil dihapus!', 'success');
       
-      const logEntry = document.createElement('div');
-      logEntry.className = `mb-1 ${logClass}`;
-      logEntry.innerHTML = `<small>[${timestamp}] ${message}</small>`;
-      
-      if (this.progressLog) {
-        this.progressLog.appendChild(logEntry);
-        this.progressLog.scrollTop = this.progressLog.scrollHeight;
-      }
-      
-      console.log(`[Maintenance] ${message}`);
-    }
-  
-    /**
-     * Clear progress log
-     */
-    clearProgressLog() {
-      if (this.progressLog) {
-        this.progressLog.innerHTML = '<p class="text-muted mb-0">Memulai proses maintenance...</p>';
-      }
-    }
-  
-    /**
-     * Show alert using SweetAlert2
-     */
-    showAlert(message, type = 'info') {
-      const iconMap = {
-        'success': 'success',
-        'error': 'error',
-        'warning': 'warning',
-        'info': 'info'
-      };
-  
-      return Swal.fire({
-        title: type === 'error' ? 'Error' : 
-               type === 'success' ? 'Berhasil' : 
-               type === 'warning' ? 'Peringatan' : 'Informasi',
-        text: message,
-        icon: iconMap[type] || 'info',
-        confirmButtonText: 'OK',
-        confirmButtonColor: '#0d6efd'
-      });
-    }
-  
-    /**
-     * Show confirmation dialog
-     */
-    showConfirmation(message, title = 'Konfirmasi') {
-      return Swal.fire({
-        title: title,
-        text: message,
-        icon: 'question',
-        showCancelButton: true,
-        confirmButtonText: 'Ya',
-        cancelButtonText: 'Batal',
-        confirmButtonColor: '#0d6efd',
-        cancelButtonColor: '#6c757d'
-      }).then(result => result.isConfirmed);
-    }
-  
-    /**
-     * Format date to readable string
-     */
-    formatDate(date) {
-      if (!date) return '';
-      
-      try {
-        const d = date instanceof Date ? date : new Date(date);
-        const day = String(d.getDate()).padStart(2, '0');
-        const month = String(d.getMonth() + 1).padStart(2, '0');
-        const year = d.getFullYear();
-        const hours = String(d.getHours()).padStart(2, '0');
-        const minutes = String(d.getMinutes()).padStart(2, '0');
-        const seconds = String(d.getSeconds()).padStart(2, '0');
-        
-        return `${day}/${month}/${year} ${hours}:${minutes}:${seconds}`;
-      } catch (error) {
-        console.error('Error formatting date:', error);
-        return '';
-      }
-    }
-  
-    /**
-     * Cleanup when page unloads
-     */
-    cleanup() {
-      // Force hide loading if still showing
-      if (this.isLoading) {
-        this.hideLoading();
-      }
-      
-      // Clear cache
+      // Clear all cache and force refresh status
       this.cache.clear();
+      await this.loadDatabaseStatus(true);
       
-      console.log('Maintenance system cleanup completed');
+    } catch (error) {
+      console.error('Error deleting data:', error);
+      this.showAlert('Gagal menghapus data: ' + error.message, 'error');
+    } finally {
+      this.hideLoading();
     }
   }
-  
+
   /**
-   * Shared Cache Manager for cross-module caching
+   * Delete data by month from specified collections
    */
-  class SharedCacheManager {
-    constructor() {
-      this.prefix = 'shared_maintenance_';
-      this.defaultTTL = 5 * 60 * 1000; // 5 minutes
-    }
-  
-    setVersioned(key, data, ttl = this.defaultTTL) {
-      const item = {
-        data,
-        timestamp: Date.now(),
-        ttl,
-        version: Date.now()
-      };
-  
-      try {
-        localStorage.setItem(this.prefix + key, JSON.stringify(item));
-      } catch (error) {
-        console.warn('Shared cache set failed:', error);
-        this.clearOldCache();
-      }
-    }
-  
-    getVersioned(key) {
-      try {
-        const item = JSON.parse(localStorage.getItem(this.prefix + key));
-        if (!item) return null;
-  
-        const age = Date.now() - item.timestamp;
-        if (age > item.ttl) {
-          this.remove(key);
-          return null;
-        }
-  
-        return { data: item.data, age };
-      } catch (error) {
-        console.warn('Shared cache get failed:', error);
-        this.remove(key);
-        return null;
-      }
-    }
-  
-    remove(key) {
-      try {
-        localStorage.removeItem(this.prefix + key);
-      } catch (error) {
-        console.warn('Shared cache remove failed:', error);
-      }
-    }
-  
-    invalidateRelated(pattern) {
-      try {
-        Object.keys(localStorage)
-          .filter(key => key.startsWith(this.prefix) && key.includes(pattern))
-          .forEach(key => localStorage.removeItem(key));
-      } catch (error) {
-        console.warn('Shared cache invalidate failed:', error);
-      }
-    }
-  
-    clearOldCache() {
-      const now = Date.now();
-      try {
-        Object.keys(localStorage)
-          .filter(key => key.startsWith(this.prefix))
-          .forEach(key => {
-            try {
-              const item = JSON.parse(localStorage.getItem(key));
-              if (item && now - item.timestamp > item.ttl) {
-                localStorage.removeItem(key);
-              }
-            } catch (error) {
-              localStorage.removeItem(key);
-            }
-          });
-      } catch (error) {
-        console.warn('Clear old shared cache failed:', error);
-      }
-    }
-  }
-  
-  // Create shared cache instance
-  const sharedCacheManager = new SharedCacheManager();
-  
-  /**
-   * Utility functions for backward compatibility
-   */
-  const maintenanceUtils = {
-    showAlert: (message, type = 'info') => {
-      return Swal.fire({
-        title: type === 'error' ? 'Error' : type === 'success' ? 'Berhasil' : 'Informasi',
-        text: message,
-        icon: type,
-        confirmButtonText: 'OK'
-      });
-    },
-  
-    showConfirm: (message, title = 'Konfirmasi') => {
-      return Swal.fire({
-        title: title,
-        text: message,
-        icon: 'question',
-        showCancelButton: true,
-        confirmButtonText: 'Ya',
-        cancelButtonText: 'Batal'
-      }).then(result => result.isConfirmed);
-    },
-  
-    formatDate: (date) => {
-      if (!date) return '';
-      try {
-        const d = date.toDate ? date.toDate() : date instanceof Date ? date : new Date(date);
-        const day = String(d.getDate()).padStart(2, '0');
-        const month = String(d.getMonth() + 1).padStart(2, '0');
-        const year = d.getFullYear();
-        return `${day}/${month}/${year}`;
-      } catch (error) {
-        console.error('Error formatting date:', error);
-        return '';
-      }
-    }
-  };
-  
-  /**
-   * Performance monitoring for maintenance operations
-   */
-  const MaintenancePerformance = {
-    operations: new Map(),
-  
-    start: (operationName) => {
-      const startTime = performance.now();
-      MaintenancePerformance.operations.set(operationName, {
-        startTime,
-        endTime: null,
-        duration: null
-      });
-      console.log(`Started monitoring: ${operationName}`);
-    },
-  
-    end: (operationName) => {
-      const operation = MaintenancePerformance.operations.get(operationName);
-      if (operation) {
-        const endTime = performance.now();
-        const duration = endTime - operation.startTime;
-        
-        operation.endTime = endTime;
-        operation.duration = duration;
-        
-        console.log(`Completed: ${operationName} in ${(duration / 1000).toFixed(2)} seconds`);
-        
-        if (duration > 30000) {
-          console.warn(`Slow operation detected: ${operationName} took ${(duration / 1000).toFixed(2)} seconds`);
-        }
-      }
-    },
-  
-    getSummary: () => {
-      const summary = {};
-      MaintenancePerformance.operations.forEach((operation, name) => {
-        if (operation.duration !== null) {
-          summary[name] = {
-            duration: operation.duration,
-            durationSeconds: (operation.duration / 1000).toFixed(2)
-          };
-        }
-      });
-      return summary;
-    },
-  
-    clear: () => {
-      MaintenancePerformance.operations.clear();
-    }
-  };
-  
-  /**
-   * Enhanced error handling and recovery
-   */
-  const MaintenanceErrorHandler = {
-    handleBatchError: async (error, operation, retryCount = 0) => {
-      console.error(`Batch operation error in ${operation}:`, error);
-      
-      const maxRetries = 3;
-      const retryDelay = Math.pow(2, retryCount) * 1000;
-      
-      if (retryCount < maxRetries && error.code !== 'permission-denied') {
-        console.log(`Retrying ${operation} in ${retryDelay}ms (attempt ${retryCount + 1}/${maxRetries})`);
-        
-        await new Promise(resolve => setTimeout(resolve, retryDelay));
-        return { shouldRetry: true, retryCount: retryCount + 1 };
-      }
-      
-      return { shouldRetry: false, error };
-    },
-  
-    handleQuotaError: (error) => {
-      if (error.code === 'resource-exhausted') {
-        return {
-          message: 'Kuota Firestore terlampaui. Coba lagi nanti atau hubungi administrator.',
-          suggestion: 'Pertimbangkan untuk mengurangi ukuran batch atau menjalankan operasi di luar jam sibuk.'
-        };
-      }
-      return null;
-    },
-  
-    handleNetworkError: (error) => {
-      if (error.code === 'unavailable' || error.message.includes('network')) {
-        return {
-          message: 'Koneksi jaringan bermasalah. Periksa koneksi internet Anda.',
-          suggestion: 'Coba lagi setelah koneksi stabil.'
-        };
-      }
-      return null;
-    }
-  };
-  
-  /**
-   * Additional utility functions for maintenance operations
-   */
-  const MaintenanceHelpers = {
-    validateMonthInput: (monthStr) => {
-      if (!monthStr) return false;
-      const regex = /^\d{4}-\d{2}$/;
-      return regex.test(monthStr);
-    },
-  
-    getMonthRange: (monthStr) => {
+  async deleteDataByMonth(monthStr) {
+    try {
       const [year, month] = monthStr.split('-');
       const startDate = new Date(parseInt(year), parseInt(month) - 1, 1);
       const endDate = new Date(parseInt(year), parseInt(month), 1);
-      return { startDate, endDate };
-    },
-  
-    estimateStorageSize: (docs) => {
-      let totalSize = 0;
-      docs.forEach(doc => {
-        const dataStr = JSON.stringify(doc.data());
-        totalSize += new Blob([dataStr]).size;
-      });
-      return totalSize;
-    },
-  
-    formatFileSize: (bytes) => {
-      if (bytes === 0) return '0 Bytes';
-      const k = 1024;
-      const sizes = ['Bytes', 'KB', 'MB', 'GB'];
-      const i = Math.floor(Math.log(bytes) / Math.log(k));
-      return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
-    },
-  
-    generateBackupFilename: (collectionName, type = 'backup') => {
-      const now = new Date();
-      const timestamp = now.toISOString().slice(0, 19).replace(/:/g, '-');
-      return `${collectionName}_${type}_${timestamp}`;
-    },
-  
-    validateFirebaseConnection: async () => {
-      try {
-        const testQuery = query(
-          collection(firestore, 'stokAksesoris'),
-          orderBy('__name__'),
-          limit(1)
+
+      const collections = ['penjualanAksesoris', 'stockAdditions', 'stokAksesorisTransaksi'];
+      let totalDeleted = 0;
+
+      for (let i = 0; i < collections.length; i++) {
+        const collectionName = collections[i];
+        
+        this.logProgress(`Menghapus data dari ${collectionName}...`);
+        
+        // Query data for the specified month
+        const q = query(
+          collection(this.firestore, collectionName),
+          where('timestamp', '>=', Timestamp.fromDate(startDate)),
+          where('timestamp', '<', Timestamp.fromDate(endDate))
         );
-        await getDocs(testQuery);
-        return true;
-      } catch (error) {
-        console.error('Firebase connection test failed:', error);
-        return false;
+
+        const snapshot = await getDocs(q);
+        const docs = snapshot.docs;
+        
+        this.logProgress(`Ditemukan ${docs.length} dokumen untuk dihapus di ${collectionName}`);
+
+        if (docs.length > 0) {
+          // Delete in smaller batches
+          const batchSize = 50;
+          const totalBatches = Math.ceil(docs.length / batchSize);
+          
+          for (let j = 0; j < totalBatches; j++) {
+            const batch = writeBatch(this.firestore);
+            const startIndex = j * batchSize;
+            const endIndex = Math.min(startIndex + batchSize, docs.length);
+            const batchDocs = docs.slice(startIndex, endIndex);
+            
+            batchDocs.forEach(docSnapshot => {
+              batch.delete(doc(this.firestore, collectionName, docSnapshot.id));
+            });
+
+            await batch.commit();
+            
+            const progress = ((i / collections.length) + ((j + 1) / totalBatches / collections.length)) * 100;
+            this.updateProgress(Math.round(progress));
+            
+            this.logProgress(`Batch ${j + 1}/${totalBatches} dihapus dari ${collectionName}`);
+            
+            // Small delay
+            if (j < totalBatches - 1) {
+              await new Promise(resolve => setTimeout(resolve, 100));
+            }
+          }
+
+          totalDeleted += docs.length;
+        }
+
+        this.logProgress(`Selesai menghapus ${docs.length} dokumen dari ${collectionName}`);
       }
-    },
-  
-    createMaintenanceLog: (operation, details, status = 'success') => {
-      const logEntry = {
-        timestamp: new Date().toISOString(),
-        operation: operation,
-        details: details,
-        status: status,
-        user: 'maintenance_system'
+
+      this.updateProgress(100);
+      this.logProgress(`Penghapusan selesai! Total ${totalDeleted} dokumen dihapus.`, 'success');
+      
+    } catch (error) {
+      this.logProgress(`Error dalam deleteDataByMonth: ${error.message}`, 'error');
+      throw error;
+    }
+  }
+
+  /**
+   * Update delete button state based on archive and export status
+   */
+  updateDeleteButtonState() {
+    const canDelete = this.isArchived && this.isExported;
+    this.btnDeleteOldData.disabled = !canDelete;
+    
+    if (canDelete) {
+      this.btnDeleteOldData.classList.remove('btn-secondary');
+      this.btnDeleteOldData.classList.add('btn-danger');
+    }
+  }
+
+  /**
+   * Update progress bar
+   */
+  updateProgress(percentage) {
+    if (this.progressBar) {
+      this.progressBar.style.width = `${percentage}%`;
+      this.progressBar.textContent = `${percentage}%`;
+      this.progressBar.setAttribute('aria-valuenow', percentage);
+    }
+  }
+
+  /**
+   * Log progress message
+   */
+  logProgress(message, type = 'info') {
+    const timestamp = new Date().toLocaleTimeString();
+    const logClass = type === 'error' ? 'text-danger' : 
+                     type === 'success' ? 'text-success' : 
+                     type === 'warning' ? 'text-warning' : 'text-dark';
+    
+    const logEntry = document.createElement('div');
+    logEntry.className = `mb-1 ${logClass}`;
+    logEntry.innerHTML = `<small>[${timestamp}] ${message}</small>`;
+    
+    if (this.progressLog) {
+      this.progressLog.appendChild(logEntry);
+      this.progressLog.scrollTop = this.progressLog.scrollHeight;
+    }
+    
+    console.log(`[Maintenance] ${message}`);
+  }
+
+  /**
+   * Clear progress log
+   */
+  clearProgressLog() {
+    if (this.progressLog) {
+      this.progressLog.innerHTML = '<p class="text-muted mb-0">Memulai proses maintenance...</p>';
+    }
+  }
+
+  /**
+   * Show alert using SweetAlert2
+   */
+  showAlert(message, type = 'info') {
+    const iconMap = {
+      'success': 'success',
+      'error': 'error',
+      'warning': 'warning',
+      'info': 'info'
+    };
+
+    return Swal.fire({
+      title: type === 'error' ? 'Error' : 
+             type === 'success' ? 'Berhasil' : 
+             type === 'warning' ? 'Peringatan' : 'Informasi',
+      text: message,
+      icon: iconMap[type] || 'info',
+      confirmButtonText: 'OK',
+      confirmButtonColor: '#0d6efd'
+    });
+  }
+
+  /**
+   * Show confirmation dialog
+   */
+  showConfirmation(message, title = 'Konfirmasi') {
+    return Swal.fire({
+      title: title,
+      text: message,
+      icon: 'question',
+      showCancelButton: true,
+      confirmButtonText: 'Ya',
+      cancelButtonText: 'Batal',
+      confirmButtonColor: '#0d6efd',
+      cancelButtonColor: '#6c757d'
+    }).then(result => result.isConfirmed);
+  }
+
+  /**
+   * Cleanup when page unloads
+   */
+  cleanup() {
+    // Force hide loading if still showing
+    if (this.isLoading) {
+      this.hideLoading();
+    }
+    
+    // Clear cache
+    this.cache.clear();
+    
+    console.log('Maintenance system cleanup completed');
+  }
+}
+
+/**
+ * Shared Cache Manager for cross-module caching
+ */
+class SharedCacheManager {
+  constructor() {
+    this.prefix = 'shared_maintenance_';
+    this.defaultTTL = 5 * 60 * 1000; // 5 minutes
+  }
+
+  setVersioned(key, data, ttl = this.defaultTTL) {
+    const item = {
+      data,
+      timestamp: Date.now(),
+      ttl,
+      version: Date.now()
+    };
+
+    try {
+      sessionStorage.setItem(this.prefix + key, JSON.stringify(item));
+    } catch (error) {
+      console.warn('Shared cache set failed:', error);
+      this.clearOldCache();
+    }
+  }
+
+  getVersioned(key) {
+    try {
+      const item = JSON.parse(sessionStorage.getItem(this.prefix + key));
+      if (!item) return null;
+
+      const age = Date.now() - item.timestamp;
+      if (age > item.ttl) {
+        this.remove(key);
+        return null;
+      }
+
+      return { data: item.data, age };
+    } catch (error) {
+      console.warn('Shared cache get failed:', error);
+      this.remove(key);
+      return null;
+    }
+  }
+
+  remove(key) {
+    try {
+      sessionStorage.removeItem(this.prefix + key);
+    } catch (error) {
+      console.warn('Shared cache remove failed:', error);
+    }
+  }
+
+  invalidateRelated(pattern) {
+    try {
+      Object.keys(sessionStorage)
+        .filter(key => key.startsWith(this.prefix) && key.includes(pattern))
+        .forEach(key => sessionStorage.removeItem(key));
+    } catch (error) {
+      console.warn('Shared cache invalidate failed:', error);
+    }
+  }
+
+  clearOldCache() {
+    const now = Date.now();
+    try {
+      Object.keys(sessionStorage)
+        .filter(key => key.startsWith(this.prefix))
+        .forEach(key => {
+          try {
+            const item = JSON.parse(sessionStorage.getItem(key));
+            if (item && now - item.timestamp > item.ttl) {
+              sessionStorage.removeItem(key);
+            }
+          } catch (error) {
+            sessionStorage.removeItem(key);
+          }
+        });
+    } catch (error) {
+      console.warn('Clear old shared cache failed:', error);
+    }
+  }
+}
+
+// Create shared cache instance
+const sharedCacheManager = new SharedCacheManager();
+
+/**
+ * Utility functions for backward compatibility
+ */
+const maintenanceUtils = {
+  showAlert: (message, type = 'info') => {
+    return Swal.fire({
+      title: type === 'error' ? 'Error' : type === 'success' ? 'Berhasil' : 'Informasi',
+      text: message,
+      icon: type,
+      confirmButtonText: 'OK'
+    });
+  },
+
+  showConfirm: (message, title = 'Konfirmasi') => {
+    return Swal.fire({
+      title: title,
+      text: message,
+      icon: 'question',
+      showCancelButton: true,
+      confirmButtonText: 'Ya',
+      cancelButtonText: 'Batal'
+    }).then(result => result.isConfirmed);
+  },
+
+  formatDate: (date) => {
+    if (!date) return '';
+    try {
+      const d = date.toDate ? date.toDate() : date instanceof Date ? date : new Date(date);
+      const day = String(d.getDate()).padStart(2, '0');
+      const month = String(d.getMonth() + 1).padStart(2, '0');
+      const year = d.getFullYear();
+      return `${day}/${month}/${year}`;
+    } catch (error) {
+      console.error('Error formatting date:', error);
+      return '';
+    }
+  }
+};
+
+/**
+ * Performance monitoring for maintenance operations
+ */
+const MaintenancePerformance = {
+  operations: new Map(),
+
+  start: (operationName) => {
+    const startTime = performance.now();
+    MaintenancePerformance.operations.set(operationName, {
+      startTime,
+      endTime: null,
+      duration: null
+    });
+    console.log(`Started monitoring: ${operationName}`);
+  },
+
+  end: (operationName) => {
+    const operation = MaintenancePerformance.operations.get(operationName);
+    if (operation) {
+      const endTime = performance.now();
+      const duration = endTime - operation.startTime;
+      
+      operation.endTime = endTime;
+      operation.duration = duration;
+      
+      console.log(`Completed: ${operationName} in ${(duration / 1000).toFixed(2)} seconds`);
+      
+      if (duration > 30000) {
+        console.warn(`Slow operation detected: ${operationName} took ${(duration / 1000).toFixed(2)} seconds`);
+      }
+    }
+  },
+
+  getSummary: () => {
+    const summary = {};
+    MaintenancePerformance.operations.forEach((operation, name) => {
+      if (operation.duration !== null) {
+        summary[name] = {
+          duration: operation.duration,
+          durationSeconds: (operation.duration / 1000).toFixed(2)
+        };
+      }
+    });
+    return summary;
+  },
+
+  clear: () => {
+    MaintenancePerformance.operations.clear();
+  }
+};
+
+/**
+ * Enhanced error handling and recovery
+ */
+const MaintenanceErrorHandler = {
+  handleBatchError: async (error, operation, retryCount = 0) => {
+    console.error(`Batch operation error in ${operation}:`, error);
+    
+    const maxRetries = 3;
+    const retryDelay = Math.pow(2, retryCount) * 1000;
+    
+    if (retryCount < maxRetries && error.code !== 'permission-denied') {
+      console.log(`Retrying ${operation} in ${retryDelay}ms (attempt ${retryCount + 1}/${maxRetries})`);
+      
+      await new Promise(resolve => setTimeout(resolve, retryDelay));
+      return { shouldRetry: true, retryCount: retryCount + 1 };
+    }
+    
+    return { shouldRetry: false, error };
+  },
+
+  handleQuotaError: (error) => {
+    if (error.code === 'resource-exhausted') {
+      return {
+        message: 'Kuota Firestore terlampaui. Coba lagi nanti atau hubungi administrator.',
+        suggestion: 'Pertimbangkan untuk mengurangi ukuran batch atau menjalankan operasi di luar jam sibuk.'
       };
-  
-      const logKey = `maintenance_log_${Date.now()}`;
-      try {
-        localStorage.setItem(logKey, JSON.stringify(logEntry));
-      } catch (error) {
-        console.warn('Could not store maintenance log:', error);
-      }
-  
-      return logEntry;
-    },
-  
-    getMaintenanceHistory: () => {
-      const logs = [];
-      try {
-        Object.keys(localStorage)
-          .filter(key => key.startsWith('maintenance_log_'))
-          .forEach(key => {
-            try {
-              const log = JSON.parse(localStorage.getItem(key));
-              logs.push(log);
-            } catch (error) {
-              console.warn('Invalid maintenance log entry:', key);
-            }
-          });
-      } catch (error) {
-        console.warn('Could not retrieve maintenance history:', error);
-      }
-  
-      return logs.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
-    },
-  
-    clearOldMaintenanceLogs: () => {
-      const thirtyDaysAgo = new Date();
-      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-  
-      try {
-        Object.keys(localStorage)
-          .filter(key => key.startsWith('maintenance_log_'))
-          .forEach(key => {
-            try {
-              const log = JSON.parse(localStorage.getItem(key));
-              const logDate = new Date(log.timestamp);
-              if (logDate < thirtyDaysAgo) {
-                localStorage.removeItem(key);
-              }
-            } catch (error) {
-              localStorage.removeItem(key);
-            }
-          });
-      } catch (error) {
-        console.warn('Could not clear old maintenance logs:', error);
-      }
     }
-  };
-  
-  // Initialize maintenance system when document is ready
-  let maintenanceSystem;
-  
-  document.addEventListener('DOMContentLoaded', async function() {
+    return null;
+  },
+
+  handleNetworkError: (error) => {
+    if (error.code === 'unavailable' || error.message.includes('network')) {
+      return {
+        message: 'Koneksi jaringan bermasalah. Periksa koneksi internet Anda.',
+        suggestion: 'Coba lagi setelah koneksi stabil.'
+      };
+    }
+    return null;
+  }
+};
+
+/**
+ * Additional utility functions for maintenance operations
+ */
+const MaintenanceHelpers = {
+  validateMonthInput: (monthStr) => {
+    if (!monthStr) return false;
+    const regex = /^\d{4}-\d{2}$/;
+    return regex.test(monthStr);
+  },
+
+  getMonthRange: (monthStr) => {
+    const [year, month] = monthStr.split('-');
+    const startDate = new Date(parseInt(year), parseInt(month) - 1, 1);
+    const endDate = new Date(parseInt(year), parseInt(month), 1);
+    return { startDate, endDate };
+  },
+
+  estimateStorageSize: (docs) => {
+    let totalSize = 0;
+    docs.forEach(doc => {
+      const dataStr = JSON.stringify(doc.data());
+      totalSize += new Blob([dataStr]).size;
+    });
+    return totalSize;
+  },
+
+  formatFileSize: (bytes) => {
+    if (bytes === 0) return '0 Bytes';
+    const k = 1024;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+  },
+
+  generateBackupFilename: (collectionName, type = 'backup') => {
+    const now = new Date();
+    const timestamp = now.toISOString().slice(0, 19).replace(/:/g, '-');
+    return `${collectionName}_${type}_${timestamp}`;
+  },
+
+  validateFirebaseConnection: async () => {
     try {
-      console.log('Initializing maintenance system...');
-      maintenanceSystem = new MaintenanceSystem();
+      const testQuery = query(
+        collection(firestore, 'stokAksesoris'),
+        orderBy('__name__'),
+        limit(1)
+      );
+      await getDocs(testQuery);
+      return true;
     } catch (error) {
-      console.error('Error initializing maintenance system:', error);
-      maintenanceUtils.showAlert('Gagal menginisialisasi sistem maintenance: ' + error.message, 'error');
+      console.error('Firebase connection test failed:', error);
+      return false;
     }
-  });
-  
-  // Cleanup when page unloads
-  window.addEventListener('beforeunload', () => {
-    if (maintenanceSystem) {
-      maintenanceSystem.cleanup();
+  },
+
+  createMaintenanceLog: (operation, details, status = 'success') => {
+    const logEntry = {
+      timestamp: new Date().toISOString(),
+      operation: operation,
+      details: details,
+      status: status,
+      user: 'maintenance_system'
+    };
+
+    const logKey = `maintenance_log_${Date.now()}`;
+    try {
+      sessionStorage.setItem(logKey, JSON.stringify(logEntry));
+    } catch (error) {
+      console.warn('Could not store maintenance log:', error);
     }
-  });
-  
-  // Handle visibility change to refresh status when tab becomes active
-  document.addEventListener('visibilitychange', async () => {
-    if (!document.hidden && maintenanceSystem) {
-      try {
-        // Only refresh if cache is stale
-        if (maintenanceSystem.cache.needsRefresh('database_status', 2 * 60 * 1000)) {
-          await maintenanceSystem.loadDatabaseStatus();
-        }
-      } catch (error) {
-        console.warn('Failed to refresh database status:', error);
+
+    return logEntry;
+  },
+
+  getMaintenanceHistory: () => {
+    const logs = [];
+    try {
+      Object.keys(sessionStorage)
+        .filter(key => key.startsWith('maintenance_log_'))
+        .forEach(key => {
+          try {
+            const log = JSON.parse(sessionStorage.getItem(key));
+            logs.push(log);
+          } catch (error) {
+            console.warn('Invalid maintenance log entry:', key);
+          }
+        });
+    } catch (error) {
+      console.warn('Could not retrieve maintenance history:', error);
+    }
+
+    return logs.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+  },
+
+  clearOldMaintenanceLogs: () => {
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+
+    try {
+      Object.keys(sessionStorage)
+        .filter(key => key.startsWith('maintenance_log_'))
+        .forEach(key => {
+          try {
+            const log = JSON.parse(sessionStorage.getItem(key));
+            const logDate = new Date(log.timestamp);
+            if (logDate < thirtyDaysAgo) {
+              sessionStorage.removeItem(key);
+            }
+          } catch (error) {
+            sessionStorage.removeItem(key);
+          }
+        });
+    } catch (error) {
+      console.warn('Could not clear old maintenance logs:', error);
+    }
+  }
+};
+
+// Initialize maintenance system when document is ready
+let maintenanceSystem;
+
+document.addEventListener('DOMContentLoaded', async function() {
+  try {
+    console.log('Initializing maintenance system...');
+    maintenanceSystem = new MaintenanceSystem();
+  } catch (error) {
+    console.error('Error initializing maintenance system:', error);
+    maintenanceUtils.showAlert('Gagal menginisialisasi sistem maintenance: ' + error.message, 'error');
+  }
+});
+
+// Cleanup when page unloads
+window.addEventListener('beforeunload', () => {
+  if (maintenanceSystem) {
+    maintenanceSystem.cleanup();
+  }
+});
+
+// Handle visibility change to refresh status when tab becomes active
+document.addEventListener('visibilitychange', async () => {
+  if (!document.hidden && maintenanceSystem) {
+    try {
+      // Only refresh if cache is stale
+      if (maintenanceSystem.cache.shouldRefresh('database_status')) {
+        await maintenanceSystem.loadDatabaseStatus();
       }
+    } catch (error) {
+      console.warn('Failed to refresh database status:', error);
     }
-  });
-  
-  // Export for potential use in other modules
-  window.maintenanceSystem = maintenanceSystem;
-  window.maintenanceUtils = maintenanceUtils;
-  window.sharedCacheManager = sharedCacheManager;
-  window.MaintenanceHelpers = MaintenanceHelpers;
-  window.MaintenanceErrorHandler = MaintenanceErrorHandler;
-  window.MaintenancePerformance = MaintenancePerformance;
-  
-  // Auto-refresh database status every 3 minutes with cache check
-  setInterval(async () => {
-    if (maintenanceSystem && !document.hidden && !maintenanceSystem.isLoading) {
-      try {
-        // Only refresh if cache is older than 2 minutes
-        if (maintenanceSystem.cache.needsRefresh('database_status', 2 * 60 * 1000)) {
-          await maintenanceSystem.loadDatabaseStatus();
-          console.log('Auto-refreshed database status');
-        }
-      } catch (error) {
-        console.warn('Auto-refresh database status failed:', error);
+  }
+});
+
+// Export for potential use in other modules
+window.maintenanceSystem = maintenanceSystem;
+window.maintenanceUtils = maintenanceUtils;
+window.sharedCacheManager = sharedCacheManager;
+window.MaintenanceHelpers = MaintenanceHelpers;
+window.MaintenanceErrorHandler = MaintenanceErrorHandler;
+window.MaintenancePerformance = MaintenancePerformance;
+
+// Auto-refresh database status every 5 minutes with cache check
+setInterval(async () => {
+  if (maintenanceSystem && !document.hidden && !maintenanceSystem.isLoading) {
+    try {
+      // Only refresh if cache is stale
+      if (maintenanceSystem.cache.shouldRefresh('database_status')) {
+        await maintenanceSystem.loadDatabaseStatus();
+        console.log('Auto-refreshed database status');
       }
+    } catch (error) {
+      console.warn('Auto-refresh database status failed:', error);
     }
-  }, 3 * 60 * 1000); // Check every 3 minutes
-  
-  // Clean cache every 10 minutes
-  setInterval(() => {
-    if (maintenanceSystem) {
-      maintenanceSystem.cache.clearOldCache();
+  }
+}, 5 * 60 * 1000); // Check every 5 minutes
+
+// Clean cache every 10 minutes
+setInterval(() => {
+  if (maintenanceSystem) {
+    maintenanceSystem.cache.clearOldCache();
+    sharedCacheManager.clearOldCache();
+    console.log('Performed automatic cache cleanup');
+  }
+}, 10 * 60 * 1000);
+
+// Clean old maintenance logs on page load
+document.addEventListener('DOMContentLoaded', () => {
+  MaintenanceHelpers.clearOldMaintenanceLogs();
+});
+
+// Monitor sessionStorage usage for maintenance
+setInterval(() => {
+  try {
+    const usage = JSON.stringify(sessionStorage).length;
+    const maxSize = 5 * 1024 * 1024; // 5MB typical limit
+
+    if (usage > maxSize * 0.8) { // 80% of limit
+      console.warn('sessionStorage usage high:', usage, 'bytes');
+      // Clear old cache if storage is full
+      if (maintenanceSystem) {
+        maintenanceSystem.cache.clearOldCache();
+      }
       sharedCacheManager.clearOldCache();
-      console.log('Performed automatic cache cleanup');
+      MaintenanceHelpers.clearOldMaintenanceLogs();
     }
-  }, 10 * 60 * 1000);
-  
-  // Clean old maintenance logs on page load
-  document.addEventListener('DOMContentLoaded', () => {
-    MaintenanceHelpers.clearOldMaintenanceLogs();
-  });
-  
-  // Monitor localStorage usage for maintenance
-  setInterval(() => {
-    try {
-      const usage = JSON.stringify(localStorage).length;
-      const maxSize = 5 * 1024 * 1024; // 5MB typical limit
-  
-      if (usage > maxSize * 0.8) { // 80% of limit
-        console.warn('localStorage usage high:', usage, 'bytes');
-        // Clear old cache if storage is full
-        if (maintenanceSystem) {
-          maintenanceSystem.cache.clearOldCache();
-        }
-        sharedCacheManager.clearOldCache();
-        MaintenanceHelpers.clearOldMaintenanceLogs();
-      }
-    } catch (error) {
-      console.warn('Could not check localStorage usage:', error);
+  } catch (error) {
+    console.warn('Could not check sessionStorage usage:', error);
+  }
+}, 10 * 60 * 1000); // Check every 10 minutes
+
+// Add keyboard shortcuts for maintenance operations
+document.addEventListener('keydown', (event) => {
+  // Only if maintenance system is loaded and not currently loading
+  if (!maintenanceSystem || maintenanceSystem.isLoading) return;
+
+  // Ctrl + Shift + A for Archive
+  if (event.ctrlKey && event.shiftKey && event.key === 'A') {
+    event.preventDefault();
+    if (maintenanceSystem.btnArchiveData && !maintenanceSystem.btnArchiveData.disabled) {
+      maintenanceSystem.btnArchiveData.click();
     }
-  }, 10 * 60 * 1000); // Check every 10 minutes
+  }
   
-  // Add keyboard shortcuts for maintenance operations
-  document.addEventListener('keydown', (event) => {
-    // Only if maintenance system is loaded and not currently loading
-    if (!maintenanceSystem || maintenanceSystem.isLoading) return;
+  // Ctrl + Shift + S for Snapshot
+  if (event.ctrlKey && event.shiftKey && event.key === 'S') {
+    event.preventDefault();
+    if (maintenanceSystem.btnCreateSnapshot && !maintenanceSystem.btnCreateSnapshot.disabled) {
+      maintenanceSystem.btnCreateSnapshot.click();
+    }
+  }
   
-    // Ctrl + Shift + A for Archive
-    if (event.ctrlKey && event.shiftKey && event.key === 'A') {
-      event.preventDefault();
-      if (maintenanceSystem.btnArchiveData && !maintenanceSystem.btnArchiveData.disabled) {
-        maintenanceSystem.btnArchiveData.click();
-      }
+  // Ctrl + Shift + E for Export All
+  if (event.ctrlKey && event.shiftKey && event.key === 'E') {
+    event.preventDefault();
+    if (maintenanceSystem.btnExportAll && !maintenanceSystem.btnExportAll.disabled) {
+      maintenanceSystem.btnExportAll.click();
     }
-    
-    // Ctrl + Shift + S for Snapshot
-    if (event.ctrlKey && event.shiftKey && event.key === 'S') {
-      event.preventDefault();
-      if (maintenanceSystem.btnCreateSnapshot && !maintenanceSystem.btnCreateSnapshot.disabled) {
-        maintenanceSystem.btnCreateSnapshot.click();
-      }
-    }
-    
-    // Ctrl + Shift + E for Export All
-    if (event.ctrlKey && event.shiftKey && event.key === 'E') {
-      event.preventDefault();
-      if (maintenanceSystem.btnExportAll && !maintenanceSystem.btnExportAll.disabled) {
-        maintenanceSystem.btnExportAll.click();
-      }
-    }
-  
-    // Ctrl + Shift + R for Refresh Status
-    if (event.ctrlKey && event.shiftKey && event.key === 'R') {
-      event.preventDefault();
+  }
+
+  // Ctrl + Shift + R for Refresh Status
+  if (event.ctrlKey && event.shiftKey && event.key === 'R') {
+    event.preventDefault();
+    maintenanceSystem.forceRefreshStatus();
+  }
+});
+
+// Add connection monitoring
+let isOnline = navigator.onLine;
+
+window.addEventListener('online', () => {
+  isOnline = true;
+  console.log('Connection restored');
+  if (maintenanceSystem && !maintenanceSystem.isLoading) {
+    // Refresh status when connection is restored
+    setTimeout(() => {
       maintenanceSystem.forceRefreshStatus();
-    }
-  });
+    }, 1000);
+  }
+});
+
+window.addEventListener('offline', () => {
+  isOnline = false;
+  console.log('Connection lost');
+  if (maintenanceSystem) {
+    maintenanceSystem.showAlert('Koneksi internet terputus. Beberapa fitur mungkin tidak berfungsi.', 'warning');
+  }
+});
+
+// Enhanced error boundary for maintenance operations
+window.addEventListener('error', (event) => {
+  console.error('Global error in maintenance:', event.error);
   
-  // Add connection monitoring
-  let isOnline = navigator.onLine;
+  // If loading modal is stuck, force hide it
+  if (maintenanceSystem && maintenanceSystem.isLoading) {
+    console.warn('Force hiding loading modal due to error');
+    maintenanceSystem.hideLoading();
+  }
+});
+
+// Unhandled promise rejection handler
+window.addEventListener('unhandledrejection', (event) => {
+  console.error('Unhandled promise rejection in maintenance:', event.reason);
   
-  window.addEventListener('online', () => {
-    isOnline = true;
-    console.log('Connection restored');
-    if (maintenanceSystem && !maintenanceSystem.isLoading) {
-      // Refresh status when connection is restored
-      setTimeout(() => {
-        maintenanceSystem.forceRefreshStatus();
-      }, 1000);
-    }
-  });
-  
-  window.addEventListener('offline', () => {
-    isOnline = false;
-    console.log('Connection lost');
-    if (maintenanceSystem) {
-      maintenanceSystem.showAlert('Koneksi internet terputus. Beberapa fitur mungkin tidak berfungsi.', 'warning');
-    }
-  });
-  
-  // Enhanced error boundary for maintenance operations
-  window.addEventListener('error', (event) => {
-    console.error('Global error in maintenance:', event.error);
-    
-    // If loading modal is stuck, force hide it
-    if (maintenanceSystem && maintenanceSystem.isLoading) {
-      console.warn('Force hiding loading modal due to error');
-      maintenanceSystem.hideLoading();
-    }
-  });
-  
-  // Unhandled promise rejection handler
-  window.addEventListener('unhandledrejection', (event) => {
-    console.error('Unhandled promise rejection in maintenance:', event.reason);
-    
-    // If loading modal is stuck, force hide it
-    if (maintenanceSystem && maintenanceSystem.isLoading) {
-      console.warn('Force hiding loading modal due to unhandled rejection');
-      maintenanceSystem.hideLoading();
-    }
-  });
-  
-  
-  
+  // If loading modal is stuck, force hide it
+  if (maintenanceSystem && maintenanceSystem.isLoading) {
+    console.warn('Force hiding loading modal due to unhandled rejection');
+    maintenanceSystem.hideLoading();
+  }
+});
