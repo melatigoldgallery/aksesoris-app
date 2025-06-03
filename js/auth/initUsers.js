@@ -36,32 +36,23 @@ export async function initializeUsers() {
 }
 
 export async function loginUser(username, password) {
-  try {
-    const usersRef = collection(firestore, 'users');
-    const snapshot = await getDocs(usersRef);
-    
-    let userFound = null;
-    snapshot.forEach(doc => {
-      const userData = doc.data();
-      if (userData.username === username && userData.password === password) {
-        userFound = userData;
-      }
-    });
-    
-    if (userFound) {
-      return {
-        success: true,
-        username: userFound.username,
-        role: userFound.role
-      };
-    } else {
-      return {
-        success: false,
-        message: 'Username atau password salah'
-      };
-    }
-  } catch (error) {
-    console.error('Login error:', error);
-    throw error;
+  const users = {
+    'adminmelati': { password: 'admin', role: 'admin' },
+    'supervisor': { password: 'svmlt116', role: 'supervisor' }
+  };
+
+  const user = users[username];
+  
+  if (user && user.password === password) {
+    return {
+      success: true,
+      username: username,
+      role: user.role
+    };
   }
+  
+  return {
+    success: false,
+    message: 'Username atau password salah'
+  };
 }
