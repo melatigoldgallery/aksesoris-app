@@ -156,10 +156,53 @@ const utils = {
     }
   },
 
-  parseDate: (dateString) => {
+parseDate: (dateString) => {
     if (!dateString) return null;
-    const [day, month, year] = dateString.split("/");
-    return new Date(year, month - 1, day);
+    
+    try {
+      // Jika sudah berupa Date object
+      if (dateString instanceof Date) {
+        return dateString;
+      }
+      
+      // Jika berupa string dengan format dd/mm/yyyy
+      if (typeof dateString === 'string') {
+        const parts = dateString.split("/");
+        if (parts.length === 3) {
+          const day = parseInt(parts[0], 10);
+          const month = parseInt(parts[1], 10) - 1; // Month is 0-indexed
+          const year = parseInt(parts[2], 10);
+          
+          // Validasi komponen tanggal
+          if (day >= 1 && day <= 31 && month >= 0 && month <= 11 && year >= 1900) {
+            const date = new Date(year, month, day);
+            // Pastikan tanggal yang dibuat valid
+            if (date.getDate() === day && date.getMonth() === month && date.getFullYear() === year) {
+              return date;
+            }
+          }
+        }
+      }
+      
+      // Jika berupa number (timestamp)
+      if (typeof dateString === 'number') {
+        const date = new Date(dateString);
+        if (!isNaN(date.getTime())) {
+          return date;
+        }
+      }
+      
+      // Fallback: coba parse langsung
+      const date = new Date(dateString);
+      if (!isNaN(date.getTime())) {
+        return date;
+      }
+      
+      return null;
+    } catch (error) {
+      console.warn('Error parsing date:', dateString, error);
+      return null;
+    }
   },
 
   formatRupiah: (angka) => {
@@ -506,10 +549,10 @@ class DataPenjualanApp {
 
     // PERBAIKAN: Jika tidak ada tanggal, tampilkan data kosong
     if (!filters.selectedDate) {
-      this.filteredData = []; // UBAH dari [...this.salesData] ke []
+      this.filteredData = [];
       this.updateDataTable();
       this.updateSummary();
-      return; // Early return
+      return;
     }
 
     // Set tanggal ke awal dan akhir hari
@@ -519,13 +562,17 @@ class DataPenjualanApp {
     endOfDay.setHours(23, 59, 59, 999);
 
     this.filteredData = this.salesData.filter((transaction) => {
-      // PERBAIKAN: Tangani berbagai format timestamp
+      // PERBAIKAN: Tangani berbagai format timestamp dengan error handling yang lebih baik
       let transactionDate = null;
       
       if (transaction.timestamp) {
         // Jika timestamp adalah Firestore Timestamp dengan method toDate()
         if (typeof transaction.timestamp.toDate === 'function') {
-          transactionDate = transaction.timestamp.toDate();
+          try {
+            transactionDate = transaction.timestamp.toDate();
+          } catch (error) {
+            console.warn('Error converting Firestore timestamp:', error);
+          }
         }
         // Jika timestamp sudah dalam format Date object
         else if (transaction.timestamp instanceof Date) {
@@ -534,16 +581,25 @@ class DataPenjualanApp {
         // Jika timestamp adalah string atau number
         else {
           transactionDate = new Date(transaction.timestamp);
+          if (isNaN(transactionDate.getTime())) {
+            transactionDate = null;
+          }
         }
       }
-      // Fallback ke field tanggal jika timestamp tidak ada
-      else if (transaction.tanggal) {
+      
+      // Fallback ke field tanggal jika timestamp tidak ada atau tidak valid
+      if (!transactionDate && transaction.tanggal) {
         transactionDate = utils.parseDate(transaction.tanggal);
       }
 
-      // Jika masih tidak bisa mendapatkan tanggal yang valid, skip transaksi ini
+      // PERBAIKAN: Jika masih tidak bisa mendapatkan tanggal yang valid, log detail dan skip
       if (!transactionDate || isNaN(transactionDate.getTime())) {
-        console.warn('Invalid transaction date:', transaction);
+        console.warn('Skipping transaction with invalid date:', {
+          id: transaction.id,
+          timestamp: transaction.timestamp,
+          tanggal: transaction.tanggal,
+          parsedDate: transactionDate
+        });
         return false;
       }
 
