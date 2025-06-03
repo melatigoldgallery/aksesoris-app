@@ -1,2000 +1,1058 @@
-/**
- * Maintenance System for Melati Gold Shop
- * Handles data archiving, snapshots, exports, and cleanup with enhanced caching
- */
+// Import Firebase modules
+import { firestore } from './configFirebase.js';
+import { 
+    collection, doc, getDoc, getDocs, setDoc, updateDoc, 
+    query, where, orderBy, limit, Timestamp, onSnapshot
+} from 'https://www.gstatic.com/firebasejs/10.4.0/firebase-firestore.js';
 
-import { firestore } from "./configFirebase.js";
-import {
-  collection,
-  getDocs,
-  addDoc,
-  deleteDoc,
-  doc,
-  query,
-  where,
-  orderBy,
-  limit,
-  Timestamp,
-  writeBatch,
-  serverTimestamp,
-} from "https://www.gstatic.com/firebasejs/10.4.0/firebase-firestore.js";
+// Define stock categories and item types
+const categories = ['brankas', 'admin', 'barang-rusak', 'posting', 'batu-lepas'];
+const itemTypes = ['KALUNG', 'LIONTIN', 'ANTING', 'CINCIN', 'HALA', 'GELANG', 'GIWANG'];
 
-/**
- * Enhanced Cache Manager for Maintenance Operations - Optimized like kehadiran.js
- */
-class MaintenanceCacheManager {
-  constructor() {
-    this.prefix = 'maintenance_';
-    this.statusTTL = 5 * 60 * 1000; // 5 minutes for status
-    this.dataTTL = 10 * 60 * 1000; // 10 minutes for data
-    this.dataCache = new Map(); // In-memory cache
-    this.cacheTimestamps = new Map(); // Track cache timestamps
-    
-    // Load cache from sessionStorage on initialization
-    this.loadCacheFromStorage();
-  }
+// Cache management variables - Improved caching system
+let stockData = {};
+const CACHE_KEY = 'stockDataCache';
+const CACHE_TTL_STANDARD = 5 * 60 * 1000; // 5 minutes for standard data
+const CACHE_TTL_REALTIME = 30 * 1000; // 30 seconds for real-time updates
+const HISTORY_RETENTION_DAYS = 7;
+const MAX_HISTORY_RECORDS = 10;
 
-  /**
-   * Load cache from sessionStorage
-   */
-  loadCacheFromStorage() {
+// Cache management with Map for better performance
+const stockCache = new Map();
+const stockCacheMeta = new Map();
+
+// Initialize cache from localStorage
+function initializeCache() {
     try {
-      const cacheData = sessionStorage.getItem(`${this.prefix}cache_data`);
-      const cacheTimestamps = sessionStorage.getItem(`${this.prefix}cache_timestamps`);
-      
-      if (cacheData) {
-        const parsedData = JSON.parse(cacheData);
-        Object.entries(parsedData).forEach(([key, value]) => {
-          this.dataCache.set(key, value);
-        });
-      }
-      
-      if (cacheTimestamps) {
-        const parsedTimestamps = JSON.parse(cacheTimestamps);
-        Object.entries(parsedTimestamps).forEach(([key, value]) => {
-          this.cacheTimestamps.set(key, value);
-        });
-      }
+        const cachedData = localStorage.getItem(CACHE_KEY);
+        if (cachedData) {
+            const parsedData = JSON.parse(cachedData);
+            stockData = parsedData.data || {};
+            
+            // Load cache metadata
+            if (parsedData.meta) {
+                Object.entries(parsedData.meta).forEach(([key, timestamp]) => {
+                    stockCacheMeta.set(key, timestamp);
+                });
+            }
+            
+            // Load cache data into Map
+            Object.entries(stockData).forEach(([category, data]) => {
+                stockCache.set(category, data);
+            });
+        }
     } catch (error) {
-      console.warn('Failed to load maintenance cache from storage:', error);
+        console.error('Error initializing cache:', error);
+        localStorage.removeItem(CACHE_KEY);
+        stockCache.clear();
+        stockCacheMeta.clear();
     }
-  }
+}
 
-  /**
-   * Save cache to sessionStorage
-   */
-  saveCacheToStorage() {
+// Update cache in localStorage
+function updateCache() {
     try {
-      const cacheData = Object.fromEntries(this.dataCache);
-      const cacheTimestamps = Object.fromEntries(this.cacheTimestamps);
-      
-      sessionStorage.setItem(`${this.prefix}cache_data`, JSON.stringify(cacheData));
-      sessionStorage.setItem(`${this.prefix}cache_timestamps`, JSON.stringify(cacheTimestamps));
+        const cacheData = {
+            timestamp: Date.now(),
+            data: stockData,
+            meta: Object.fromEntries(stockCacheMeta)
+        };
+        localStorage.setItem(CACHE_KEY, JSON.stringify(cacheData));
     } catch (error) {
-      console.warn('Failed to save maintenance cache to storage:', error);
-      // Clear old cache if storage is full
-      this.clearOldCache();
+        console.error('Error updating cache:', error);
+        // If localStorage is full, clear old cache
+        if (error.name === 'QuotaExceededError') {
+            localStorage.removeItem(CACHE_KEY);
+            console.log('Cache cleared due to storage quota exceeded');
+        }
     }
-  }
+}
 
-  /**
-   * Set cache with TTL
-   */
-  set(key, data, ttl = this.dataTTL) {
-    const timestamp = Date.now();
+// Check if cache is valid for a specific category
+function isCacheValid(category) {
+    const timestamp = stockCacheMeta.get(category);
+    if (!timestamp) return false;
     
-    // Store in memory
-    this.dataCache.set(key, data);
-    this.cacheTimestamps.set(key, timestamp);
+    const now = Date.now();
+    const age = now - timestamp;
     
-    // Save to sessionStorage
-    this.saveCacheToStorage();
-  }
+    // Use shorter TTL for categories that change frequently
+    const ttl = ['brankas', 'admin'].includes(category) ? CACHE_TTL_REALTIME : CACHE_TTL_STANDARD;
+    
+    return age < ttl;
+}
 
-  /**
-   * Get cache data
-   */
-  get(key) {
-    const data = this.dataCache.get(key);
-    const timestamp = this.cacheTimestamps.get(key);
+// Update cache timestamp for specific category
+function updateCacheTimestamp(category) {
+    stockCacheMeta.set(category, Date.now());
+    updateCache();
+}
+
+// Check if any cache needs update
+function shouldUpdateCache() {
+    return categories.some(category => !isCacheValid(category));
+}
+
+// Function to clean and limit history
+function cleanAndLimitHistory(data) {
+    const cutoffDate = new Date();
+    cutoffDate.setDate(cutoffDate.getDate() - HISTORY_RETENTION_DAYS);
+    const cutoffTime = cutoffDate.getTime();
     
-    if (!data || !timestamp) {
-      return null;
-    }
-    
-    // Check if cache is still valid
-    const ttl = key.includes('status') ? this.statusTTL : this.dataTTL;
-    if (Date.now() - timestamp > ttl) {
-      this.remove(key);
-      return null;
-    }
+    Object.keys(data).forEach(category => {
+        Object.keys(data[category]).forEach(type => {
+            if (data[category][type].history && Array.isArray(data[category][type].history)) {
+                let filteredHistory = data[category][type].history.filter(entry => {
+                    const entryDate = new Date(entry.date).getTime();
+                    return entryDate >= cutoffTime;
+                });
+                
+                filteredHistory.sort((a, b) => new Date(b.date) - new Date(a.date));
+                
+                if (filteredHistory.length > MAX_HISTORY_RECORDS) {
+                    filteredHistory = filteredHistory.slice(0, MAX_HISTORY_RECORDS);
+                }
+                
+                data[category][type].history = filteredHistory;
+            }
+        });
+    });
     
     return data;
-  }
-
-  /**
-   * Check if cache needs refresh
-   */
-  shouldRefresh(key) {
-    const timestamp = this.cacheTimestamps.get(key);
-    if (!timestamp) return true;
-    
-    const ttl = key.includes('status') ? this.statusTTL : this.dataTTL;
-    return Date.now() - timestamp > ttl;
-  }
-
-  /**
-   * Remove cache entry
-   */
-  remove(key) {
-    this.dataCache.delete(key);
-    this.cacheTimestamps.delete(key);
-    this.saveCacheToStorage();
-  }
-
-  /**
-   * Clear all cache
-   */
-  clear() {
-    this.dataCache.clear();
-    this.cacheTimestamps.clear();
-    try {
-      sessionStorage.removeItem(`${this.prefix}cache_data`);
-      sessionStorage.removeItem(`${this.prefix}cache_timestamps`);
-    } catch (error) {
-      console.warn('Failed to clear cache from storage:', error);
-    }
-  }
-
-  /**
-   * Clear old cache entries
-   */
-  clearOldCache() {
-    const now = Date.now();
-    const keysToRemove = [];
-    
-    for (const [key, timestamp] of this.cacheTimestamps.entries()) {
-      const ttl = key.includes('status') ? this.statusTTL : this.dataTTL;
-      if (now - timestamp > ttl) {
-        keysToRemove.push(key);
-      }
-    }
-    
-    keysToRemove.forEach(key => {
-      this.dataCache.delete(key);
-      this.cacheTimestamps.delete(key);
-    });
-    
-    if (keysToRemove.length > 0) {
-      this.saveCacheToStorage();
-    }
-  }
-
-  /**
-   * Get cache age
-   */
-  getAge(key) {
-    const timestamp = this.cacheTimestamps.get(key);
-    return timestamp ? Date.now() - timestamp : Infinity;
-  }
-
-  /**
-   * Get cache statistics
-   */
-  getStats() {
-    return {
-      memoryEntries: this.dataCache.size,
-      totalSize: JSON.stringify(Object.fromEntries(this.dataCache)).length
-    };
-  }
 }
 
-/**
- * Main Maintenance Class with Enhanced Caching
- */
-class MaintenanceSystem {
-  constructor() {
-    this.firestore = firestore;
-    this.loadingModal = null;
-    this.progressBar = null;
-    this.progressLog = null;
-    this.isArchived = false;
-    this.isExported = false;
-    this.cache = new MaintenanceCacheManager();
-    this.isLoading = false;
-    this.currentOperation = null;
-    
-    this.init();
-  }
-
-  /**
-   * Initialize the maintenance system
-   */
-  async init() {
-    try {
-      this.initializeElements();
-      this.attachEventListeners();
-      this.setDefaultDates();
-      await this.loadDatabaseStatus();
-      
-      // Start auto-refresh with cache
-      this.startAutoRefresh();
-      
-      console.log('Maintenance system initialized successfully');
-      console.log('Cache stats:', this.cache.getStats());
-    } catch (error) {
-      console.error('Error initializing maintenance system:', error);
-      this.showAlert('Gagal menginisialisasi sistem maintenance', 'error');
-    }
-  }
-
-  /**
-   * Initialize DOM elements
-   */
-  initializeElements() {
-    this.loadingModal = new bootstrap.Modal(document.getElementById('loadingModal'));
-    this.progressBar = document.getElementById('maintenanceProgress');
-    this.progressLog = document.getElementById('progressLog');
-    
-    // Input elements
-    this.archiveMonthInput = document.getElementById('archiveMonth');
-    this.snapshotMonthInput = document.getElementById('snapshotMonth');
-    this.deleteMonthInput = document.getElementById('deleteMonth');
-    
-    // Button elements
-    this.btnArchiveData = document.getElementById('btnArchiveData');
-    this.btnCreateSnapshot = document.getElementById('btnCreateSnapshot');
-    this.btnDeleteOldData = document.getElementById('btnDeleteOldData');
-    
-    // Export buttons
-    this.btnExportPenjualan = document.getElementById('btnExportPenjualan');
-    this.btnExportStockAdditions = document.getElementById('btnExportStockAdditions');
-    this.btnExportStokTransaksi = document.getElementById('btnExportStokTransaksi');
-    this.btnExportStokAksesoris = document.getElementById('btnExportStokAksesoris');
-    this.btnExportAll = document.getElementById('btnExportAll');
-  }
-
-  /**
-   * Attach event listeners to buttons
-   */
-  attachEventListeners() {
-    // Archive data
-    this.btnArchiveData.addEventListener('click', () => this.handleArchiveData());
-    
-    // Create snapshot
-    this.btnCreateSnapshot.addEventListener('click', () => this.handleCreateSnapshot());
-    
-    // Delete old data
-    this.btnDeleteOldData.addEventListener('click', () => this.handleDeleteOldData());
-    
-    // Export buttons
-    this.btnExportPenjualan.addEventListener('click', () => this.handleExportData('penjualanAksesoris'));
-    this.btnExportStockAdditions.addEventListener('click', () => this.handleExportData('stockAdditions'));
-    this.btnExportStokTransaksi.addEventListener('click', () => this.handleExportData('stokAksesorisTransaksi'));
-    this.btnExportStokAksesoris.addEventListener('click', () => this.handleExportData('stokAksesoris'));
-    this.btnExportAll.addEventListener('click', () => this.handleExportAllData());
-
-    // Add refresh button for manual cache refresh
-    const refreshBtn = document.createElement('button');
-    refreshBtn.className = 'btn btn-outline-secondary btn-sm ms-2';
-    refreshBtn.innerHTML = '<i class="fas fa-sync-alt"></i> Refresh';
-    refreshBtn.onclick = () => this.forceRefreshStatus();
-    
-    const statusContainer = document.querySelector('.maintenance-status')?.parentElement;
-    if (statusContainer) {
-      statusContainer.appendChild(refreshBtn);
-    }
-  }
-
-  /**
-   * Set default dates for inputs
-   */
-  setDefaultDates() {
-    const now = new Date();
-    const lastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-    const currentMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-    
-    const lastMonthStr = lastMonth.toISOString().slice(0, 7);
-    const currentMonthStr = currentMonth.toISOString().slice(0, 7);
-    
-    this.archiveMonthInput.value = lastMonthStr;
-    this.snapshotMonthInput.value = currentMonthStr;
-    this.deleteMonthInput.value = lastMonthStr;
-  }
-
-  /**
-   * Load and display database status with optimized caching
-   */
-  async loadDatabaseStatus(forceRefresh = false) {
-    const cacheKey = 'database_status';
-    
-    // Check cache first if not forcing refresh
-    if (!forceRefresh && !this.cache.shouldRefresh(cacheKey)) {
-      const cachedStatus = this.cache.get(cacheKey);
-      if (cachedStatus) {
-        console.log('Using cached database status');
-        this.updateStatusDisplay(cachedStatus);
-        this.showCacheIndicator('Menggunakan data cache');
-        return;
-      }
-    }
-
-    try {
-      console.log('Fetching fresh database status');
-      this.hideCacheIndicator();
-      
-      const collections = [
-        'penjualanAksesoris',
-        'stockAdditions', 
-        'stokAksesorisTransaksi',
-        'stokAksesoris'
-      ];
-
-      const statusData = {};
-      
-      // Use Promise.allSettled to handle individual collection failures
-      const promises = collections.map(async (collectionName) => {
-        try {
-          // Use limit(1) and count aggregation for better performance
-          const snapshot = await getDocs(query(collection(this.firestore, collectionName), limit(1000)));
-          return { collectionName, count: snapshot.size };
-        } catch (error) {
-          console.error(`Error loading ${collectionName}:`, error);
-          return { collectionName, count: 0 };
-        }
-      });
-
-      const results = await Promise.allSettled(promises);
-      
-      results.forEach((result) => {
-        if (result.status === 'fulfilled') {
-          const { collectionName, count } = result.value;
-          statusData[collectionName] = count;
-        }
-      });
-
-      // Cache the status with shorter TTL
-      this.cache.set(cacheKey, statusData, this.cache.statusTTL);
-      this.updateStatusDisplay(statusData);
-
-    } catch (error) {
-      console.error('Error loading database status:', error);
-      
-      // Try to use cached data as fallback
-      const cachedStatus = this.cache.get(cacheKey);
-      if (cachedStatus) {
-        console.log('Using cached data as fallback');
-        this.updateStatusDisplay(cachedStatus);
-        this.showCacheIndicator('Menggunakan data cache (fallback)');
-      } else {
-        this.logProgress('Error loading database status: ' + error.message, 'error');
-      }
-    }
-  }
-
-  /**
-   * Show cache indicator
-   */
-  showCacheIndicator(text) {
-    let indicator = document.getElementById('maintenanceCacheIndicator');
-    if (!indicator) {
-      indicator = document.createElement('small');
-      indicator.id = 'maintenanceCacheIndicator';
-      indicator.className = 'text-muted ms-2';
-      
-      const statusContainer = document.querySelector('.maintenance-status');
-      if (statusContainer) {
-        statusContainer.appendChild(indicator);
-      }
+// Function to add history entry with automatic cleanup
+function addHistoryEntry(item, historyEntry) {
+    if (!item.history) {
+        item.history = [];
     }
     
-    indicator.textContent = text;
-    indicator.style.display = 'inline';
-  }
-
-  /**
-   * Hide cache indicator
-   */
-  hideCacheIndicator() {
-    const indicator = document.getElementById('maintenanceCacheIndicator');
-    if (indicator) {
-      indicator.style.display = 'none';
-    }
-  }
-
-  /**
-   * Update status display
-   */
-  updateStatusDisplay(statusData) {
-    const statusElements = [
-      'statusPenjualan',
-      'statusStockAdditions',
-      'statusStokTransaksi', 
-      'statusStokAksesoris'
-    ];
-
-    const collections = [
-      'penjualanAksesoris',
-      'stockAdditions', 
-      'stokAksesorisTransaksi',
-      'stokAksesoris'
-    ];
-
-    collections.forEach((collection, index) => {
-      const element = document.getElementById(statusElements[index]);
-      if (element) {
-        const count = statusData[collection] || 0;
-        element.textContent = count.toLocaleString();
-      }
+    item.history.unshift(historyEntry);
+    item.history.sort((a, b) => new Date(b.date) - new Date(a.date));
+    
+    const cutoffDate = new Date();
+    cutoffDate.setDate(cutoffDate.getDate() - HISTORY_RETENTION_DAYS);
+    const cutoffTime = cutoffDate.getTime();
+    
+    item.history = item.history.filter(entry => {
+        const entryDate = new Date(entry.date).getTime();
+        return entryDate >= cutoffTime;
     });
-  }
-
-  /**
-   * Force refresh status (clear cache and reload)
-   */
-  async forceRefreshStatus() {
-    this.cache.remove('database_status');
-    await this.loadDatabaseStatus(true);
-    this.showAlert('Status database berhasil diperbarui', 'success');
-  }
-
-  /**
-   * Start auto refresh with intelligent caching
-   */
-  startAutoRefresh() {
-    // Refresh status every 5 minutes, but use cache if available
-    setInterval(async () => {
-      if (!document.hidden && !this.isLoading) {
-        try {          // Only refresh if cache is stale
-          if (this.cache.shouldRefresh('database_status')) {
-            await this.loadDatabaseStatus();
-          }
-        } catch (error) {
-          console.warn('Auto-refresh failed:', error);
-        }
-      }
-    }, 5 * 60 * 1000); // Check every 5 minutes
-
-    // Clean cache every 10 minutes
-    setInterval(() => {
-      this.cache.clearOldCache();
-    }, 10 * 60 * 1000);
-  }
-
-  /**
-   * Enhanced loading management
-   */
-  showLoading(title, subtitle) {
-    if (this.isLoading) {
-      console.warn('Already loading, skipping duplicate loading modal');
-      return;
-    }
-
-    this.isLoading = true;
-    this.currentOperation = title;
     
-    try {
-      document.getElementById('loadingText').textContent = title;
-      document.getElementById('loadingSubtext').textContent = subtitle;
-      this.loadingModal.show();
-      
-      // Auto-hide after 30 seconds as failsafe
-      setTimeout(() => {
-        if (this.isLoading && this.currentOperation === title) {
-          console.warn('Force hiding loading modal after timeout');
-          this.hideLoading();
-        }
-      }, 30000);
-      
-    } catch (error) {
-      console.error('Error showing loading modal:', error);
-      this.isLoading = false;
+    if (item.history.length > MAX_HISTORY_RECORDS) {
+        item.history = item.history.slice(0, MAX_HISTORY_RECORDS);
     }
-  }
-
-  /**
-   * Enhanced loading hide with proper state management
-   */
-  hideLoading() {
-    try {
-      // Force hide modal regardless of current state
-      const modalElement = document.getElementById('loadingModal');
-      if (modalElement) {
-        // Remove any existing modal backdrop
-        const backdrops = document.querySelectorAll('.modal-backdrop');
-        backdrops.forEach(backdrop => backdrop.remove());
-        
-        // Force hide modal
-        modalElement.style.display = 'none';
-        modalElement.classList.remove('show');
-        modalElement.setAttribute('aria-hidden', 'true');
-        modalElement.removeAttribute('aria-modal');
-        
-        // Reset body classes
-        document.body.classList.remove('modal-open');
-        document.body.style.overflow = '';
-        document.body.style.paddingRight = '';
-      }
-      
-      // Hide using Bootstrap modal if available
-      if (this.loadingModal) {
-        try {
-          this.loadingModal.hide();
-        } catch (modalError) {
-          console.warn('Bootstrap modal hide failed:', modalError);
-        }
-      }
-      
-      // Reset state
-      this.isLoading = false;
-      this.currentOperation = null;
-      
-      // Reset progress
-      this.updateProgress(0);
-      
-      console.log('Loading modal hidden successfully');
-      
-    } catch (error) {
-      console.error('Error hiding loading modal:', error);
-      // Force reset state even if hiding fails
-      this.isLoading = false;
-      this.currentOperation = null;
-      
-      // Force remove modal elements
-      const modalElement = document.getElementById('loadingModal');
-      if (modalElement) {
-        modalElement.style.display = 'none';
-      }
-      document.body.classList.remove('modal-open');
-      document.body.style.overflow = '';
-    }
-  }
-
-  /**
-   * Handle create snapshot process with proper loading management
-   */
-  async handleCreateSnapshot() {
-    const selectedMonth = this.snapshotMonthInput.value;
-    if (!selectedMonth) {
-      this.showAlert('Pilih bulan untuk snapshot', 'warning');
-      return;
-    }
-  
-    const confirmed = await this.showConfirmation(
-      `Apakah Anda yakin ingin membuat snapshot stok untuk bulan ${selectedMonth}?`,
-      'Konfirmasi Snapshot Stok'
-    );
-  
-    if (!confirmed) return;
-  
-    // Prevent multiple operations
-    if (this.isLoading) {
-      console.warn('Operation already in progress');
-      return;
-    }
-  
-    try {
-      this.showLoading('Membuat Snapshot...', 'Memproses data stok');
-      this.updateProgress(0);
-      this.clearProgressLog();
-  
-      // Add timeout wrapper
-      const timeoutPromise = new Promise((_, reject) => {
-        setTimeout(() => reject(new Error('Operation timeout after 5 minutes')), 5 * 60 * 1000);
-      });
-  
-      const snapshotPromise = this.createStockSnapshot(selectedMonth);
-      
-      await Promise.race([snapshotPromise, timeoutPromise]);
-      
-      this.updateProgress(100);
-      this.showAlert('Snapshot stok berhasil dibuat!', 'success');
-      
-    } catch (error) {
-      console.error('Error creating snapshot:', error);
-      this.logProgress(`Error: ${error.message}`, 'error');
-      this.showAlert('Gagal membuat snapshot: ' + error.message, 'error');
-    } finally {
-      // Force hide loading with delay to ensure completion
-      setTimeout(() => {
-        this.hideLoading();
-      }, 500);
-    }
-  }
-
-  /**
-   * Create stock snapshot for specified month with enhanced caching
-   */
-  async createStockSnapshot(monthStr) {
-    let stockData = null;
     
+    return item.history;
+}
+
+// Improved fetch function with better cache management
+async function fetchStockData(forceRefresh = false) {
     try {
-      this.logProgress('Mengambil data stok aksesoris...');
-      
-      // Check cache first
-      const cacheKey = `stock_data_${monthStr}`;
-      stockData = this.cache.get(cacheKey);
-      
-      if (!stockData) {
-        this.logProgress('Mengambil data dari database...');
-        const snapshot = await getDocs(collection(this.firestore, 'stokAksesoris'));
-        stockData = snapshot.docs;
+        // Check if we need to refresh any category
+        const needsRefresh = forceRefresh || shouldUpdateCache();
         
-        // Cache for 10 minutes
-        this.cache.set(cacheKey, stockData, this.cache.dataTTL);
-        this.logProgress(`Data diambil dari database: ${stockData.length} item`);
-      } else {
-        this.logProgress(`Data diambil dari cache: ${stockData.length} item`);
-      }
-      
-      this.updateProgress(25);
-  
-      if (stockData.length === 0) {
-        this.logProgress('Tidak ada data stok untuk di-snapshot', 'warning');
-        this.updateProgress(100);
-        return;
-      }
-  
-      // Process in smaller batches with better error handling
-      const batchSize = 25; // Reduced batch size
-      const totalBatches = Math.ceil(stockData.length / batchSize);
-      let processedCount = 0;
-      let successfulBatches = 0;
-  
-      this.logProgress(`Memproses ${stockData.length} item dalam ${totalBatches} batch...`);
-  
-      for (let i = 0; i < totalBatches; i++) {
-        try {
-          const startIndex = i * batchSize;
-          const endIndex = Math.min(startIndex + batchSize, stockData.length);
-          const batchDocs = stockData.slice(startIndex, endIndex);
-  
-          this.logProgress(`Memproses batch ${i + 1}/${totalBatches} (${batchDocs.length} item)...`);
-  
-          // Create batch with retry mechanism
-          let retryCount = 0;
-          const maxRetries = 3;
-          
-          while (retryCount < maxRetries) {
-            try {
-              const batch = writeBatch(this.firestore);
-  
-              batchDocs.forEach((docSnapshot) => {
-                const data = docSnapshot.data();
+        if (!needsRefresh && Object.keys(stockData).length > 0) {
+            console.log('Using cached stock data');
+            return stockData;
+        }
+
+        console.log('Fetching fresh stock data from Firestore');
+        
+        // Fetch only categories that need refresh or all if forced
+        const categoriesToFetch = forceRefresh ? 
+            categories : 
+            categories.filter(category => !isCacheValid(category));
+        
+        if (categoriesToFetch.length === 0) {
+            return stockData;
+        }
+
+        // Fetch data for specific categories
+        const fetchPromises = categoriesToFetch.map(async (category) => {
+            const categoryRef = doc(firestore, 'stocks', category);
+            const categoryDoc = await getDoc(categoryRef);
+            
+            if (categoryDoc.exists()) {
+                const categoryData = categoryDoc.data();
+                stockData[category] = categoryData;
+                stockCache.set(category, categoryData);
+                updateCacheTimestamp(category);
+                return { category, data: categoryData };
+            } else {
+                // Initialize if doesn't exist
+                const initialData = {};
+                itemTypes.forEach(type => {
+                    initialData[type] = {
+                        quantity: 0,
+                        lastUpdated: null,
+                        history: []
+                    };
+                });
                 
-                const snapshotItem = {
-                  barang_id: docSnapshot.id,
-                  kode: data.kode || '',
-                  nama: data.nama || '',
-                  kategori: data.kategori || '',
-                  stok_akhir: data.stokAkhir || 0,
-                  harga_jual: data.hargaJual || 0,
-                  bulan: monthStr,
-                  created_at: serverTimestamp(),
-                  original_data: data
+                await setDoc(categoryRef, initialData);
+                stockData[category] = initialData;
+                stockCache.set(category, initialData);
+                updateCacheTimestamp(category);
+                return { category, data: initialData };
+            }
+        });
+
+        await Promise.all(fetchPromises);
+        
+        // Clean and limit history entries
+        stockData = cleanAndLimitHistory(stockData);
+        
+        // Update cache
+        updateCache();
+        
+        return stockData;
+    } catch (error) {
+        console.error('Error fetching stock data:', error);
+        
+        // Fallback to cache if available
+        if (Object.keys(stockData).length > 0) {
+            console.log('Using cached data as fallback');
+            return stockData;
+        }
+        
+        throw error;
+    }
+}
+
+// Initialize Firestore with default data structure
+async function initializeFirestoreData() {
+    try {
+        const initPromises = categories.map(async (category) => {
+            const categoryData = {};
+            
+            itemTypes.forEach(type => {
+                categoryData[type] = {
+                    quantity: 0,
+                    lastUpdated: null,
+                    history: []
                 };
-  
-                const snapshotRef = doc(collection(this.firestore, 'stokSnapshot'));
-                batch.set(snapshotRef, snapshotItem);
-              });
-  
-              // Commit batch with timeout
-              await Promise.race([
-                batch.commit(),
-                new Promise((_, reject) => 
-                  setTimeout(() => reject(new Error('Batch commit timeout')), 30000)
-                )
-              ]);
-              
-              processedCount += batchDocs.length;
-              successfulBatches++;
-              break; // Success, exit retry loop
-              
-            } catch (batchError) {
-              retryCount++;
-              this.logProgress(`Batch ${i + 1} gagal (percobaan ${retryCount}/${maxRetries}): ${batchError.message}`, 'warning');
-              
-              if (retryCount >= maxRetries) {
-                throw new Error(`Batch ${i + 1} gagal setelah ${maxRetries} percobaan: ${batchError.message}`);
-              }
-              
-              // Wait before retry with exponential backoff
-              await new Promise(resolve => setTimeout(resolve, Math.pow(2, retryCount) * 1000));
-            }
-          }
-          
-          // Update progress
-          const progress = 25 + ((i + 1) / totalBatches * 70);
-          this.updateProgress(Math.round(progress));
-          
-          this.logProgress(`Batch ${i + 1} selesai (${processedCount}/${stockData.length} item)`);
-  
-          // Small delay between batches
-          if (i < totalBatches - 1) {
-            await new Promise(resolve => setTimeout(resolve, 200));
-          }
-          
-        } catch (batchError) {
-          this.logProgress(`Error pada batch ${i + 1}: ${batchError.message}`, 'error');
-          // Continue with next batch instead of failing completely
-          continue;
-        }
-      }
-  
-      this.updateProgress(95);
-      
-      if (successfulBatches === 0) {
-        throw new Error('Semua batch gagal diproses');
-      }
-      
-      if (successfulBatches < totalBatches) {
-        this.logProgress(`Peringatan: ${totalBatches - successfulBatches} batch gagal dari ${totalBatches} total batch`, 'warning');
-      }
-  
-      this.updateProgress(100);
-      this.logProgress(`Snapshot selesai! ${processedCount} item disimpan untuk bulan ${monthStr}`, 'success');
-      
-      // Clear related cache
-      this.cache.remove(cacheKey);
-      
-    } catch (error) {
-      this.logProgress(`Error dalam createStockSnapshot: ${error.message}`, 'error');
-      this.updateProgress(100); // Ensure progress reaches 100% even on error
-      throw error;
-    }
-  }
-
-  /**
-   * Handle archive data process with proper loading management
-   */
-  async handleArchiveData() {
-    const selectedMonth = this.archiveMonthInput.value;
-    if (!selectedMonth) {
-      this.showAlert('Pilih bulan yang akan diarsipkan', 'warning');
-      return;
-    }
-
-    const confirmed = await this.showConfirmation(
-      `Apakah Anda yakin ingin mengarsipkan data bulan ${selectedMonth}?`,
-      'Konfirmasi Arsip Data'
-    );
-
-    if (!confirmed) return;
-
-    try {
-      this.showLoading('Mengarsipkan Data...', 'Memproses data untuk diarsipkan');
-      this.updateProgress(0);
-      this.clearProgressLog();
-
-      await this.archiveDataByMonth(selectedMonth);
-      
-      this.isArchived = true;
-      this.updateDeleteButtonState();
-      this.showAlert('Data berhasil diarsipkan!', 'success');
-      
-      // Clear status cache to force refresh
-      this.cache.remove('database_status');
-      
-    } catch (error) {
-      console.error('Error archiving data:', error);
-      this.showAlert('Gagal mengarsipkan data: ' + error.message, 'error');
-    } finally {
-      this.hideLoading();
-    }
-  }
-
-  /**
-   * Archive data by month to archive collections with caching
-   */
-  async archiveDataByMonth(monthStr) {
-    try {
-      const [year, month] = monthStr.split('-');
-      const startDate = new Date(parseInt(year), parseInt(month) - 1, 1);
-      const endDate = new Date(parseInt(year), parseInt(month), 1);
-
-      const collections = [
-        { source: 'penjualanAksesoris', archive: 'penjualanAksesoris_arsip' },
-        { source: 'stockAdditions', archive: 'stockAdditions_arsip' },
-        { source: 'stokAksesorisTransaksi', archive: 'stokAksesorisTransaksi_arsip' }
-      ];
-
-      let totalProcessed = 0;
-      const totalCollections = collections.length;
-
-      for (let i = 0; i < collections.length; i++) {
-        const { source, archive } = collections[i];
-        
-        this.logProgress(`Memproses koleksi ${source}...`);
-        
-        // Check cache first
-        const cacheKey = `archive_${source}_${monthStr}`;
-        let docs = this.cache.get(cacheKey);
-        
-        if (!docs) {
-          // Query data for the specified month
-          const q = query(
-            collection(this.firestore, source),
-            where('timestamp', '>=', Timestamp.fromDate(startDate)),
-            where('timestamp', '<', Timestamp.fromDate(endDate)),
-            orderBy('timestamp', 'asc')
-          );
-
-          const snapshot = await getDocs(q);
-          docs = snapshot.docs;
-          
-          // Cache for 5 minutes
-          this.cache.set(cacheKey, docs, 5 * 60 * 1000);
-        }
-        
-        this.logProgress(`Ditemukan ${docs.length} dokumen di ${source}`);
-
-        if (docs.length > 0) {
-          // Process in smaller batches
-          const batchSize = 50;
-          const totalBatches = Math.ceil(docs.length / batchSize);
-          
-          for (let j = 0; j < totalBatches; j++) {
-            const startIndex = j * batchSize;
-            const endIndex = Math.min(startIndex + batchSize, docs.length);
-            const batchDocs = docs.slice(startIndex, endIndex);
-            
-            await this.processBatch(batchDocs, source, archive);
-            
-            const progress = ((i / totalCollections) + ((j + 1) / totalBatches / totalCollections)) * 100;
-            this.updateProgress(Math.round(progress));
-            
-            this.logProgress(`Batch ${j + 1}/${totalBatches} selesai untuk ${source}`);
-            
-            // Small delay
-            if (j < totalBatches - 1) {
-              await new Promise(resolve => setTimeout(resolve, 100));
-            }
-          }
-
-          // Special handling for penjualanAksesoris
-          if (source === 'penjualanAksesoris') {
-            await this.copyToMutasiKode(docs);
-          }
-        }
-
-        totalProcessed++;
-        this.logProgress(`Selesai memproses ${source} (${docs.length} dokumen)`);
-        
-        // Clear cache after processing
-        this.cache.remove(cacheKey);
-      }
-
-      this.updateProgress(100);
-      this.logProgress(`Arsip selesai! Total ${totalProcessed} koleksi diproses.`, 'success');
-      
-      // Clear status cache to force refresh
-      this.cache.remove('database_status');
-      
-    } catch (error) {
-      this.logProgress(`Error dalam archiveDataByMonth: ${error.message}`, 'error');
-      throw error;
-    }
-  }
-
-  /**
-   * Process batch of documents for archiving
-   */
-  async processBatch(docs, sourceCollection, archiveCollection) {
-    const batch = writeBatch(this.firestore);
-    
-    for (const docSnapshot of docs) {
-      const data = docSnapshot.data();
-      
-      // Add to archive collection
-      const archiveRef = doc(collection(this.firestore, archiveCollection));
-      batch.set(archiveRef, {
-        ...data,
-        originalId: docSnapshot.id,
-        archivedAt: serverTimestamp()
-      });
-    }
-
-    await batch.commit();
-  }
-
-  /**
-   * Copy manual sales with barcode to mutasiKode collection
-   */
-  async copyToMutasiKode(penjualanDocs) {
-    this.logProgress('Memproses data untuk mutasi kode...');
-    
-    const mutasiData = penjualanDocs
-      .map(doc => doc.data())
-      .filter(data => 
-        data.jenisPenjualan === 'manual' && 
-        data.items && 
-        data.items.some(item => item.kodeText && item.kodeText.trim() !== '' && item.kodeText !== '-')
-      );
-
-    if (mutasiData.length > 0) {
-      // Process in batches
-      const batchSize = 50;
-      const totalBatches = Math.ceil(mutasiData.length / batchSize);
-      
-      for (let i = 0; i < totalBatches; i++) {
-        const batch = writeBatch(this.firestore);
-        const startIndex = i * batchSize;
-        const endIndex = Math.min(startIndex + batchSize, mutasiData.length);
-        const batchData = mutasiData.slice(startIndex, endIndex);
-        
-        batchData.forEach(data => {
-          data.items.forEach(item => {
-            if (item.kodeText && item.kodeText.trim() !== '' && item.kodeText !== '-') {
-              const mutasiRef = doc(collection(this.firestore, 'mutasiKode'));
-              batch.set(mutasiRef, {
-                kode: item.kodeText,
-                namaBarang: item.nama || '',
-                kadar: item.kadar || '',
-                berat: item.berat || 0,
-                hargaPerGram: item.hargaPerGram || 0,
-                totalHarga: item.totalHarga || 0,
-                keterangan: item.keterangan || '',
-                timestamp: data.timestamp,
-                penjualanId: data.originalId || '',
-                sales: data.sales || '',
-                createdAt: serverTimestamp()
-              });
-            }
-          });
-        });
-
-        await batch.commit();
-        this.logProgress(`Batch mutasi ${i + 1}/${totalBatches} selesai`);
-      }
-
-      this.logProgress(`${mutasiData.length} data ditambahkan ke mutasiKode`);
-    }
-  }
-
-  /**
-   * Handle export data for specific collection with caching
-   */
-  async handleExportData(collectionName) {
-    try {
-      this.showLoading('Mengexport Data...', `Memproses data ${collectionName}`);
-      this.updateProgress(0);
-      this.clearProgressLog();
-
-      await this.exportCollectionToExcel(collectionName);
-      
-      this.isExported = true;
-      this.updateDeleteButtonState();
-      this.showAlert(`Data ${collectionName} berhasil diexport!`, 'success');
-      
-    } catch (error) {
-      console.error('Error exporting data:', error);
-      this.showAlert('Gagal mengexport data: ' + error.message, 'error');
-    } finally {
-      this.hideLoading();
-    }
-  }
-
-  /**
-   * Handle export all data with proper loading management
-   */
-  async handleExportAllData() {
-    const confirmed = await this.showConfirmation(
-      'Apakah Anda yakin ingin mengexport semua data? Proses ini mungkin memakan waktu lama.',
-      'Konfirmasi Export Semua Data'
-    );
-
-    if (!confirmed) return;
-
-    try {
-      this.showLoading('Mengexport Semua Data...', 'Memproses semua koleksi');
-      this.updateProgress(0);
-      this.clearProgressLog();
-
-      const collections = ['penjualanAksesoris', 'stockAdditions', 'stokAksesorisTransaksi', 'stokAksesoris'];
-      
-      for (let i = 0; i < collections.length; i++) {
-        const collectionName = collections[i];
-        this.logProgress(`Mengexport ${collectionName}...`);
-        
-        await this.exportCollectionToExcel(collectionName, false);
-        
-        const progress = ((i + 1) / collections.length) * 100;
-        this.updateProgress(Math.round(progress));
-      }
-      
-      this.isExported = true;
-      this.updateDeleteButtonState();
-      this.showAlert('Semua data berhasil diexport!', 'success');
-      
-    } catch (error) {
-      console.error('Error exporting all data:', error);
-      this.showAlert('Gagal mengexport semua data: ' + error.message, 'error');
-    } finally {
-      this.hideLoading();
-    }
-  }
-
-  /**
-   * Export collection to Excel file with optimized caching
-   */
-  async exportCollectionToExcel(collectionName, autoDownload = true, customTitle = null) {
-    try {
-      this.logProgress(`Mengambil data dari ${collectionName}...`);
-      
-      // Check cache first
-      const cacheKey = `export_${collectionName}`;
-      let docs = this.cache.get(cacheKey);
-      
-      if (!docs) {
-        const snapshot = await getDocs(collection(this.firestore, collectionName));
-        docs = snapshot.docs;
-        
-        // Cache for 5 minutes
-        this.cache.set(cacheKey, docs, 5 * 60 * 1000);
-        this.logProgress(`Data diambil dari database: ${docs.length} dokumen`);
-      } else {
-        this.logProgress(`Data diambil dari cache: ${docs.length} dokumen`);
-      }
-  
-      if (docs.length === 0) {
-        this.logProgress(`Tidak ada data di ${collectionName}`, 'warning');
-        this.hideLoading();
-        this.showAlert(`Tidak ada data di koleksi ${collectionName}`, 'warning');
-        return;
-      }
-  
-      this.logProgress('Memproses data untuk Excel...');
-  
-      // Generate title
-      const title = customTitle || this.generateExportTitle(collectionName);
-      
-      // Convert Firestore data to Excel format
-      const excelData = docs.map((doc, index) => {
-        const data = doc.data();
-        
-        // Format khusus untuk penjualanAksesoris
-        if (collectionName === 'penjualanAksesoris') {
-          return {
-            tanggal: this.formatDate(data.timestamp?.toDate() || data.tanggal),
-            sales: data.sales || '',
-            jenisPenjualan: data.jenisPenjualan || '',
-            items: this.formatItems(data.items),
-            metodeBayar: data.metodeBayar || '',
-            totalHarga: data.totalHarga || 0
-          };
-        }
-        
-        // Format untuk koleksi lainnya
-        const processedData = {};
-        
-        Object.keys(data).forEach(key => {
-          const value = data[key];
-          
-          if (value && typeof value.toDate === 'function') {
-            processedData[key] = this.formatDate(value.toDate());
-          } else if (Array.isArray(value)) {
-            processedData[key] = JSON.stringify(value);
-          } else if (typeof value === 'object' && value !== null) {
-            processedData[key] = JSON.stringify(value);
-          } else {
-            processedData[key] = value;
-          }
-        });
-        
-        if (index % 100 === 0) {
-          const progress = (index / docs.length) * 50;
-          this.updateProgress(Math.round(progress));
-        }
-        
-        return processedData;
-      });
-  
-      this.logProgress('Membuat file Excel...');
-      this.updateProgress(75);
-  
-      // Create workbook and worksheet
-      const workbook = XLSX.utils.book_new();
-      
-      // Create worksheet dengan title
-      const worksheet = this.createWorksheetWithTitle(excelData, title);
-      
-      // Add worksheet to workbook
-      XLSX.utils.book_append_sheet(workbook, worksheet, this.getSheetName(collectionName));
-  
-      this.updateProgress(90);
-  
-      if (autoDownload) {
-        const timestamp = new Date().toISOString().slice(0, 19).replace(/:/g, '-');
-        const filename = `${collectionName}_${timestamp}.xlsx`;
-        
-        XLSX.writeFile(workbook, filename);
-        this.logProgress(`File ${filename} berhasil didownload`);
-      }
-  
-      this.updateProgress(100);
-      this.logProgress(`Export ${collectionName} selesai (${docs.length} records)`);
-  
-      setTimeout(() => {
-        this.hideLoading();
-        this.showAlert(`Export ${collectionName} berhasil! (${docs.length} records)`, 'success');
-      }, 500);
-  
-      return workbook;
-      
-    } catch (error) {
-      this.logProgress(`Error dalam exportCollectionToExcel: ${error.message}`, 'error');
-      this.hideLoading();
-      this.showAlert(`Gagal export ${collectionName}: ${error.message}`, 'error');
-      throw error;
-    }
-  }
-  
-  /**
-   * Generate title untuk export berdasarkan collection dan bulan
-   */
-  generateExportTitle(collectionName) {
-    const currentDate = new Date();
-    const monthNames = [
-      'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
-      'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'
-    ];
-    
-    const currentMonth = monthNames[currentDate.getMonth()];
-    const currentYear = currentDate.getFullYear();
-    
-    const titles = {
-      'penjualanAksesoris': `Arsip Data Penjualan Bulan ${currentMonth} ${currentYear} - Melati Gold Shop`,
-      'stockAdditions': `Arsip Data Penambahan Stok Bulan ${currentMonth} ${currentYear} - Melati Gold Shop`,
-      'stokAksesorisTransaksi': `Arsip Data Transaksi Stok Bulan ${currentMonth} ${currentYear} - Melati Gold Shop`,
-      'stokAksesoris': `Arsip Data Stok Aksesoris Bulan ${currentMonth} ${currentYear} - Melati Gold Shop`
-    };
-    
-    return titles[collectionName] || `Arsip Data ${collectionName} Bulan ${currentMonth} ${currentYear} - Melati Gold Shop`;
-  }
-  
-  /**
-   * Create worksheet dengan title di bagian atas
-   */
-  createWorksheetWithTitle(data, title) {
-    if (data.length === 0) {
-      return XLSX.utils.json_to_sheet([]);
-    }
-    
-    // Create worksheet dari data
-    const worksheet = XLSX.utils.json_to_sheet(data, { origin: 'A4' });
-    
-    // Add title di baris pertama
-    XLSX.utils.sheet_add_aoa(worksheet, [[title]], { origin: 'A1' });
-    
-    // Add info export di baris kedua
-    const exportInfo = `Diekspor pada: ${this.formatDate(new Date())} | Total Records: ${data.length}`;
-    XLSX.utils.sheet_add_aoa(worksheet, [[exportInfo]], { origin: 'A2' });
-    
-    // Merge cells untuk title
-    if (!worksheet['!merges']) worksheet['!merges'] = [];
-    
-    const headerCols = Object.keys(data[0]).length;
-    worksheet['!merges'].push({
-      s: { r: 0, c: 0 }, // start
-      e: { r: 0, c: headerCols - 1 } // end
-    });
-    
-    worksheet['!merges'].push({
-      s: { r: 1, c: 0 },
-      e: { r: 1, c: headerCols - 1 }
-    });
-    
-    // Style untuk title
-    if (!worksheet['!rows']) worksheet['!rows'] = [];
-    worksheet['!rows'][0] = { hpt: 25 }; // height untuk title
-    worksheet['!rows'][1] = { hpt: 18 }; // height untuk info
-    worksheet['!rows'][2] = { hpt: 5 };  // empty row
-    
-    // Auto-size columns
-    const colWidths = [];
-    Object.keys(data[0]).forEach(key => {
-      const maxLength = Math.max(
-        key.length,
-        ...data.map(row => String(row[key] || '').length)
-      );
-      colWidths.push({ wch: Math.min(maxLength + 2, 50) });
-    });
-    worksheet['!cols'] = colWidths;
-    
-    return worksheet;
-  }
-  
-  /**
-   * Get sheet name berdasarkan collection
-   */
-  getSheetName(collectionName) {
-    const sheetNames = {
-      'penjualanAksesoris': 'Data Penjualan',
-      'stockAdditions': 'Penambahan Stok',
-      'stokAksesorisTransaksi': 'Transaksi Stok',
-      'stokAksesoris': 'Stok Aksesoris'
-    };
-    
-    return sheetNames[collectionName] || collectionName;
-  }
-  
-  /**
-   * Format items array untuk display yang readable
-   */
-  formatItems(items) {
-    if (!Array.isArray(items) || items.length === 0) {
-      return 'Tidak ada item';
-    }
-    
-    return items.map(item => {
-      const parts = [];
-      
-      if (item.nama) parts.push(`${item.nama}`);
-      if (item.kodeText && item.kodeText !== '-') parts.push(`[${item.kodeText}]`);
-      if (item.kadar) parts.push(`${item.kadar}`);
-      if (item.berat) parts.push(`${item.berat}g`);
-      if (item.totalHarga) parts.push(`Rp${item.totalHarga}`);
-      
-      return parts.join(' - ');
-    }).join(' | ');
-  }
-  
-  /**
-   * Format date to readable string
-   */
-  formatDate(date) {
-    if (!date) return '';
-    
-    try {
-      const d = date instanceof Date ? date : new Date(date);
-      if (isNaN(d.getTime())) return '';
-      
-      const day = String(d.getDate()).padStart(2, '0');
-      const month = String(d.getMonth() + 1).padStart(2, '0');
-      const year = d.getFullYear();
-      const hours = String(d.getHours()).padStart(2, '0');
-      const minutes = String(d.getMinutes()).padStart(2, '0');
-      
-      return `${day}/${month}/${year} ${hours}:${minutes}`;
-    } catch (error) {
-      console.error('Error formatting date:', error);
-      return '';
-    }
-  }
-  
-  /**
-   * Handle delete old data process with proper loading management
-   */
-  async handleDeleteOldData() {
-    const selectedMonth = this.deleteMonthInput.value;
-    if (!selectedMonth) {
-      this.showAlert('Pilih bulan yang akan dihapus', 'warning');
-      return;
-    }
-
-    if (!this.isArchived || !this.isExported) {
-      this.showAlert('Data harus diarsipkan dan diexport terlebih dahulu!', 'warning');
-      return;
-    }
-
-    const confirmed = await this.showConfirmation(
-      `PERINGATAN: Apakah Anda yakin ingin menghapus PERMANEN data bulan ${selectedMonth}?\n\nPastikan data sudah diarsipkan dan diexport!`,
-      'Konfirmasi Hapus Data'
-    );
-
-    if (!confirmed) return;
-
-    // Double confirmation
-    const doubleConfirmed = await this.showConfirmation(
-      'Konfirmasi sekali lagi: Data yang dihapus TIDAK DAPAT dikembalikan!',
-      'Konfirmasi Terakhir'
-    );
-
-    if (!doubleConfirmed) return;
-
-    try {
-      this.showLoading('Menghapus Data...', 'Menghapus data lama dari database');
-      this.updateProgress(0);
-      this.clearProgressLog();
-
-      await this.deleteDataByMonth(selectedMonth);
-      
-      this.showAlert('Data lama berhasil dihapus!', 'success');
-      
-      // Clear all cache and force refresh status
-      this.cache.clear();
-      await this.loadDatabaseStatus(true);
-      
-    } catch (error) {
-      console.error('Error deleting data:', error);
-      this.showAlert('Gagal menghapus data: ' + error.message, 'error');
-    } finally {
-      this.hideLoading();
-    }
-  }
-
-  /**
-   * Delete data by month from specified collections
-   */
-  async deleteDataByMonth(monthStr) {
-    try {
-      const [year, month] = monthStr.split('-');
-      const startDate = new Date(parseInt(year), parseInt(month) - 1, 1);
-      const endDate = new Date(parseInt(year), parseInt(month), 1);
-
-      const collections = ['penjualanAksesoris', 'stockAdditions', 'stokAksesorisTransaksi'];
-      let totalDeleted = 0;
-
-      for (let i = 0; i < collections.length; i++) {
-        const collectionName = collections[i];
-        
-        this.logProgress(`Menghapus data dari ${collectionName}...`);
-        
-        // Query data for the specified month
-        const q = query(
-          collection(this.firestore, collectionName),
-          where('timestamp', '>=', Timestamp.fromDate(startDate)),
-          where('timestamp', '<', Timestamp.fromDate(endDate))
-        );
-
-        const snapshot = await getDocs(q);
-        const docs = snapshot.docs;
-        
-        this.logProgress(`Ditemukan ${docs.length} dokumen untuk dihapus di ${collectionName}`);
-
-        if (docs.length > 0) {
-          // Delete in smaller batches
-          const batchSize = 50;
-          const totalBatches = Math.ceil(docs.length / batchSize);
-          
-          for (let j = 0; j < totalBatches; j++) {
-            const batch = writeBatch(this.firestore);
-            const startIndex = j * batchSize;
-            const endIndex = Math.min(startIndex + batchSize, docs.length);
-            const batchDocs = docs.slice(startIndex, endIndex);
-            
-            batchDocs.forEach(docSnapshot => {
-              batch.delete(doc(this.firestore, collectionName, docSnapshot.id));
             });
+            
+            await setDoc(doc(firestore, 'stocks', category), categoryData);
+            stockData[category] = categoryData;
+            stockCache.set(category, categoryData);
+            updateCacheTimestamp(category);
+        });
+        
+        await Promise.all(initPromises);
+        updateCache();
+    } catch (error) {
+        console.error('Error initializing Firestore data:', error);
+    }
+}
 
-            await batch.commit();
-            
-            const progress = ((i / collections.length) + ((j + 1) / totalBatches / collections.length)) * 100;
-            this.updateProgress(Math.round(progress));
-            
-            this.logProgress(`Batch ${j + 1}/${totalBatches} dihapus dari ${collectionName}`);
-            
-            // Small delay
-            if (j < totalBatches - 1) {
-              await new Promise(resolve => setTimeout(resolve, 100));
-            }
-          }
-
-          totalDeleted += docs.length;
+// Optimized save function - only update specific item
+async function saveData(category, type) {
+    try {
+        const categoryRef = doc(firestore, 'stocks', category);
+        
+        // Update only the specific item type
+        const updateData = {};
+        updateData[type] = stockData[category][type];
+        
+        await updateDoc(categoryRef, updateData);
+        
+        // Update cache timestamp for this category
+        updateCacheTimestamp(category);
+        
+        console.log(`Successfully saved ${type} in ${category}`);
+    } catch (error) {
+        console.error('Error saving data to Firestore:', error);
+        
+        // Try to create document if it doesn't exist
+        try {
+            await setDoc(categoryRef, stockData[category]);
+            updateCacheTimestamp(category);
+        } catch (createError) {
+            console.error('Error creating document:', createError);
+            alert('Terjadi kesalahan saat menyimpan data. Silakan coba lagi.');
         }
-
-        this.logProgress(`Selesai menghapus ${docs.length} dokumen dari ${collectionName}`);
-      }
-
-      this.updateProgress(100);
-      this.logProgress(`Penghapusan selesai! Total ${totalDeleted} dokumen dihapus.`, 'success');
-      
-    } catch (error) {
-      this.logProgress(`Error dalam deleteDataByMonth: ${error.message}`, 'error');
-      throw error;
     }
-  }
-
-  /**
-   * Update delete button state based on archive and export status
-   */
-  updateDeleteButtonState() {
-    const canDelete = this.isArchived && this.isExported;
-    this.btnDeleteOldData.disabled = !canDelete;
-    
-    if (canDelete) {
-      this.btnDeleteOldData.classList.remove('btn-secondary');
-      this.btnDeleteOldData.classList.add('btn-danger');
-    }
-  }
-
-  /**
-   * Update progress bar
-   */
-  updateProgress(percentage) {
-    if (this.progressBar) {
-      this.progressBar.style.width = `${percentage}%`;
-      this.progressBar.textContent = `${percentage}%`;
-      this.progressBar.setAttribute('aria-valuenow', percentage);
-    }
-  }
-
-  /**
-   * Log progress message
-   */
-  logProgress(message, type = 'info') {
-    const timestamp = new Date().toLocaleTimeString();
-    const logClass = type === 'error' ? 'text-danger' : 
-                     type === 'success' ? 'text-success' : 
-                     type === 'warning' ? 'text-warning' : 'text-dark';
-    
-    const logEntry = document.createElement('div');
-    logEntry.className = `mb-1 ${logClass}`;
-    logEntry.innerHTML = `<small>[${timestamp}] ${message}</small>`;
-    
-    if (this.progressLog) {
-      this.progressLog.appendChild(logEntry);
-      this.progressLog.scrollTop = this.progressLog.scrollHeight;
-    }
-    
-    console.log(`[Maintenance] ${message}`);
-  }
-
-  /**
-   * Clear progress log
-   */
-  clearProgressLog() {
-    if (this.progressLog) {
-      this.progressLog.innerHTML = '<p class="text-muted mb-0">Memulai proses maintenance...</p>';
-    }
-  }
-
-  /**
-   * Show alert using SweetAlert2
-   */
-  showAlert(message, type = 'info') {
-    const iconMap = {
-      'success': 'success',
-      'error': 'error',
-      'warning': 'warning',
-      'info': 'info'
-    };
-
-    return Swal.fire({
-      title: type === 'error' ? 'Error' : 
-             type === 'success' ? 'Berhasil' : 
-             type === 'warning' ? 'Peringatan' : 'Informasi',
-      text: message,
-      icon: iconMap[type] || 'info',
-      confirmButtonText: 'OK',
-      confirmButtonColor: '#0d6efd'
-    });
-  }
-
-  /**
-   * Show confirmation dialog
-   */
-  showConfirmation(message, title = 'Konfirmasi') {
-    return Swal.fire({
-      title: title,
-      text: message,
-      icon: 'question',
-      showCancelButton: true,
-      confirmButtonText: 'Ya',
-      cancelButtonText: 'Batal',
-      confirmButtonColor: '#0d6efd',
-      cancelButtonColor: '#6c757d'
-    }).then(result => result.isConfirmed);
-  }
-
-  /**
-   * Cleanup when page unloads
-   */
-  cleanup() {
-    // Force hide loading if still showing
-    if (this.isLoading) {
-      this.hideLoading();
-    }
-    
-    // Clear cache
-    this.cache.clear();
-    
-    console.log('Maintenance system cleanup completed');
-  }
 }
 
-/**
- * Shared Cache Manager for cross-module caching
- */
-class SharedCacheManager {
-  constructor() {
-    this.prefix = 'shared_maintenance_';
-    this.defaultTTL = 5 * 60 * 1000; // 5 minutes
-  }
+// Function to format date
+function formatDate(date) {
+    if (!date) return '-';
+    
+    const d = new Date(date);
+    return `${d.getDate()}/${d.getMonth() + 1}/${d.getFullYear()} ${d.getHours()}:${d.getMinutes().toString().padStart(2, '0')}`;
+}
 
-  setVersioned(key, data, ttl = this.defaultTTL) {
-    const item = {
-      data,
-      timestamp: Date.now(),
-      ttl,
-      version: Date.now()
-    };
-
+// Function to populate tables with improved performance
+async function populateTables() {
     try {
-      sessionStorage.setItem(this.prefix + key, JSON.stringify(item));
-    } catch (error) {
-      console.warn('Shared cache set failed:', error);
-      this.clearOldCache();
-    }
-  }
-
-  getVersioned(key) {
-    try {
-      const item = JSON.parse(sessionStorage.getItem(this.prefix + key));
-      if (!item) return null;
-
-      const age = Date.now() - item.timestamp;
-      if (age > item.ttl) {
-        this.remove(key);
-        return null;
-      }
-
-      return { data: item.data, age };
-    } catch (error) {
-      console.warn('Shared cache get failed:', error);
-      this.remove(key);
-      return null;
-    }
-  }
-
-  remove(key) {
-    try {
-      sessionStorage.removeItem(this.prefix + key);
-    } catch (error) {
-      console.warn('Shared cache remove failed:', error);
-    }
-  }
-
-  invalidateRelated(pattern) {
-    try {
-      Object.keys(sessionStorage)
-        .filter(key => key.startsWith(this.prefix) && key.includes(pattern))
-        .forEach(key => sessionStorage.removeItem(key));
-    } catch (error) {
-      console.warn('Shared cache invalidate failed:', error);
-    }
-  }
-
-  clearOldCache() {
-    const now = Date.now();
-    try {
-      Object.keys(sessionStorage)
-        .filter(key => key.startsWith(this.prefix))
-        .forEach(key => {
-          try {
-            const item = JSON.parse(sessionStorage.getItem(key));
-            if (item && now - item.timestamp > item.ttl) {
-              sessionStorage.removeItem(key);
-            }
-          } catch (error) {
-            sessionStorage.removeItem(key);
-          }
+        // Fetch latest data (uses cache if valid)
+        await fetchStockData();
+        
+        // Use document fragment for better performance
+        const fragments = {};
+        categories.forEach(category => {
+            fragments[category] = document.createDocumentFragment();
         });
+        
+        categories.forEach(category => {
+            const tableBody = document.getElementById(`${category}-table-body`);
+            if (!tableBody) return;
+            
+            if (!stockData[category]) {
+                console.warn(`No data found for category: ${category}`);
+                return;
+            }
+            
+            let index = 1;
+            itemTypes.forEach(type => {
+                const item = stockData[category][type];
+                if (!item) return;
+                
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td>${index}</td>
+                    <td>${type}</td>
+                    <td>${item.quantity}</td>
+                    <td>${item.lastUpdated ? formatDate(item.lastUpdated) : '-'}</td>
+                    <td>
+                        <button class="btn btn-sm btn-info view-history" 
+                                data-category="${category}" 
+                                data-type="${type}">
+                            <i class="fas fa-history"></i> Lihat
+                        </button>
+                    </td>
+                `;
+                
+                fragments[category].appendChild(row);
+                index++;
+            });
+            
+            // Clear and append all at once
+            tableBody.innerHTML = '';
+            tableBody.appendChild(fragments[category]);
+        });
+        
+        // Add event listeners to history buttons
+        document.querySelectorAll('.view-history').forEach(button => {
+            button.addEventListener('click', function() {
+                const category = this.getAttribute('data-category');
+                const type = this.getAttribute('data-type');
+                showHistory(category, type);
+            });
+        });
+        
+        // Update summary totals
+        updateSummaryTotals();
+        
     } catch (error) {
-      console.warn('Clear old shared cache failed:', error);
+        console.error('Error populating tables:', error);
+        alert('Terjadi kesalahan saat memuat data. Silakan refresh halaman.');
     }
-  }
 }
 
-// Create shared cache instance
-const sharedCacheManager = new SharedCacheManager();
-
-/**
- * Utility functions for backward compatibility
- */
-const maintenanceUtils = {
-  showAlert: (message, type = 'info') => {
-    return Swal.fire({
-      title: type === 'error' ? 'Error' : type === 'success' ? 'Berhasil' : 'Informasi',
-      text: message,
-      icon: type,
-      confirmButtonText: 'OK'
+// Function to update summary totals
+function updateSummaryTotals() {
+    itemTypes.forEach(type => {
+        let total = 0;
+        categories.forEach(category => {
+            if (stockData[category] && stockData[category][type]) {
+                total += stockData[category][type].quantity;
+            }
+        });
+        
+        const totalElement = document.getElementById(`total-${type.toLowerCase()}`);
+        if (totalElement) {
+            totalElement.textContent = total;
+        }
     });
-  },
+}
 
-  showConfirm: (message, title = 'Konfirmasi') => {
-    return Swal.fire({
-      title: title,
-      text: message,
-      icon: 'question',
-      showCancelButton: true,
-      confirmButtonText: 'Ya',
-      cancelButtonText: 'Batal'
-    }).then(result => result.isConfirmed);
-  },
+// Function to show history in modal
+function showHistory(category, type) {
+    const historyTitle = document.getElementById('history-title');
+    const historyTableBody = document.getElementById('history-table-body');
+    
+    historyTitle.textContent = `${type} (${category.toUpperCase()})`;
+    historyTableBody.innerHTML = '';
+    
+    const history = stockData[category][type].history;
+    
+    if (!history || history.length === 0) {
+        const row = document.createElement('tr');
+        row.innerHTML = '<td colspan="5" class="text-center">Tidak ada riwayat</td>';
+        historyTableBody.appendChild(row);
+    } else {
+        const sortedHistory = [...history].sort((a, b) => new Date(b.date) - new Date(a.date));
+        
+        sortedHistory.forEach((record, index) => {
+            const row = document.createElement('tr');
+            row.innerHTML = `
+                <td>${formatDate(record.date)}</td>
+                <td>${record.action}</td>
+                <td>${record.quantity}</td>
+                <td>${record.action === 'Tambah' ? record.adder : record.reducer}</td>
+                <td>${record.action === 'Tambah' ? record.receiver : record.notes}</td>
+            `;
+            historyTableBody.appendChild(row);
+        });
+        
+        if (history.length >= MAX_HISTORY_RECORDS) {
+            const infoRow = document.createElement('tr');
+            infoRow.innerHTML = `
+                <td colspan="5" class="text-center text-muted small">
+                    <i class="fas fa-info-circle me-1"></i>
+                    Menampilkan ${MAX_HISTORY_RECORDS} riwayat terbaru
+                </td>
+            `;
+            historyTableBody.appendChild(infoRow);
+        }
+    }
+    
+    const historyModal = new bootstrap.Modal(document.getElementById('historyModal'));
+    historyModal.show();
+}
 
-  formatDate: (date) => {
-    if (!date) return '';
+// Function to add stock
+async function addStock(category, type, quantity, adder, receiver) {
     try {
-      const d = date.toDate ? date.toDate() : date instanceof Date ? date : new Date(date);
-      const day = String(d.getDate()).padStart(2, '0');
-      const month = String(d.getMonth() + 1).padStart(2, '0');
-      const year = d.getFullYear();
-      return `${day}/${month}/${year}`;
-    } catch (error) {
-      console.error('Error formatting date:', error);
-      return '';
-    }
-  }
-};
-
-/**
- * Performance monitoring for maintenance operations
- */
-const MaintenancePerformance = {
-  operations: new Map(),
-
-  start: (operationName) => {
-    const startTime = performance.now();
-    MaintenancePerformance.operations.set(operationName, {
-      startTime,
-      endTime: null,
-      duration: null
-    });
-    console.log(`Started monitoring: ${operationName}`);
-  },
-
-  end: (operationName) => {
-    const operation = MaintenancePerformance.operations.get(operationName);
-    if (operation) {
-      const endTime = performance.now();
-      const duration = endTime - operation.startTime;
-      
-      operation.endTime = endTime;
-      operation.duration = duration;
-      
-      console.log(`Completed: ${operationName} in ${(duration / 1000).toFixed(2)} seconds`);
-      
-      if (duration > 30000) {
-        console.warn(`Slow operation detected: ${operationName} took ${(duration / 1000).toFixed(2)} seconds`);
-      }
-    }
-  },
-
-  getSummary: () => {
-    const summary = {};
-    MaintenancePerformance.operations.forEach((operation, name) => {
-      if (operation.duration !== null) {
-        summary[name] = {
-          duration: operation.duration,
-          durationSeconds: (operation.duration / 1000).toFixed(2)
+        // Ensure we have the latest data
+        await fetchStockData();
+        
+        if (!stockData[category] || !stockData[category][type]) {
+            alert('Kategori atau jenis barang tidak ditemukan.');
+            return;
+        }
+        
+        const item = stockData[category][type];
+        
+        // Update quantity
+        item.quantity += parseInt(quantity);
+        item.lastUpdated = new Date().toISOString();
+        
+        // Add to history using the new function
+        const historyEntry = {
+            date: item.lastUpdated,
+            action: 'Tambah',
+            quantity: quantity,
+            adder: adder,
+            receiver: receiver
         };
-      }
-    });
-    return summary;
-  },
-
-  clear: () => {
-    MaintenancePerformance.operations.clear();
-  }
-};
-
-/**
- * Enhanced error handling and recovery
- */
-const MaintenanceErrorHandler = {
-  handleBatchError: async (error, operation, retryCount = 0) => {
-    console.error(`Batch operation error in ${operation}:`, error);
-    
-    const maxRetries = 3;
-    const retryDelay = Math.pow(2, retryCount) * 1000;
-    
-    if (retryCount < maxRetries && error.code !== 'permission-denied') {
-      console.log(`Retrying ${operation} in ${retryDelay}ms (attempt ${retryCount + 1}/${maxRetries})`);
-      
-      await new Promise(resolve => setTimeout(resolve, retryDelay));
-      return { shouldRetry: true, retryCount: retryCount + 1 };
-    }
-    
-    return { shouldRetry: false, error };
-  },
-
-  handleQuotaError: (error) => {
-    if (error.code === 'resource-exhausted') {
-      return {
-        message: 'Kuota Firestore terlampaui. Coba lagi nanti atau hubungi administrator.',
-        suggestion: 'Pertimbangkan untuk mengurangi ukuran batch atau menjalankan operasi di luar jam sibuk.'
-      };
-    }
-    return null;
-  },
-
-  handleNetworkError: (error) => {
-    if (error.code === 'unavailable' || error.message.includes('network')) {
-      return {
-        message: 'Koneksi jaringan bermasalah. Periksa koneksi internet Anda.',
-        suggestion: 'Coba lagi setelah koneksi stabil.'
-      };
-    }
-    return null;
-  }
-};
-
-/**
- * Additional utility functions for maintenance operations
- */
-const MaintenanceHelpers = {
-  validateMonthInput: (monthStr) => {
-    if (!monthStr) return false;
-    const regex = /^\d{4}-\d{2}$/;
-    return regex.test(monthStr);
-  },
-
-  getMonthRange: (monthStr) => {
-    const [year, month] = monthStr.split('-');
-    const startDate = new Date(parseInt(year), parseInt(month) - 1, 1);
-    const endDate = new Date(parseInt(year), parseInt(month), 1);
-    return { startDate, endDate };
-  },
-
-  estimateStorageSize: (docs) => {
-    let totalSize = 0;
-    docs.forEach(doc => {
-      const dataStr = JSON.stringify(doc.data());
-      totalSize += new Blob([dataStr]).size;
-    });
-    return totalSize;
-  },
-
-  formatFileSize: (bytes) => {
-    if (bytes === 0) return '0 Bytes';
-    const k = 1024;
-    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
-  },
-
-  generateBackupFilename: (collectionName, type = 'backup') => {
-    const now = new Date();
-    const timestamp = now.toISOString().slice(0, 19).replace(/:/g, '-');
-    return `${collectionName}_${type}_${timestamp}`;
-  },
-
-  validateFirebaseConnection: async () => {
-    try {
-      const testQuery = query(
-        collection(firestore, 'stokAksesoris'),
-        orderBy('__name__'),
-        limit(1)
-      );
-      await getDocs(testQuery);
-      return true;
+        
+        addHistoryEntry(item, historyEntry);
+        
+        // Update cache
+        stockCache.set(category, stockData[category]);
+        
+        // Save to Firestore
+        await saveData(category, type);
+        
+        // Update UI
+        populateTables();
+        
     } catch (error) {
-      console.error('Firebase connection test failed:', error);
-      return false;
+        console.error('Error adding stock:', error);
+        alert('Terjadi kesalahan saat menambah stok. Silakan coba lagi.');
     }
-  },
+}
 
-  createMaintenanceLog: (operation, details, status = 'success') => {
-    const logEntry = {
-      timestamp: new Date().toISOString(),
-      operation: operation,
-      details: details,
-      status: status,
-      user: 'maintenance_system'
-    };
-
-    const logKey = `maintenance_log_${Date.now()}`;
+// Function to reduce stock
+async function reduceStock(category, type, quantity, reducer, notes) {
     try {
-      sessionStorage.setItem(logKey, JSON.stringify(logEntry));
+        // Ensure we have the latest data
+        await fetchStockData();
+        
+        if (!stockData[category] || !stockData[category][type]) {
+            alert('Kategori atau jenis barang tidak ditemukan.');
+            return false;
+        }
+        
+        const item = stockData[category][type];
+        
+        // Check if there's enough stock
+        if (item.quantity < quantity) {
+            alert(`Stok ${type} tidak mencukupi. Stok saat ini: ${item.quantity}`);
+            return false;
+        }
+        
+        // Update quantity
+        item.quantity -= parseInt(quantity);
+        item.lastUpdated = new Date().toISOString();
+        
+        // Add to history using the new function
+        const historyEntry = {
+            date: item.lastUpdated,
+            action: 'Kurang',
+            quantity: quantity,
+            reducer: reducer,
+            notes: notes
+        };
+        
+        addHistoryEntry(item, historyEntry);
+        
+        // Update cache
+        stockCache.set(category, stockData[category]);
+        
+        // Save to Firestore
+        await saveData(category, type);
+        
+        // Update UI
+        populateTables();
+        return true;
+        
     } catch (error) {
-      console.warn('Could not store maintenance log:', error);
+        console.error('Error reducing stock:', error);
+        alert('Terjadi kesalahan saat mengurangi stok. Silakan coba lagi.');
+        return false;
     }
+}
 
-    return logEntry;
-  },
-
-  getMaintenanceHistory: () => {
-    const logs = [];
-    try {
-      Object.keys(sessionStorage)
-        .filter(key => key.startsWith('maintenance_log_'))
-        .forEach(key => {
-          try {
-            const log = JSON.parse(sessionStorage.getItem(key));
-            logs.push(log);
-          } catch (error) {
-            console.warn('Invalid maintenance log entry:', key);
-          }
-        });
-    } catch (error) {
-      console.warn('Could not retrieve maintenance history:', error);
-    }
-
-    return logs.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
-  },
-
-  clearOldMaintenanceLogs: () => {
-    const thirtyDaysAgo = new Date();
-    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-
-    try {
-      Object.keys(sessionStorage)
-        .filter(key => key.startsWith('maintenance_log_'))
-        .forEach(key => {
-          try {
-            const log = JSON.parse(sessionStorage.getItem(key));
-            const logDate = new Date(log.timestamp);
-            if (logDate < thirtyDaysAgo) {
-              sessionStorage.removeItem(key);
+// Setup real-time listener with improved cache invalidation
+function setupRealtimeListener() {
+    const stocksRef = collection(firestore, 'stocks');
+    
+    const unsubscribe = onSnapshot(stocksRef, (snapshot) => {
+        let hasChanges = false;
+        
+        snapshot.docChanges().forEach((change) => {
+            if (change.type === 'modified') {
+                const categoryId = change.doc.id;
+                const categoryData = change.doc.data();
+                
+                // Only update if we have this category in our cache
+                if (stockData[categoryId]) {
+                    stockData[categoryId] = categoryData;
+                    stockCache.set(categoryId, categoryData);
+                    updateCacheTimestamp(categoryId);
+                    hasChanges = true;
+                }
             }
-          } catch (error) {
-            sessionStorage.removeItem(key);
-          }
         });
+        
+        // If we detected changes, update the UI
+        if (hasChanges) {
+            console.log('Real-time update detected, refreshing UI');
+            updateSummaryTotals();
+            
+            // Only update tables if we're on the stock management page
+            const tableContainer = document.querySelector('.table-container');
+            if (tableContainer) {
+                populateTables();
+            }
+        }
+    }, (error) => {
+        console.error('Error in real-time listener:', error);
+    });
+    
+    // Store the unsubscribe function to clean up when needed
+    window.addEventListener('beforeunload', () => {
+        unsubscribe();
+    });
+}
+
+// Force refresh function
+async function forceRefreshData() {
+    try {
+        console.log('Force refreshing stock data...');
+        
+        // Clear cache
+        stockCache.clear();
+        stockCacheMeta.clear();
+        localStorage.removeItem(CACHE_KEY);
+        
+        // Fetch fresh data
+        await fetchStockData(true);
+        
+        // Update UI
+        await populateTables();
+        
+        alert('Data stok berhasil diperbarui dari server.');
     } catch (error) {
-      console.warn('Could not clear old maintenance logs:', error);
+        console.error('Error force refreshing data:', error);
+        alert('Terjadi kesalahan saat memperbarui data. Silakan coba lagi.');
     }
-  }
+}
+
+// Event listeners for add stock forms
+document.getElementById('simpan-tambah-brankas')?.addEventListener('click', function() {
+    const type = document.getElementById('jenis-barang-brankas-tambah').value;
+    const quantity = document.getElementById('jumlah-brankas-tambah').value;
+    const adder = document.getElementById('penambah-brankas').value;
+    const receiver = document.getElementById('penerima-brankas').value;
+    
+    if (!type || !quantity || !adder || !receiver) {
+        alert('Semua field harus diisi!');
+        return;
+    }
+    
+    addStock('brankas', type, quantity, adder, receiver);
+    
+    // Reset form and close modal
+    document.getElementById('tambahStokBrankasForm').reset();
+    bootstrap.Modal.getInstance(document.getElementById('tambahStokBrankasModal')).hide();
+});
+
+document.getElementById('simpan-tambah-admin')?.addEventListener('click', function() {
+    const type = document.getElementById('jenis-barang-admin-tambah').value;
+    const quantity = document.getElementById('jumlah-admin-tambah').value;
+    const adder = document.getElementById('penambah-admin').value;
+    const receiver = document.getElementById('penerima-admin').value;
+    
+    if (!type || !quantity || !adder || !receiver) {
+        alert('Semua field harus diisi!');
+        return;
+    }
+    
+    addStock('admin', type, quantity, adder, receiver);
+    
+    // Reset form and close modal
+    document.getElementById('tambahStokAdminForm').reset();
+    bootstrap.Modal.getInstance(document.getElementById('tambahStokAdminModal')).hide();
+});
+
+document.getElementById('simpan-tambah-rusak')?.addEventListener('click', function() {
+    const type = document.getElementById('jenis-barang-rusak-tambah').value;
+    const quantity = document.getElementById('jumlah-rusak-tambah').value;
+    const adder = document.getElementById('penambah-rusak').value;
+    const receiver = document.getElementById('penerima-rusak').value;
+    
+    if (!type || !quantity || !adder || !receiver) {
+        alert('Semua field harus diisi!');
+        return;
+    }
+    
+    addStock('barang-rusak', type, quantity, adder, receiver);
+    
+    // Reset form and close modal
+    document.getElementById('tambahStokBarangRusakForm').reset();
+    bootstrap.Modal.getInstance(document.getElementById('tambahStokBarangRusakModal')).hide();
+});
+
+document.getElementById('simpan-tambah-posting')?.addEventListener('click', function() {
+    const type = document.getElementById('jenis-barang-posting-tambah').value;
+    const quantity = document.getElementById('jumlah-posting-tambah').value;
+    const adder = document.getElementById('penambah-posting').value;
+    const receiver = document.getElementById('penerima-posting').value;
+    
+    if (!type || !quantity || !adder || !receiver) {
+        alert('Semua field harus diisi!');
+        return;
+    }
+    
+    addStock('posting', type, quantity, adder, receiver);
+    
+    // Reset form and close modal
+    document.getElementById('tambahStokPostingForm').reset();
+    bootstrap.Modal.getInstance(document.getElementById('tambahStokPostingModal')).hide();
+});
+
+// Add event listener for Batu Lepas add stock
+document.getElementById('simpan-tambah-batu')?.addEventListener('click', function() {
+    const type = document.getElementById('jenis-batu-tambah').value;
+    const quantity = document.getElementById('jumlah-batu-tambah').value;
+    const adder = document.getElementById('penambah-batu').value;
+    const receiver = document.getElementById('penerima-batu').value;
+    
+    if (!type || !quantity || !adder || !receiver) {
+        alert('Semua field harus diisi!');
+        return;
+    }
+    
+    // Handle custom stone type
+    let stoneType = type;
+    if (type === 'LAINNYA') {
+        stoneType = document.getElementById('jenis-batu-lainnya').value;
+        if (!stoneType) {
+            alert('Silakan isi jenis batu lainnya!');
+            return;
+        }
+    }
+    
+    addStock('batu-lepas', stoneType, quantity, adder, receiver);
+    
+    // Reset form and close modal
+    document.getElementById('tambahStokBatuLepasForm').reset();
+    bootstrap.Modal.getInstance(document.getElementById('tambahStokBatuLepasModal')).hide();
+});
+
+// Event listeners for reduce stock forms
+document.getElementById('simpan-kurang-brankas')?.addEventListener('click', function() {
+    const type = document.getElementById('jenis-barang-brankas-kurang').value;
+    const quantity = document.getElementById('jumlah-brankas-kurang').value;
+    const reducer = document.getElementById('pengurang-brankas').value;
+    const notes = document.getElementById('keterangan-brankas').value;
+    
+    if (!type || !quantity || !reducer || !notes) {
+        alert('Semua field harus diisi!');
+        return;
+    }
+    
+    reduceStock('brankas', type, quantity, reducer, notes).then(success => {
+        if (success) {
+            // Reset form and close modal
+            document.getElementById('kurangiStokBrankasForm').reset();
+            bootstrap.Modal.getInstance(document.getElementById('kurangiStokBrankasModal')).hide();
+        }
+    });
+});
+
+document.getElementById('simpan-kurang-admin')?.addEventListener('click', function() {
+    const type = document.getElementById('jenis-barang-admin-kurang').value;
+    const quantity = document.getElementById('jumlah-admin-kurang').value;
+    const reducer = document.getElementById('pengurang-admin').value;
+    const notes = document.getElementById('keterangan-admin').value;
+    
+    if (!type || !quantity || !reducer || !notes) {
+        alert('Semua field harus diisi!');
+        return;
+    }
+    
+    reduceStock('admin', type, quantity, reducer, notes).then(success => {
+        if (success) {
+            // Reset form and close modal
+            document.getElementById('kurangiStokAdminForm').reset();
+            bootstrap.Modal.getInstance(document.getElementById('kurangiStokAdminModal')).hide();
+        }
+    });
+});
+
+document.getElementById('simpan-kurang-rusak')?.addEventListener('click', function() {
+    const type = document.getElementById('jenis-barang-rusak-kurang').value;
+    const quantity = document.getElementById('jumlah-rusak-kurang').value;
+    const reducer = document.getElementById('pengurang-rusak').value;
+    const notes = document.getElementById('keterangan-rusak').value;
+    
+    if (!type || !quantity || !reducer || !notes) {
+        alert('Semua field harus diisi!');
+        return;
+    }
+    
+    reduceStock('barang-rusak', type, quantity, reducer, notes).then(success => {
+        if (success) {
+            // Reset form and close modal
+            document.getElementById('kurangiStokBarangRusakForm').reset();
+            bootstrap.Modal.getInstance(document.getElementById('kurangiStokBarangRusakModal')).hide();
+        }
+    });
+});
+
+document.getElementById('simpan-kurang-posting')?.addEventListener('click', function() {
+    const type = document.getElementById('jenis-barang-posting-kurang').value;
+    const quantity = document.getElementById('jumlah-posting-kurang').value;
+    const reducer = document.getElementById('pengurang-posting').value;
+    const notes = document.getElementById('keterangan-posting').value;
+    
+    if (!type || !quantity || !reducer || !notes) {
+        alert('Semua field harus diisi!');
+        return;
+    }
+    
+    reduceStock('posting', type, quantity, reducer, notes).then(success => {
+        if (success) {
+            // Reset form and close modal
+            document.getElementById('kurangiStokPostingForm').reset();
+            bootstrap.Modal.getInstance(document.getElementById('kurangiStokPostingModal')).hide();
+        }
+    });
+});
+
+// Add event listener for Batu Lepas reduce stock
+document.getElementById('simpan-kurang-batu')?.addEventListener('click', function() {
+    const type = document.getElementById('jenis-batu-kurang').value;
+    const quantity = document.getElementById('jumlah-batu-kurang').value;
+    const reducer = document.getElementById('pengurang-batu').value;
+    const notes = document.getElementById('keterangan-batu').value;
+    
+    if (!type || !quantity || !reducer || !notes) {
+        alert('Semua field harus diisi!');
+        return;
+    }
+    
+    reduceStock('batu-lepas', type, quantity, reducer, notes).then(success => {
+        if (success) {
+            // Reset form and close modal
+            document.getElementById('kurangiStokBatuLepasForm').reset();
+            bootstrap.Modal.getInstance(document.getElementById('kurangiStokBatuLepasModal')).hide();
+        }
+    });
+});
+
+// Function to handle logout
+function handleLogout() {
+    // Clear session or perform logout actions
+    window.location.href = 'index.html';
+}
+
+// Handle "Lainnya" option for batu lepas
+document.getElementById('jenis-batu-tambah')?.addEventListener('change', function() {
+    const lainnyaContainer = document.getElementById('jenis-batu-lainnya-container');
+    if (this.value === 'LAINNYA') {
+        lainnyaContainer.style.display = 'block';
+    } else {
+        lainnyaContainer.style.display = 'none';
+    }
+});
+
+// Populate batu lepas dropdown for reduce stock
+async function populateBatuLepasDropdown() {
+    const dropdown = document.getElementById('jenis-batu-kurang');
+    if (!dropdown) return;
+    
+    // Clear existing options except the first one
+    while (dropdown.options.length > 1) {
+        dropdown.remove(1);
+    }
+    
+    // Ensure we have the latest data
+    await fetchStockData();
+    
+    if (stockData['batu-lepas']) {
+        // Get all stone types with quantity > 0
+        const stoneTypes = Object.keys(stockData['batu-lepas'])
+            .filter(type => stockData['batu-lepas'][type].quantity > 0);
+        
+        // Add options to dropdown
+        stoneTypes.forEach(type => {
+            const option = document.createElement('option');
+            option.value = type;
+            option.textContent = `${type} (${stockData['batu-lepas'][type].quantity})`;
+            dropdown.appendChild(option);
+        });
+    }
+}
+
+// Schedule daily cleanup of old history with improved logic
+function scheduleHistoryCleanup() {
+    const lastCleanup = localStorage.getItem('lastHistoryCleanup');
+    const today = new Date().toDateString();
+    
+    if (lastCleanup !== today) {
+        console.log('Running scheduled history cleanup');
+        
+        if (Object.keys(stockData).length > 0) {
+            cleanAndLimitHistory(stockData);
+            
+            // Update Firestore with cleaned data (batch update for efficiency)
+            updateFirestoreWithCleanedData();
+            
+            // Mark as completed for today
+            localStorage.setItem('lastHistoryCleanup', today);
+            
+            console.log(`History cleanup completed. Limited to ${MAX_HISTORY_RECORDS} records per item.`);
+        }
+    }
+}
+
+// Update Firestore with cleaned data - improved batch processing
+async function updateFirestoreWithCleanedData() {
+    try {
+        if (Object.keys(stockData).length === 0) return;
+        
+        // Update each category with better error handling
+        const updatePromises = Object.keys(stockData).map(async (category) => {
+            try {
+                const categoryRef = doc(firestore, 'stocks', category);
+                await updateDoc(categoryRef, stockData[category]);
+                updateCacheTimestamp(category);
+            } catch (error) {
+                console.error(`Error updating category ${category}:`, error);
+            }
+        });
+        
+        await Promise.all(updatePromises);
+        console.log('Cleaned and limited history entries in Firestore');
+        
+    } catch (error) {
+        console.error('Error updating Firestore with cleaned data:', error);
+    }
+}
+
+// Clear cache function
+function clearStockCache() {
+    stockCache.clear();
+    stockCacheMeta.clear();
+    localStorage.removeItem(CACHE_KEY);
+    stockData = {};
+    console.log('Stock cache cleared');
+}
+
+// Initialize when page loads
+document.addEventListener('DOMContentLoaded', async function() {
+    try {
+        // Initialize cache from localStorage
+        initializeCache();
+        
+        // Show loading indicator
+        const loadingIndicator = document.createElement('div');
+        loadingIndicator.id = 'stockLoadingIndicator';
+        loadingIndicator.className = 'text-center my-3';
+        loadingIndicator.innerHTML = `
+            <div class="spinner-border text-primary" role="status">
+                <span class="visually-hidden">Loading...</span>
+            </div>
+            <p class="mt-2">Memuat data stok...</p>
+        `;
+        
+        const mainContainer = document.querySelector('.container-fluid') || document.body;
+        mainContainer.insertBefore(loadingIndicator, mainContainer.firstChild);
+        
+        // Populate tables with data (from cache or Firestore)
+        await populateTables();
+        
+        // Populate batu lepas dropdown
+        await populateBatuLepasDropdown();
+        
+        // Setup real-time listener for collaborative editing
+        setupRealtimeListener();
+        
+        // Schedule cleanup of old history
+        scheduleHistoryCleanup();
+        
+        // Remove loading indicator
+        const indicator = document.getElementById('stockLoadingIndicator');
+        if (indicator) {
+            indicator.remove();
+        }
+        
+        // Add event listener for refresh button if it exists
+        const refreshBtn = document.getElementById('refresh-stock-data');
+        if (refreshBtn) {
+            refreshBtn.addEventListener('click', async () => {
+                refreshBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Memperbarui...';
+                refreshBtn.disabled = true;
+                
+                try {
+                    await forceRefreshData();
+                } finally {
+                    refreshBtn.innerHTML = '<i class="fas fa-sync-alt me-2"></i>Refresh Data';
+                    refreshBtn.disabled = false;
+                }
+            });
+        } else {
+            // Create refresh button if it doesn't exist
+            const headerActions = document.querySelector('.card-header .d-flex');
+            if (headerActions) {
+                const refreshButton = document.createElement('button');
+                refreshButton.id = 'refresh-stock-data';
+                refreshButton.className = 'btn btn-outline-secondary ms-2';
+                refreshButton.innerHTML = '<i class="fas fa-sync-alt me-2"></i>Refresh Data';
+                refreshButton.addEventListener('click', async () => {
+                    refreshButton.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Memperbarui...';
+                    refreshButton.disabled = true;
+                    
+                    try {
+                        await forceRefreshData();
+                    } finally {
+                        refreshButton.innerHTML = '<i class="fas fa-sync-alt me-2"></i>Refresh Data';
+                        refreshButton.disabled = false;
+                    }
+                });
+                headerActions.appendChild(refreshButton);
+            }
+        }
+        
+        // Add cache indicator
+        const cacheIndicator = document.createElement('small');
+        cacheIndicator.id = 'stockCacheIndicator';
+        cacheIndicator.className = 'text-muted ms-2';
+        cacheIndicator.style.display = 'none';
+        
+        const headerTitle = document.querySelector('.card-header h5');
+        if (headerTitle) {
+            headerTitle.appendChild(cacheIndicator);
+        }
+        
+        // Show cache status if using cached data
+        const hasValidCache = categories.some(category => isCacheValid(category));
+        if (hasValidCache) {
+            const oldestCacheTime = Math.min(...categories
+                .filter(category => stockCacheMeta.has(category))
+                .map(category => stockCacheMeta.get(category))
+            );
+            
+            if (oldestCacheTime) {
+                const cacheTime = new Date(oldestCacheTime);
+                const formattedTime = cacheTime.toLocaleTimeString('id-ID', {
+                    hour: '2-digit',
+                    minute: '2-digit'
+                });
+                cacheIndicator.textContent = `(Cache: ${formattedTime})`;
+                cacheIndicator.style.display = 'inline';
+            }
+        }
+        
+        // Add info about history limits to the UI
+        console.log(`Stock management initialized. History limited to ${MAX_HISTORY_RECORDS} records per item.`);
+        console.log(`Cache TTL: ${CACHE_TTL_STANDARD/1000}s standard, ${CACHE_TTL_REALTIME/1000}s realtime`);
+        
+    } catch (error) {
+        console.error('Error initializing stock management:', error);
+        
+        // Remove loading indicator
+        const indicator = document.getElementById('stockLoadingIndicator');
+        if (indicator) {
+            indicator.remove();
+        }
+        
+        // Show error message
+        const errorDiv = document.createElement('div');
+        errorDiv.className = 'alert alert-danger';
+        errorDiv.innerHTML = `
+            <i class="fas fa-exclamation-triangle me-2"></i>
+            Terjadi kesalahan saat memuat data stok. 
+            <button class="btn btn-sm btn-outline-danger ms-2" onclick="location.reload()">
+                <i class="fas fa-redo me-1"></i>Coba Lagi
+            </button>
+        `;
+        
+        const mainContainer = document.querySelector('.container-fluid') || document.body;
+        mainContainer.insertBefore(errorDiv, mainContainer.firstChild);
+    }
+});
+
+// Cleanup on page unload
+window.addEventListener('beforeunload', () => {
+    // Save current cache state
+    updateCache();
+});
+
+// Periodic cache cleanup (every 30 minutes)
+setInterval(() => {
+    // Remove expired cache entries
+    const now = Date.now();
+    const expiredCategories = [];
+    
+    stockCacheMeta.forEach((timestamp, category) => {
+        const age = now - timestamp;
+        const ttl = ['brankas', 'admin'].includes(category) ? CACHE_TTL_REALTIME : CACHE_TTL_STANDARD;
+        
+        if (age > ttl * 2) { // Remove if twice the TTL
+            expiredCategories.push(category);
+        }
+    });
+    
+    expiredCategories.forEach(category => {
+        stockCache.delete(category);
+        stockCacheMeta.delete(category);
+        delete stockData[category];
+    });
+    
+    if (expiredCategories.length > 0) {
+        console.log(`Cleaned up expired cache for categories: ${expiredCategories.join(', ')}`);
+        updateCache();
+    }
+}, 30 * 60 * 1000); // 30 minutes
+
+// Export functions for testing or external use
+export { 
+    fetchStockData, 
+    addStock, 
+    reduceStock, 
+    populateTables,
+    cleanAndLimitHistory,
+    addHistoryEntry,
+    forceRefreshData,
+    clearStockCache
 };
 
-// Initialize maintenance system when document is ready
-let maintenanceSystem;
-
-document.addEventListener('DOMContentLoaded', async function() {
-  try {
-    console.log('Initializing maintenance system...');
-    maintenanceSystem = new MaintenanceSystem();
-  } catch (error) {
-    console.error('Error initializing maintenance system:', error);
-    maintenanceUtils.showAlert('Gagal menginisialisasi sistem maintenance: ' + error.message, 'error');
-  }
-});
-
-// Cleanup when page unloads
-window.addEventListener('beforeunload', () => {
-  if (maintenanceSystem) {
-    maintenanceSystem.cleanup();
-  }
-});
-
-// Handle visibility change to refresh status when tab becomes active
-document.addEventListener('visibilitychange', async () => {
-  if (!document.hidden && maintenanceSystem) {
-    try {
-      // Only refresh if cache is stale
-      if (maintenanceSystem.cache.shouldRefresh('database_status')) {
-        await maintenanceSystem.loadDatabaseStatus();
-      }
-    } catch (error) {
-      console.warn('Failed to refresh database status:', error);
-    }
-  }
-});
-
-// Export for potential use in other modules
-window.maintenanceSystem = maintenanceSystem;
-window.maintenanceUtils = maintenanceUtils;
-window.sharedCacheManager = sharedCacheManager;
-window.MaintenanceHelpers = MaintenanceHelpers;
-window.MaintenanceErrorHandler = MaintenanceErrorHandler;
-window.MaintenancePerformance = MaintenancePerformance;
-
-// Auto-refresh database status every 5 minutes with cache check
-setInterval(async () => {
-  if (maintenanceSystem && !document.hidden && !maintenanceSystem.isLoading) {
-    try {
-      // Only refresh if cache is stale
-      if (maintenanceSystem.cache.shouldRefresh('database_status')) {
-        await maintenanceSystem.loadDatabaseStatus();
-        console.log('Auto-refreshed database status');
-      }
-    } catch (error) {
-      console.warn('Auto-refresh database status failed:', error);
-    }
-  }
-}, 5 * 60 * 1000); // Check every 5 minutes
-
-// Clean cache every 10 minutes
-setInterval(() => {
-  if (maintenanceSystem) {
-    maintenanceSystem.cache.clearOldCache();
-    sharedCacheManager.clearOldCache();
-    console.log('Performed automatic cache cleanup');
-  }
-}, 10 * 60 * 1000);
-
-// Clean old maintenance logs on page load
-document.addEventListener('DOMContentLoaded', () => {
-  MaintenanceHelpers.clearOldMaintenanceLogs();
-});
-
-// Monitor sessionStorage usage for maintenance
-setInterval(() => {
-  try {
-    const usage = JSON.stringify(sessionStorage).length;
-    const maxSize = 5 * 1024 * 1024; // 5MB typical limit
-
-    if (usage > maxSize * 0.8) { // 80% of limit
-      console.warn('sessionStorage usage high:', usage, 'bytes');
-      // Clear old cache if storage is full
-      if (maintenanceSystem) {
-        maintenanceSystem.cache.clearOldCache();
-      }
-      sharedCacheManager.clearOldCache();
-      MaintenanceHelpers.clearOldMaintenanceLogs();
-    }
-  } catch (error) {
-    console.warn('Could not check sessionStorage usage:', error);
-  }
-}, 10 * 60 * 1000); // Check every 10 minutes
-
-// Add keyboard shortcuts for maintenance operations
-document.addEventListener('keydown', (event) => {
-  // Only if maintenance system is loaded and not currently loading
-  if (!maintenanceSystem || maintenanceSystem.isLoading) return;
-
-  // Ctrl + Shift + A for Archive
-  if (event.ctrlKey && event.shiftKey && event.key === 'A') {
-    event.preventDefault();
-    if (maintenanceSystem.btnArchiveData && !maintenanceSystem.btnArchiveData.disabled) {
-      maintenanceSystem.btnArchiveData.click();
-    }
-  }
-  
-  // Ctrl + Shift + S for Snapshot
-  if (event.ctrlKey && event.shiftKey && event.key === 'S') {
-    event.preventDefault();
-    if (maintenanceSystem.btnCreateSnapshot && !maintenanceSystem.btnCreateSnapshot.disabled) {
-      maintenanceSystem.btnCreateSnapshot.click();
-    }
-  }
-  
-  // Ctrl + Shift + E for Export All
-  if (event.ctrlKey && event.shiftKey && event.key === 'E') {
-    event.preventDefault();
-    if (maintenanceSystem.btnExportAll && !maintenanceSystem.btnExportAll.disabled) {
-      maintenanceSystem.btnExportAll.click();
-    }
-  }
-
-  // Ctrl + Shift + R for Refresh Status
-  if (event.ctrlKey && event.shiftKey && event.key === 'R') {
-    event.preventDefault();
-    maintenanceSystem.forceRefreshStatus();
-  }
-});
-
-// Add connection monitoring
-let isOnline = navigator.onLine;
-
-window.addEventListener('online', () => {
-  isOnline = true;
-  console.log('Connection restored');
-  if (maintenanceSystem && !maintenanceSystem.isLoading) {
-    // Refresh status when connection is restored
-    setTimeout(() => {
-      maintenanceSystem.forceRefreshStatus();
-    }, 1000);
-  }
-});
-
-window.addEventListener('offline', () => {
-  isOnline = false;
-  console.log('Connection lost');
-  if (maintenanceSystem) {
-    maintenanceSystem.showAlert('Koneksi internet terputus. Beberapa fitur mungkin tidak berfungsi.', 'warning');
-  }
-});
-
-// Enhanced error boundary for maintenance operations
-window.addEventListener('error', (event) => {
-  console.error('Global error in maintenance:', event.error);
-  
-  // If loading modal is stuck, force hide it
-  if (maintenanceSystem && maintenanceSystem.isLoading) {
-    console.warn('Force hiding loading modal due to error');
-    maintenanceSystem.hideLoading();
-  }
-});
-
-// Unhandled promise rejection handler
-window.addEventListener('unhandledrejection', (event) => {
-  console.error('Unhandled promise rejection in maintenance:', event.reason);
-  
-  // If loading modal is stuck, force hide it
-  if (maintenanceSystem && maintenanceSystem.isLoading) {
-    console.warn('Force hiding loading modal due to unhandled rejection');
-    maintenanceSystem.hideLoading();
-  }
-});
