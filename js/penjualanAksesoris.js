@@ -18,11 +18,12 @@ import {
 let activeLockRow = null;
 let currentTransactionData = null;
 
-// Enhanced Cache management with localStorage and TTL
+// Enhanced Cache management with localStorage and TTL - mengadopsi dari kehadiran.js
 const cacheManager = {
   prefix: "melati_penjualan_",
   stockTTL: 10 * 60 * 1000, // 10 menit untuk data stok
   salesTTL: 2 * 60 * 1000, // 2 menit untuk data penjualan
+  todayTTL: 1 * 60 * 1000, // 1 menit untuk data hari ini
 
   set(key, data, ttl) {
     try {
@@ -30,12 +31,11 @@ const cacheManager = {
         data,
         timestamp: Date.now(),
         ttl,
-        version: Date.now(), // untuk multi-device sync
+        version: Date.now(),
       };
       localStorage.setItem(this.prefix + key, JSON.stringify(item));
     } catch (error) {
       console.warn("Cache set failed:", error);
-      // Fallback: clear old cache if storage is full
       this.clearOldCache();
       try {
         localStorage.setItem(this.prefix + key, JSON.stringify(item));
@@ -101,21 +101,34 @@ const cacheManager = {
     }
   },
 
-  // Check if cache is valid and not too old
-  isValid(key, maxAge = null) {
-    const item = this.get(key);
-    if (!item) return false;
+  // Cek apakah cache perlu diperbarui
+  shouldUpdateCache(key) {
+    const item = localStorage.getItem(this.prefix + key);
+    if (!item) return true;
 
-    if (maxAge) {
-      try {
-        const cacheItem = JSON.parse(localStorage.getItem(this.prefix + key));
-        return cacheItem && Date.now() - cacheItem.timestamp < maxAge;
-      } catch (error) {
-        return false;
+    try {
+      const parsed = JSON.parse(item);
+      const now = Date.now();
+      
+      // Jika cache untuk data hari ini, gunakan TTL yang lebih pendek
+      const today = this.getLocalDateString();
+      if (key.includes(today)) {
+        return (now - parsed.timestamp) > this.todayTTL;
       }
+      
+      return (now - parsed.timestamp) > parsed.ttl;
+    } catch (error) {
+      return true;
     }
+  },
 
-    return true;
+  // Helper untuk mendapatkan tanggal hari ini
+  getLocalDateString() {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const day = String(now.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
   },
 
   // Get cache info for debugging
@@ -235,7 +248,7 @@ const utils = {
 const penjualanHandler = {
   stockData: [],
   salesData: [],
-  stockCache: new Map(), // In-memory cache untuk session
+  stockCache: new Map(),
   lastStockUpdate: 0,
   dataTable: null,
   isLoadingStock: false,
@@ -254,7 +267,7 @@ const penjualanHandler = {
     this.updateUIForSalesType("aksesoris");
     $("#sales").focus();
 
-    // Auto refresh every 3 minutes for stock, 1 minute for sales
+    // Auto refresh dengan interval yang lebih panjang
     this.startAutoRefresh();
 
     // Log cache info for debugging
@@ -320,32 +333,39 @@ const penjualanHandler = {
     });
   },
 
-  // Start auto refresh
+  // Start auto refresh dengan interval yang lebih efisien
   startAutoRefresh() {
-    // Clear existing interval
     if (this.refreshInterval) {
       clearInterval(this.refreshInterval);
     }
 
-    // Refresh sales data every minute
+    // Refresh sales data setiap 2 menit (lebih jarang)
     this.refreshInterval = setInterval(async () => {
       try {
-        await this.loadTodaySales(true);
-        console.log("Auto-refreshed sales data");
+        // Hanya refresh jika tidak sedang loading
+        if (!this.isLoadingSales) {
+          await this.loadTodaySales(false); // Gunakan cache jika masih valid
+          console.log("Auto-refreshed sales data");
+        }
       } catch (error) {
         console.error("Auto-refresh failed:", error);
       }
-    }, 60 * 1000);
+    }, 2 * 60 * 1000); // 2 menit
 
-    // Refresh stock data every 5 minutes
+    // Refresh stock data setiap 10 menit (lebih jarang)
     setInterval(async () => {
       try {
-        await this.loadStockData(true);
-        console.log("Auto-refreshed stock data");
+        if (!this.isLoadingStock) {
+          // Hanya refresh jika cache sudah expired
+          if (cacheManager.shouldUpdateCache("stockData")) {
+            await this.loadStockData(true);
+            console.log("Auto-refreshed stock data");
+          }
+        }
       } catch (error) {
         console.error("Stock auto-refresh failed:", error);
       }
-    }, 5 * 60 * 1000);
+    }, 10 * 60 * 1000); // 10 menit
   },
 
   // Initialize date picker
@@ -366,28 +386,28 @@ const penjualanHandler = {
     $("#tanggal").val(utils.formatDate(today));
   },
 
-  // Load stock data with enhanced caching
+  // Load stock data with smart caching - mengadopsi dari kehadiran.js
   async loadStockData(forceRefresh = false) {
     if (this.isLoadingStock) return;
 
     try {
       this.isLoadingStock = true;
+      const cacheKey = "stockData";
 
       // Check in-memory cache first (fastest)
       const cacheAge = Date.now() - this.lastStockUpdate;
-      if (!forceRefresh && cacheAge < 5 * 60 * 1000 && this.stockData.length > 0) {
+      if (!forceRefresh && cacheAge < 2 * 60 * 1000 && this.stockData.length > 0) {
         console.log("Using in-memory stock cache");
         this.populateStockTables();
         return;
       }
 
-      // Check localStorage cache
-      if (!forceRefresh) {
-        const cachedData = sharedCacheManager.getVersioned("stockData");
-        if (cachedData && cachedData.age < 10 * 60 * 1000) {
-          // 10 menit max
+      // Check localStorage cache dengan smart TTL
+      if (!forceRefresh && !cacheManager.shouldUpdateCache(cacheKey)) {
+        const cachedData = cacheManager.get(cacheKey);
+        if (cachedData) {
           console.log("Using localStorage stock cache");
-          this.stockData = cachedData.data;
+          this.stockData = cachedData;
           this.stockCache.clear();
           this.stockData.forEach((item) => {
             this.stockCache.set(item.kode, item.stokAkhir);
@@ -401,11 +421,11 @@ const penjualanHandler = {
       utils.showLoading(true);
       console.log("Fetching fresh stock data from Firestore");
 
-      // Optimized: Single query untuk stok dengan filter
+      // Optimized query
       const stockSnapshot = await getDocs(
         query(
           collection(firestore, "stokAksesoris"),
-          where("stokAkhir", ">", 0) // Hanya ambil yang ada stoknya
+          where("stokAkhir", ">", 0)
         )
       );
 
@@ -415,36 +435,44 @@ const penjualanHandler = {
         stockData.push({
           id: doc.id,
           ...data,
-          lastChecked: Date.now(), // Track kapan terakhir dicek
+          lastChecked: Date.now(),
         });
 
-        // Update in-memory cache
         this.stockCache.set(data.kode, data.stokAkhir || 0);
       });
 
-      // Cache dengan TTL yang lebih panjang
-      sharedCacheManager.setVersioned("stockData", stockData, 15 * 60 * 1000);
+      // Cache dengan TTL yang sesuai
+      cacheManager.set(cacheKey, stockData, cacheManager.stockTTL);
       this.stockData = stockData;
       this.lastStockUpdate = Date.now();
       this.populateStockTables();
     } catch (error) {
       console.error("Error loading stock:", error);
-      utils.showAlert("Gagal memuat data stok: " + error.message, "Error", "error");
+      
+      // Fallback ke cache jika ada error
+      const cachedData = cacheManager.get("stockData");
+      if (cachedData) {
+        console.log("Using cached stock data due to error");
+        this.stockData = cachedData;
+        this.populateStockTables();
+      } else {
+        utils.showAlert("Gagal memuat data stok: " + error.message, "Error", "error");
+      }
     } finally {
       this.isLoadingStock = false;
       utils.showLoading(false);
     }
   },
 
-  // Optimized stock checking - gunakan cache dulu
+  // Optimized stock checking dengan cache yang efisien
   async getStockForItem(kode) {
     // Check in-memory cache first
     if (this.stockCache.has(kode)) {
       const cachedStock = this.stockCache.get(kode);
       const cacheAge = Date.now() - this.lastStockUpdate;
 
-      // Jika cache masih fresh (< 5 menit), gunakan cache
-      if (cacheAge < 5 * 60 * 1000) {
+      // Jika cache masih fresh (< 2 menit), gunakan cache
+      if (cacheAge < 2 * 60 * 1000) {
         return cachedStock;
       }
     }
@@ -473,16 +501,18 @@ const penjualanHandler = {
     return 0;
   },
 
-  // Load today's sales data with caching
+  // Load today's sales data dengan smart caching
   async loadTodaySales(forceRefresh = false) {
     if (this.isLoadingSales) return;
 
     try {
       this.isLoadingSales = true;
+      const today = cacheManager.getLocalDateString();
+      const cacheKey = `todaySales_${today}`;
 
-      // Check cache first
-      if (!forceRefresh) {
-        const cachedData = cacheManager.get("todaySales");
+      // Check cache dengan TTL yang lebih pendek untuk data hari ini
+      if (!forceRefresh && !cacheManager.shouldUpdateCache(cacheKey)) {
+        const cachedData = cacheManager.get(cacheKey);
         if (cachedData) {
           console.log("Using cached sales data");
           this.salesData = cachedData;
@@ -490,14 +520,14 @@ const penjualanHandler = {
         }
       }
 
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      const tomorrow = new Date(today);
+      const todayDate = new Date();
+      todayDate.setHours(0, 0, 0, 0);
+      const tomorrow = new Date(todayDate);
       tomorrow.setDate(tomorrow.getDate() + 1);
 
       const q = query(
         collection(firestore, "penjualanAksesoris"),
-        where("timestamp", ">=", Timestamp.fromDate(today)),
+        where("timestamp", ">=", Timestamp.fromDate(todayDate)),
         where("timestamp", "<", Timestamp.fromDate(tomorrow)),
         orderBy("timestamp", "desc")
       );
@@ -509,12 +539,21 @@ const penjualanHandler = {
         salesData.push({ id: doc.id, ...doc.data() });
       });
 
-      // Cache with shorter TTL for sales data
-      cacheManager.set("todaySales", salesData, cacheManager.salesTTL);
+      // Cache dengan TTL khusus untuk data hari ini
+      cacheManager.set(cacheKey, salesData, cacheManager.todayTTL);
       this.salesData = salesData;
     } catch (error) {
       console.error("Error loading sales:", error);
-      utils.showAlert("Gagal memuat data penjualan: " + error.message, "Error", "error");
+      
+      // Fallback ke cache
+      const today = cacheManager.getLocalDateString();
+      const cachedData = cacheManager.get(`todaySales_${today}`);
+      if (cachedData) {
+        console.log("Using cached sales data due to error");
+        this.salesData = cachedData;
+      } else {
+        utils.showAlert("Gagal memuat data penjualan: " + error.message, "Error", "error");
+      }
     } finally {
       this.isLoadingSales = false;
     }
@@ -1143,13 +1182,13 @@ const penjualanHandler = {
   },
 
   // Calculate kembalian
-  calculateKembalian() {
+    calculateKembalian() {
     const paymentMethod = $("#metodeBayar").val();
     const jumlahBayar = parseFloat($("#jumlahBayar").val().replace(/\./g, "")) || 0;
 
     if (paymentMethod === "dp") {
-      const nominalDP = parseFloat($("#nominalDP").val().replace(/\./g, "")) || 0;
-      const kembalian = jumlahBayar - nominalDP;
+      const sisaPembayaran = parseFloat($("#sisaPembayaran").val().replace(/\./g, "")) || 0;
+      const kembalian = jumlahBayar - sisaPembayaran;
       $("#kembalian").val(utils.formatRupiah(kembalian >= 0 ? kembalian : 0));
     } else {
       const total = parseFloat($("#totalOngkos").val().replace(/\./g, "")) || 0;
@@ -1189,11 +1228,16 @@ const penjualanHandler = {
     }
   },
 
-  // Refresh stock
+  // Refresh stock dengan cache invalidation yang efisien
   async refreshStock() {
     try {
       utils.showLoading(true);
+      
+      // Clear cache secara selektif
       cacheManager.remove("stockData");
+      this.stockCache.clear();
+      this.lastStockUpdate = 0;
+      
       await this.loadStockData(true);
       utils.showAlert("Data stok berhasil diperbarui", "Sukses", "success");
     } catch (error) {
@@ -1205,7 +1249,7 @@ const penjualanHandler = {
   },
 
   // Fungsi untuk menduplikat transaksi manual ke mutasiKode
-   async duplicateToMutasiKode(transactionData, transactionId) {
+  async duplicateToMutasiKode(transactionData, transactionId) {
     try {
       // Hanya proses jika jenis penjualan adalah manual
       if (transactionData.jenisPenjualan !== "manual" || !transactionData.items) {
@@ -1267,139 +1311,140 @@ const penjualanHandler = {
     }
   },
 
-  // Save transaction
+  // Save transaction dengan cache invalidation yang efisien
   async saveTransaction() {
-    try {
-      // Validasi sales name
-      const salesName = $("#sales").val().trim();
-      if (!salesName) {
-        utils.showAlert("Nama sales harus diisi!");
-        $("#sales").focus();
-        return;
-      }
-
-      const salesType = $("#jenisPenjualan").val();
-      const tableSelector =
-        salesType === "aksesoris"
-          ? "#tableAksesorisDetail"
-          : salesType === "kotak"
-          ? "#tableKotakDetail"
-          : "#tableManualDetail";
-
-      // Check if table has rows
-      if ($(tableSelector + " tbody tr:not(.input-row)").length === 0) {
-        utils.showAlert("Tidak ada barang yang ditambahkan!");
-        return;
-      }
-
-      // Validasi pembayaran (kode yang sudah ada)...
-      const paymentMethod = $("#metodeBayar").val();
-      if (paymentMethod === "dp") {
-        const nominalDP = parseFloat($("#nominalDP").val().replace(/\./g, "")) || 0;
-        const total = parseFloat($("#totalOngkos").val().replace(/\./g, "")) || 0;
-
-        if (nominalDP <= 0 || nominalDP >= total) {
-          utils.showAlert(
-            nominalDP <= 0 ? "Nominal DP harus diisi!" : "Nominal DP tidak boleh sama dengan atau melebihi total harga!"
-          );
-          $("#nominalDP").focus();
+      try {
+        // Validasi sales name
+        const salesName = $("#sales").val().trim();
+        if (!salesName) {
+          utils.showAlert("Nama sales harus diisi!");
+          $("#sales").focus();
           return;
         }
-      } else if (paymentMethod !== "free") {
-        const jumlahBayar = parseFloat($("#jumlahBayar").val().replace(/\./g, "")) || 0;
-        const total = parseFloat($("#totalOngkos").val().replace(/\./g, "")) || 0;
-
-        if (jumlahBayar < total) {
-          utils.showAlert("Jumlah bayar kurang dari total!");
-          $("#jumlahBayar").focus();
+  
+        const salesType = $("#jenisPenjualan").val();
+        const tableSelector =
+          salesType === "aksesoris"
+            ? "#tableAksesorisDetail"
+            : salesType === "kotak"
+            ? "#tableKotakDetail"
+            : "#tableManualDetail";
+  
+        // Check if table has rows
+        if ($(tableSelector + " tbody tr:not(.input-row)").length === 0) {
+          utils.showAlert("Tidak ada barang yang ditambahkan!");
           return;
         }
+  
+        // Validasi pembayaran (kode yang sudah ada)...
+        const paymentMethod = $("#metodeBayar").val();
+        if (paymentMethod === "dp") {
+          const nominalDP = parseFloat($("#nominalDP").val().replace(/\./g, "")) || 0;
+          const total = parseFloat($("#totalOngkos").val().replace(/\./g, "")) || 0;
+  
+          if (nominalDP <= 0 || nominalDP >= total) {
+            utils.showAlert(
+              nominalDP <= 0 ? "Nominal DP harus diisi!" : "Nominal DP tidak boleh sama dengan atau melebihi total harga!"
+            );
+            $("#nominalDP").focus();
+            return;
+          }
+        } else if (paymentMethod !== "free") {
+          const jumlahBayar = parseFloat($("#jumlahBayar").val().replace(/\./g, "")) || 0;
+          const total = parseFloat($("#totalOngkos").val().replace(/\./g, "")) || 0;
+  
+          if (jumlahBayar < total) {
+            utils.showAlert("Jumlah bayar kurang dari total!");
+            $("#jumlahBayar").focus();
+            return;
+          }
+        }
+  
+        utils.showLoading(true);
+  
+        // Collect items data
+        const items = this.collectItemsData(salesType, tableSelector);
+  
+        // Prepare transaction data
+        const transactionData = {
+          jenisPenjualan: salesType,
+          tanggal: $("#tanggal").val(),
+          sales: salesName,
+          metodeBayar: paymentMethod,
+          totalHarga: parseFloat($("#totalOngkos").val().replace(/\./g, "")) || 0,
+          timestamp: serverTimestamp(),
+          items: items,
+        };
+  
+        // Mark as ganti lock if applicable
+        if (salesType === "manual" && items.some((item) => item.kodeLock)) {
+          transactionData.isGantiLock = true;
+        }
+  
+        // Add payment details
+        if (paymentMethod === "dp") {
+          transactionData.nominalDP = parseFloat($("#nominalDP").val().replace(/\./g, "")) || 0;
+          transactionData.sisaPembayaran = parseFloat($("#sisaPembayaran").val().replace(/\./g, "")) || 0;
+          transactionData.statusPembayaran = "DP";
+        } else if (paymentMethod === "free") {
+          transactionData.statusPembayaran = "Free";
+        } else {
+          transactionData.jumlahBayar = parseFloat($("#jumlahBayar").val().replace(/\./g, "")) || 0;
+          transactionData.kembalian = parseFloat($("#kembalian").val().replace(/\./g, "")) || 0;
+          transactionData.statusPembayaran = "Lunas";
+        }
+  
+        // Save transaction
+        const docRef = await addDoc(collection(firestore, "penjualanAksesoris"), transactionData);
+  
+        // Update stock
+        await this.updateStock(salesType, items);
+  
+        // Duplikasi ke mutasiKode jika transaksi manual
+        if (transactionData.jenisPenjualan === "manual") {
+          await this.duplicateToMutasiKode(transactionData, docRef.id);
+        }
+  
+        // Smart cache invalidation
+        cacheManager.remove("stockData");
+        cacheManager.remove("todaySales");
+  
+        utils.showAlert("Transaksi berhasil disimpan!", "Sukses", "success");
+  
+        // Store transaction data for printing
+        currentTransactionData = {
+          id: docRef.id,
+          salesType: salesType,
+          tanggal: $("#tanggal").val(),
+          sales: salesName,
+          totalHarga: $("#totalOngkos").val(),
+          items: items,
+          metodeBayar: paymentMethod,
+        };
+  
+        // Add DP information if applicable
+        if (paymentMethod === "dp") {
+          currentTransactionData.nominalDP = $("#nominalDP").val();
+          currentTransactionData.sisaPembayaran = $("#sisaPembayaran").val();
+        }
+  
+        // Show print modal
+        $("#printModal").modal("show");
+  
+        // Reset form after modal is closed
+        $("#printModal").on("hidden.bs.modal", () => {
+          this.resetForm();
+          $("#sales").focus();
+          $("#printModal").off("hidden.bs.modal");
+        });
+  
+      } catch (error) {
+        console.error("Error saving transaction:", error);
+        utils.showAlert("Terjadi kesalahan saat menyimpan transaksi: " + error.message, "Error", "error");
+      } finally {
+        utils.showLoading(false);
       }
-
-      utils.showLoading(true);
-
-      // Collect items data
-      const items = this.collectItemsData(salesType, tableSelector);
-
-      // Prepare transaction data
-      const transactionData = {
-        jenisPenjualan: salesType,
-        tanggal: $("#tanggal").val(),
-        sales: salesName,
-        metodeBayar: paymentMethod,
-        totalHarga: parseFloat($("#totalOngkos").val().replace(/\./g, "")) || 0,
-        timestamp: serverTimestamp(),
-        items: items,
-      };
-
-      // Mark as ganti lock if applicable
-      if (salesType === "manual" && items.some((item) => item.kodeLock)) {
-        transactionData.isGantiLock = true;
-      }
-
-      // Add payment details
-      if (paymentMethod === "dp") {
-        transactionData.nominalDP = parseFloat($("#nominalDP").val().replace(/\./g, "")) || 0;
-        transactionData.sisaPembayaran = parseFloat($("#sisaPembayaran").val().replace(/\./g, "")) || 0;
-        transactionData.statusPembayaran = "DP";
-      } else if (paymentMethod === "free") {
-        transactionData.statusPembayaran = "Free";
-      } else {
-        transactionData.jumlahBayar = parseFloat($("#jumlahBayar").val().replace(/\./g, "")) || 0;
-        transactionData.kembalian = parseFloat($("#kembalian").val().replace(/\./g, "")) || 0;
-        transactionData.statusPembayaran = "Lunas";
-      }
-
-      // Save transaction
-      const docRef = await addDoc(collection(firestore, "penjualanAksesoris"), transactionData);
-
-      // Update stock
-      await this.updateStock(salesType, items);
-
-      // Duplikasi ke mutasiKode jika transaksi manual
-      if (transactionData.jenisPenjualan === "manual") {
-        await this.duplicateToMutasiKode(transactionData, docRef.id);
-      }
-
-      // Smart cache invalidation
-      sharedCacheManager.invalidateRelated("sales");
-
-      utils.showAlert("Transaksi berhasil disimpan!", "Sukses", "success");
-
-      // Store transaction data for printing
-      currentTransactionData = {
-        id: docRef.id,
-        salesType: salesType,
-        tanggal: $("#tanggal").val(),
-        sales: salesName,
-        totalHarga: $("#totalOngkos").val(),
-        items: items,
-        metodeBayar: paymentMethod,
-      };
-
-      // Add DP information if applicable
-      if (paymentMethod === "dp") {
-        currentTransactionData.nominalDP = $("#nominalDP").val();
-        currentTransactionData.sisaPembayaran = $("#sisaPembayaran").val();
-      }
-
-      // Show print modal
-      $("#printModal").modal("show");
-
-      // Reset form after modal is closed
-      $("#printModal").on("hidden.bs.modal", () => {
-        this.resetForm();
-        $("#sales").focus();
-        $("#printModal").off("hidden.bs.modal");
-      });
-
-    } catch (error) {
-      console.error("Error saving transaction:", error);
-      utils.showAlert("Terjadi kesalahan saat menyimpan transaksi: " + error.message, "Error", "error");
-    } finally {
-      utils.showLoading(false);
-    }
-  },  
+    },
 
   // Collect items data based on sales type
   collectItemsData(salesType, tableSelector) {
@@ -1469,7 +1514,7 @@ const penjualanHandler = {
     return items;
   },
 
-  // Update stock after sales
+  // Update stock after sales dengan cache update yang efisien
   async updateStock(salesType, items) {
     try {
       const updatePromises = [];
@@ -1524,7 +1569,7 @@ const penjualanHandler = {
 
       await Promise.all(updatePromises);
 
-      // Update local caches
+      // Update local caches secara efisien
       for (const [kode, updateData] of stockUpdates) {
         this.stockCache.set(kode, updateData.newStock);
 
@@ -1535,8 +1580,8 @@ const penjualanHandler = {
         }
       }
 
-      // Smart cache invalidation
-      sharedCacheManager.setVersioned("stockData", this.stockData, 15 * 60 * 1000);
+      // Update cache dengan data terbaru
+      cacheManager.set("stockData", this.stockData, cacheManager.stockTTL);
       this.lastStockUpdate = Date.now();
 
       return true;
@@ -1545,7 +1590,8 @@ const penjualanHandler = {
       throw error;
     }
   },
-  // Perbaiki method processSingleStockUpdate tanpa menggunakan getItemInfo
+
+  // Process single stock update
   async processSingleStockUpdate(kode, { item, currentStock, newStock, jumlah, isGantiLock }) {
     const metodeBayar = $("#metodeBayar").val();
     const salesType = $("#jenisPenjualan").val();
@@ -1612,62 +1658,12 @@ const penjualanHandler = {
     }
   },
 
-  // Method helper untuk proses update stok
-  async processStockUpdate(kode, item, jenisTransaksi, keterangan) {
-    // Cari stok berdasarkan kode
-    const stockQuery = query(collection(firestore, "stokAksesoris"), where("kode", "==", kode));
-    const stockSnapshot = await getDocs(stockQuery);
-
-    let stockDoc,
-      currentStock = 0;
-
-    if (!stockSnapshot.empty) {
-      stockDoc = stockSnapshot.docs[0];
-      currentStock = stockDoc.data().stokAkhir || 0;
-    } else {
-      // Buat entry stok baru jika tidak ada
-      const newStockData = {
-        kode,
-        nama: item.nama || "",
-        kategori: this.determineCategory(kode),
-        stokAwal: 0,
-        stokAkhir: 0,
-        lastUpdate: serverTimestamp(),
-      };
-      const newStockRef = await addDoc(collection(firestore, "stokAksesoris"), newStockData);
-      stockDoc = { id: newStockRef.id };
-    }
-
-    // Update stok hanya untuk transaksi yang mengurangi stok
-    const jumlah = parseInt(item.jumlah) || 1;
-    const newStock = Math.max(0, currentStock - jumlah);
-
-    await updateDoc(doc(firestore, "stokAksesoris", stockDoc.id), {
-      stokAkhir: newStock,
-      lastUpdate: serverTimestamp(),
-    });
-
-    // Catat transaksi stok
-    await addDoc(collection(firestore, "stokAksesorisTransaksi"), {
-      kode,
-      nama: item.nama || "",
-      kategori: this.determineCategory(kode),
-      jenis: jenisTransaksi,
-      jumlah,
-      stokSebelum: currentStock,
-      stokSesudah: newStock,
-      stokAkhir: newStock,
-      timestamp: serverTimestamp(),
-      keterangan,
-    });
-  },
-
   // Helper untuk menentukan kategori berdasarkan kode
   determineCategory(kode) {
-    // Logic sederhana berdasarkan pattern kode atau bisa disesuaikan
     if (kode.startsWith("K") || kode.includes("KOTAK")) return "kotak";
     return "aksesoris";
   },
+
   // Print receipt
   printReceipt() {
     if (!currentTransactionData) {
@@ -1679,7 +1675,7 @@ const penjualanHandler = {
     const printWindow = window.open("", "_blank");
 
     if (!printWindow) {
-      utils.showAlert("Popup diblokir oleh browser. Mohon izinkan popup untuk mencetak.", "Error", "error");
+      
       return;
     }
 
@@ -1691,7 +1687,7 @@ const penjualanHandler = {
         <style>
           body {
             font-family: roboto;
-            font-size: 12px;
+            font-size: 14px;
             margin: 0;
             padding: 0;
             width: 80mm;
@@ -1715,8 +1711,8 @@ const penjualanHandler = {
             text-align: left;
             padding: 1mm 2mm;
           }
-          .tanggal {
-          margin-left: 10px;
+          .receipt .tanggal {
+          margin-left: 10px
           }
           .text-center {
             text-align: center;
@@ -1849,7 +1845,7 @@ const penjualanHandler = {
     const printWindow = window.open("", "_blank");
 
     if (!printWindow) {
-      utils.showAlert("Popup diblokir oleh browser. Mohon izinkan popup untuk mencetak.", "Error", "error");
+      
       return;
     }
 
@@ -2026,6 +2022,15 @@ const penjualanHandler = {
     }
   },
 
+  // Print document handler
+  printDocument(type) {
+    if (type === "receipt") {
+      this.printReceipt();
+    } else if (type === "invoice") {
+      this.printInvoice();
+    }
+  },
+
   // Cleanup when page unloads
   cleanup() {
     if (this.refreshInterval) {
@@ -2035,6 +2040,129 @@ const penjualanHandler = {
     // Clear old cache entries
     cacheManager.clearOldCache();
   },
+};
+
+// Enhanced shared cache manager untuk multi-device sync
+const sharedCacheManager = {
+  ...cacheManager,
+  
+  // TTL khusus untuk data hari ini
+  todayTTL: 1 * 60 * 1000, // 1 menit untuk data hari ini
+  
+  // Get local date string untuk cache key
+  getLocalDateString() {
+    const today = new Date();
+    return `${today.getDate()}-${today.getMonth() + 1}-${today.getFullYear()}`;
+  },
+
+  // Check if cache should be updated based on time
+  shouldUpdateCache(key, maxAge = null) {
+    const item = this.get(key);
+    if (!item) return true;
+
+    try {
+      const cacheItem = JSON.parse(localStorage.getItem(this.prefix + key));
+      if (!cacheItem) return true;
+
+      const age = Date.now() - cacheItem.timestamp;
+      const ttl = maxAge || cacheItem.ttl;
+      
+      return age >= ttl;
+    } catch (error) {
+      return true;
+    }
+  },
+
+  // Set cache with version for multi-device sync
+  setVersioned(key, data, ttl) {
+    const versionedData = {
+      data,
+      version: Date.now(),
+      deviceId: this.getDeviceId(),
+    };
+    this.set(key, versionedData, ttl);
+  },
+
+  // Get versioned cache data
+  getVersioned(key) {
+    const cachedItem = this.get(key);
+    if (!cachedItem) return null;
+
+    return {
+      data: cachedItem.data,
+      version: cachedItem.version,
+      age: Date.now() - cachedItem.version,
+    };
+  },
+
+  // Get or generate device ID
+  getDeviceId() {
+    let deviceId = localStorage.getItem('melati_device_id');
+    if (!deviceId) {
+      deviceId = 'device_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+      localStorage.setItem('melati_device_id', deviceId);
+    }
+    return deviceId;
+  },
+
+  // Invalidate related cache entries
+  invalidateRelated(pattern) {
+    try {
+      Object.keys(localStorage)
+        .filter(key => key.startsWith(this.prefix) && key.includes(pattern))
+        .forEach(key => localStorage.removeItem(key));
+    } catch (error) {
+      console.warn("Failed to invalidate related cache:", error);
+    }
+  },
+
+  // Get cache statistics
+  getStats() {
+    const stats = {
+      totalEntries: 0,
+      totalSize: 0,
+      validEntries: 0,
+      expiredEntries: 0,
+      entries: {}
+    };
+
+    try {
+      Object.keys(localStorage)
+        .filter(key => key.startsWith(this.prefix))
+        .forEach(key => {
+          try {
+            const item = JSON.parse(localStorage.getItem(key));
+            const cleanKey = key.replace(this.prefix, '');
+            const age = Date.now() - item.timestamp;
+            const isValid = age < item.ttl;
+            const size = JSON.stringify(item).length;
+
+            stats.totalEntries++;
+            stats.totalSize += size;
+            
+            if (isValid) {
+              stats.validEntries++;
+            } else {
+              stats.expiredEntries++;
+            }
+
+            stats.entries[cleanKey] = {
+              age: Math.round(age / 1000) + 's',
+              size: size + ' bytes',
+              valid: isValid,
+              ttl: Math.round(item.ttl / 1000) + 's'
+            };
+          } catch (error) {
+            // Corrupted entry
+            localStorage.removeItem(key);
+          }
+        });
+    } catch (error) {
+      console.warn("Failed to get cache stats:", error);
+    }
+
+    return stats;
+  }
 };
 
 // Initialize when document is ready
@@ -2061,7 +2189,7 @@ $(document).ready(async function () {
     await penjualanHandler.init();
 
     console.log("Penjualan Aksesoris initialized successfully");
-    console.log("Cache info:", cacheManager.getCacheInfo());
+    console.log("Cache info:", sharedCacheManager.getStats());
   } catch (error) {
     console.error("Error initializing penjualan aksesoris:", error);
     utils.showAlert("Terjadi kesalahan saat memuat halaman: " + error.message, "Error", "error");
@@ -2077,15 +2205,16 @@ $(window).on("beforeunload", () => {
 document.addEventListener("visibilitychange", async () => {
   if (!document.hidden) {
     // Page became visible, check if cache is stale
-    const stockCacheAge = 3 * 60 * 1000; // 3 minutes
+    const stockCacheAge = 5 * 60 * 1000; // 5 minutes
     const salesCacheAge = 1 * 60 * 1000; // 1 minute
 
-    if (!cacheManager.isValid("stockData", stockCacheAge)) {
+    if (sharedCacheManager.shouldUpdateCache("stockData", stockCacheAge)) {
       console.log("Refreshing stale stock cache");
       await penjualanHandler.loadStockData(true);
     }
 
-    if (!cacheManager.isValid("todaySales", salesCacheAge)) {
+    const today = sharedCacheManager.getLocalDateString();
+    if (sharedCacheManager.shouldUpdateCache(`todaySales_${today}`, salesCacheAge)) {
       console.log("Refreshing stale sales cache");
       await penjualanHandler.loadTodaySales(true);
     }
@@ -2095,6 +2224,7 @@ document.addEventListener("visibilitychange", async () => {
 // Export for potential use in other modules
 window.penjualanHandler = penjualanHandler;
 window.cacheManager = cacheManager;
+window.sharedCacheManager = sharedCacheManager;
 
 // Utility functions for backward compatibility
 function showAlert(message, title = "Informasi", type = "info") {
@@ -2109,24 +2239,135 @@ function formatDate(date) {
   return utils.formatDate(date);
 }
 
+function printDocument(type) {
+  return penjualanHandler.printDocument(type);
+}
+
 // Auto-clear cache every hour to prevent localStorage bloat
 setInterval(() => {
-  cacheManager.clearOldCache();
+  sharedCacheManager.clearOldCache();
   console.log("Performed automatic cache cleanup");
 }, 60 * 60 * 1000);
 
-// Monitor localStorage usage
+// Monitor localStorage usage and performance
 setInterval(() => {
   try {
     const usage = JSON.stringify(localStorage).length;
     const maxSize = 5 * 1024 * 1024; // 5MB typical limit
+    const usagePercent = (usage / maxSize) * 100;
 
-    if (usage > maxSize * 0.8) {
-      // 80% of limit
-      console.warn("localStorage usage high:", usage, "bytes");
-      cacheManager.clearOldCache();
+    if (usagePercent > 80) {
+      console.warn(`localStorage usage high: ${usagePercent.toFixed(1)}% (${usage} bytes)`);
+      sharedCacheManager.clearOldCache();
+      
+      // If still high after cleanup, remove oldest entries
+      if (JSON.stringify(localStorage).length > maxSize * 0.7) {
+        console.warn("Performing aggressive cache cleanup");
+        const stats = sharedCacheManager.getStats();
+        
+        // Remove expired entries first
+        Object.keys(stats.entries)
+          .filter(key => !stats.entries[key].valid)
+          .forEach(key => sharedCacheManager.remove(key));
+      }
+    }
+
+    // Log performance metrics every 10 minutes
+    if (Date.now() % (10 * 60 * 1000) < 5000) {
+      console.log("Cache performance:", {
+        usage: `${usagePercent.toFixed(1)}%`,
+        entries: sharedCacheManager.getStats().totalEntries,
+        stockCacheAge: penjualanHandler.lastStockUpdate ? 
+          Math.round((Date.now() - penjualanHandler.lastStockUpdate) / 1000) + 's' : 'none'
+      });
     }
   } catch (error) {
     console.warn("Could not check localStorage usage:", error);
   }
 }, 5 * 60 * 1000); // Check every 5 minutes
+
+// Handle online/offline status
+window.addEventListener('online', async () => {
+  console.log('Connection restored, refreshing data...');
+  try {
+    await Promise.all([
+      penjualanHandler.loadStockData(true),
+      penjualanHandler.loadTodaySales(true)
+    ]);
+    utils.showAlert('Koneksi pulih, data telah diperbarui', 'Info', 'info');
+  } catch (error) {
+    console.error('Failed to refresh data after reconnection:', error);
+  }
+});
+
+window.addEventListener('offline', () => {
+  console.log('Connection lost, using cached data');
+  utils.showAlert('Koneksi terputus, menggunakan data cache', 'Warning', 'warning');
+});
+
+// Performance monitoring
+const performanceMonitor = {
+  startTime: Date.now(),
+  
+  logTiming(operation, startTime) {
+    const duration = Date.now() - startTime;
+    console.log(`⏱️ ${operation}: ${duration}ms`);
+    
+    if (duration > 3000) {
+      console.warn(`🐌 Slow operation detected: ${operation} took ${duration}ms`);
+    }
+  },
+  
+  measureAsync(operation, asyncFn) {
+    return async (...args) => {
+      const start = Date.now();
+      try {
+        const result = await asyncFn(...args);
+        this.logTiming(operation, start);
+        return result;
+      } catch (error) {
+        this.logTiming(`${operation} (failed)`, start);
+        throw error;
+      }
+    };
+  }
+};
+
+// Wrap critical functions with performance monitoring
+penjualanHandler.loadStockData = performanceMonitor.measureAsync(
+  'Load Stock Data', 
+  penjualanHandler.loadStockData.bind(penjualanHandler)
+);
+
+penjualanHandler.saveTransaction = performanceMonitor.measureAsync(
+  'Save Transaction', 
+  penjualanHandler.saveTransaction.bind(penjualanHandler)
+);
+
+// Error boundary for unhandled errors
+window.addEventListener('error', (event) => {
+  console.error('Unhandled error:', event.error);
+  
+  // Don't show alert for minor errors
+  if (event.error && event.error.message && 
+      !event.error.message.includes('Non-Error promise rejection')) {
+    utils.showAlert(
+      'Terjadi kesalahan tidak terduga. Silakan refresh halaman jika masalah berlanjut.',
+      'Error',
+      'error'
+    );
+  }
+});
+
+window.addEventListener('unhandledrejection', (event) => {
+  console.error('Unhandled promise rejection:', event.reason);
+  
+  // Prevent default browser behavior
+  event.preventDefault();
+  
+  if (event.reason && typeof event.reason === 'object' && event.reason.message) {
+    console.error('Promise rejection details:', event.reason.message);
+  }
+});
+
+console.log('🚀 Penjualan Aksesoris module loaded successfully');
