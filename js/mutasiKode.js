@@ -240,6 +240,8 @@ const jenisBarang = {
   A: "Anting",
   G: "Gelang",
   S: "Giwang",
+  Z: "HALA",
+  V: "HALA",
 };
 
 // State untuk menyimpan data kode
