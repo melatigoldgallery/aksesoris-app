@@ -558,6 +558,88 @@
       </div>
     </div>
 
+    <!-- Modal Validasi Hapus Kode - TAMBAHKAN SEBELUM CLOSING </body> -->
+    <div
+      class="modal fade"
+      id="modalValidasiHapus"
+      tabindex="-1"
+      aria-labelledby="modalValidasiHapusLabel"
+      aria-hidden="true"
+    >
+      <div class="modal-dialog">
+        <div class="modal-content">
+          <div class="modal-header bg-danger text-white">
+            <h5 class="modal-title" id="modalValidasiHapusLabel">
+              <i class="fas fa-shield-alt me-2"></i>
+              Validasi Penghapusan Data
+            </h5>
+            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+          </div>
+          <form id="validasiHapusForm">
+            <div class="modal-body">
+              <div class="alert alert-warning">
+                <i class="fas fa-exclamation-triangle me-2"></i>
+                <strong>Peringatan!</strong>
+                Anda akan menghapus
+                <span id="jumlahKodeHapus">0</span>
+                kode secara permanen. Tindakan ini tidak dapat dibatalkan.
+              </div>
+
+              <div class="mb-3">
+                <label for="validasiUserId" class="form-label">
+                  <i class="fas fa-user me-1"></i>
+                  User ID
+                </label>
+                <input
+                  type="text"
+                  class="form-control"
+                  id="validasiUserId"
+                  placeholder="Masukkan User ID Anda"
+                  required
+                  autocomplete="username"
+                />
+              </div>
+
+              <div class="mb-3">
+                <label for="validasiPassword" class="form-label">
+                  <i class="fas fa-lock me-1"></i>
+                  Password
+                </label>
+                <div class="input-group">
+                  <input
+                    type="password"
+                    class="form-control"
+                    id="validasiPassword"
+                    placeholder="Masukkan Password Anda"
+                    required
+                    autocomplete="current-password"
+                  />
+                  <button class="btn btn-outline-secondary" type="button" id="togglePasswordValidasi">
+                    <i class="fas fa-eye" id="eyeIconValidasi"></i>
+                  </button>
+                </div>
+              </div>
+
+              <div id="validasiError" class="alert alert-danger d-none">
+                <i class="fas fa-times-circle me-2"></i>
+                <span id="validasiErrorText"></span>
+              </div>
+            </div>
+            <div class="modal-footer">
+              <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                <i class="fas fa-times me-2"></i>
+                Batal
+              </button>
+              <button type="submit" class="btn btn-danger" id="btnKonfirmasiHapus">
+                <i class="fas fa-trash me-2"></i>
+                Konfirmasi Hapus
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+
     <!-- Scripts -->
     <script type="module" src="js/main.js"></script>
     <script type="module" src="js/mutasiKode.js"></script>
