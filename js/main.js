@@ -38,3 +38,37 @@ try {
 } catch (error) {
   console.error("Error initializing UI components:", error);
 }
+
+
+// Authentication functions
+function handleLogout() {
+  sessionStorage.removeItem("currentUser");
+  window.location.href = "index.html";
+}
+
+async function checkLoginStatus() {
+  const user = sessionStorage.getItem("currentUser");
+  if (!user) {
+    window.location.href = "index.html";
+  }
+}
+
+function setupMenuAccess() {
+  const user = JSON.parse(sessionStorage.getItem("currentUser"));
+  if (user && user.role === 'admin') {
+    // Sembunyikan menu maintenance untuk admin
+    const maintenanceMenu = document.querySelector('a[href="maintenance.html"]');
+    if (maintenanceMenu) {
+      maintenanceMenu.closest('.nav-item').style.display = 'none';
+    }
+  }
+}
+
+// Initialize when document is ready
+$(document).ready(function () {
+  checkLoginStatus();
+  setupMenuAccess();
+});
+
+// Export global functions
+window.handleLogout = handleLogout;

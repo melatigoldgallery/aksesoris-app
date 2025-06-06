@@ -16,14 +16,197 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.4.0/firebase-firestore.js";
 
 console.log("mutasiKode.js loaded");
-// Konstanta untuk caching
+
+// ===== IMPROVED CACHE MANAGEMENT =====
 const CACHE_KEY = "kodeDataCache";
-const CACHE_DURATION = 10 * 60 * 1000; // 10 menit
-const CACHE_VERSION = "v3.0"; // Update versi untuk sistem fallback
+const CACHE_TTL_STANDARD = 60 * 60 * 1000; // 1 jam untuk data historis
+const CACHE_TTL_TODAY = 5 * 60 * 1000;     // 5 menit untuk data yang mungkin berubah
+const CACHE_VERSION = "v4.0"; // Update versi untuk sistem cache baru
+
+// Cache storage dengan Map untuk performa lebih baik
+const kodeDataCache = new Map();
+const kodeDataCacheMeta = new Map();
 
 // Variabel untuk real-time listener dan tracking sumber data
 let unsubscribeListener = null;
-let currentDataSource = null; // Track sumber data yang sedang digunakan
+let currentDataSource = null;
+
+// Fungsi untuk mendapatkan tanggal hari ini dalam format string
+function getLocalDateString() {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+// Fungsi untuk memeriksa apakah cache masih valid
+function isCacheValid(cacheKey) {
+  const timestamp = kodeDataCacheMeta.get(cacheKey);
+  if (!timestamp) return false;
+  
+  const now = Date.now();
+  const lastUpdate = timestamp;
+  
+  // Jika cache key mencakup hari ini, gunakan TTL yang lebih pendek
+  const today = getLocalDateString();
+  if (cacheKey.includes(today)) {
+    return (now - lastUpdate) < CACHE_TTL_TODAY;
+  }
+  
+  // Untuk data historis, gunakan TTL standar
+  return (now - lastUpdate) < CACHE_TTL_STANDARD;
+}
+
+// Fungsi untuk menyimpan data ke cache
+function saveToCache(data, source, cacheKey = CACHE_KEY) {
+  try {
+    // Simpan ke Map cache
+    kodeDataCache.set(cacheKey, {
+      data: data,
+      source: source,
+      version: CACHE_VERSION
+    });
+    
+    // Update timestamp
+    kodeDataCacheMeta.set(cacheKey, Date.now());
+    
+    // Simpan ke localStorage sebagai backup
+    saveCacheToStorage();
+    
+    console.log(`Data saved to cache with key: ${cacheKey}, source: ${source}`);
+  } catch (error) {
+    console.error("Error saving to cache:", error);
+  }
+}
+
+// Fungsi untuk mengambil data dari cache
+function getFromCache(cacheKey = CACHE_KEY) {
+  try {
+    // Cek di Map cache terlebih dahulu
+    if (kodeDataCache.has(cacheKey) && isCacheValid(cacheKey)) {
+      const cached = kodeDataCache.get(cacheKey);
+      if (cached.version === CACHE_VERSION) {
+        console.log(`Using cached data with key: ${cacheKey}, source: ${cached.source}`);
+        currentDataSource = cached.source;
+        return cached.data;
+      }
+    }
+    
+    // Fallback ke localStorage
+    const cachedData = localStorage.getItem(cacheKey);
+    if (cachedData) {
+      const { data, version, source, timestamp } = JSON.parse(cachedData);
+      if (version === CACHE_VERSION) {
+        const now = Date.now();
+        const isValid = (now - timestamp) < CACHE_TTL_STANDARD;
+        
+        if (isValid) {
+          console.log(`Using localStorage cached data with key: ${cacheKey}, source: ${source}`);
+          currentDataSource = source;
+          
+          // Restore ke Map cache
+          kodeDataCache.set(cacheKey, { data, source, version });
+          kodeDataCacheMeta.set(cacheKey, timestamp);
+          
+          return data;
+        }
+      }
+      
+      // Hapus cache yang tidak valid
+      localStorage.removeItem(cacheKey);
+    }
+    
+    return null;
+  } catch (error) {
+    console.error("Error getting from cache:", error);
+    return null;
+  }
+}
+
+// Fungsi untuk menyimpan cache ke localStorage
+function saveCacheToStorage() {
+  try {
+    kodeDataCache.forEach((value, key) => {
+      const timestamp = kodeDataCacheMeta.get(key) || Date.now();
+      const cacheData = {
+        timestamp: timestamp,
+        version: CACHE_VERSION,
+        data: value.data,
+        source: value.source
+      };
+      localStorage.setItem(key, JSON.stringify(cacheData));
+    });
+  } catch (error) {
+    console.error("Error saving cache to storage:", error);
+    // Jika localStorage penuh, hapus cache lama
+    try {
+      clearOldCache();
+      saveCacheToStorage(); // Coba lagi
+    } catch (retryError) {
+      console.error("Failed to save cache after cleanup:", retryError);
+    }
+  }
+}
+
+// Fungsi untuk membersihkan cache lama
+function clearOldCache() {
+  const now = Date.now();
+  const keysToDelete = [];
+  
+  kodeDataCacheMeta.forEach((timestamp, key) => {
+    if ((now - timestamp) > CACHE_TTL_STANDARD) {
+      keysToDelete.push(key);
+    }
+  });
+  
+  keysToDelete.forEach(key => {
+    kodeDataCache.delete(key);
+    kodeDataCacheMeta.delete(key);
+    localStorage.removeItem(key);
+  });
+  
+  console.log(`Cleared ${keysToDelete.length} old cache entries`);
+}
+
+// Fungsi untuk memuat cache dari localStorage saat startup
+function loadCacheFromStorage() {
+  try {
+    // Scan localStorage untuk cache yang valid
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key && key.includes('kode')) {
+        try {
+          const cachedData = localStorage.getItem(key);
+          if (cachedData) {
+            const { data, version, source, timestamp } = JSON.parse(cachedData);
+            if (version === CACHE_VERSION) {
+              const now = Date.now();
+              const isValid = (now - timestamp) < CACHE_TTL_STANDARD;
+              
+              if (isValid) {
+                kodeDataCache.set(key, { data, source, version });
+                kodeDataCacheMeta.set(key, timestamp);
+              } else {
+                localStorage.removeItem(key);
+              }
+            } else {
+              localStorage.removeItem(key);
+            }
+          }
+        } catch (parseError) {
+          console.error(`Error parsing cache for key ${key}:`, parseError);
+          localStorage.removeItem(key);
+        }
+      }
+    }
+    console.log(`Loaded ${kodeDataCache.size} cache entries from storage`);
+  } catch (error) {
+    console.error("Error loading cache from storage:", error);
+  }
+}
+
+// ===== END CACHE MANAGEMENT =====
 
 // Fungsi utility untuk alert dan konfirmasi
 function showAlert(message, title = "Informasi", type = "info") {
@@ -70,64 +253,6 @@ let selectedKodes = {
   active: new Set(),
   mutated: new Set(),
 };
-
-// Fungsi untuk cache management
-function isCacheValid() {
-  const cachedData = localStorage.getItem(CACHE_KEY);
-  if (!cachedData) return false;
-
-  try {
-    const { timestamp, data, version } = JSON.parse(cachedData);
-    return version === CACHE_VERSION && Date.now() - timestamp < CACHE_DURATION;
-  } catch (error) {
-    console.error("Error parsing cache:", error);
-    localStorage.removeItem(CACHE_KEY);
-    return false;
-  }
-}
-
-function saveToCache(data, source) {
-  try {
-    const cacheData = {
-      timestamp: Date.now(),
-      version: CACHE_VERSION,
-      data: data,
-      source: source, // Track sumber data
-    };
-    localStorage.setItem(CACHE_KEY, JSON.stringify(cacheData));
-    console.log(`Data saved to cache from source: ${source}`);
-  } catch (error) {
-    console.error("Error saving to cache:", error);
-    try {
-      localStorage.removeItem(CACHE_KEY);
-      localStorage.setItem(CACHE_KEY, JSON.stringify(cacheData));
-    } catch (retryError) {
-      console.error("Failed to save cache after cleanup:", retryError);
-    }
-  }
-}
-
-function getFromCache() {
-  try {
-    const cachedData = localStorage.getItem(CACHE_KEY);
-    if (cachedData) {
-      const { data, version, source } = JSON.parse(cachedData);
-      if (version === CACHE_VERSION) {
-        console.log(`Using cached data from source: ${source}`);
-        currentDataSource = source;
-        return data;
-      } else {
-        localStorage.removeItem(CACHE_KEY);
-        console.log("Old cache version removed");
-      }
-    }
-    return null;
-  } catch (error) {
-    console.error("Error getting from cache:", error);
-    localStorage.removeItem(CACHE_KEY);
-    return null;
-  }
-}
 
 // Fungsi untuk memproses data dari penjualanAksesoris
 function processPenjualanData(docs) {
@@ -287,7 +412,7 @@ async function loadFromPenjualanAksesoris() {
     currentDataSource = "penjualanAksesoris";
 
     return processedData;
-  } catch (error) {
+  }   catch (error) {
     console.error("Error loading from penjualanAksesoris:", error);
     return null;
   }
@@ -327,12 +452,16 @@ async function loadFromMutasiKode() {
   }
 }
 
-// Fungsi utama untuk memuat data dengan sistem fallback
+// Fungsi utama untuk memuat data dengan sistem cache yang diperbaiki
 async function loadKodeData(forceRefresh = false) {
   try {
-    // Cek cache
-    if (!forceRefresh && isCacheValid()) {
-      const cachedData = getFromCache();
+    // Buat cache key berdasarkan tanggal dan sumber data
+    const today = getLocalDateString();
+    const cacheKey = `${CACHE_KEY}_${today}`;
+    
+    // Cek cache jika tidak force refresh
+    if (!forceRefresh && isCacheValid(cacheKey)) {
+      const cachedData = getFromCache(cacheKey);
       if (cachedData) {
         kodeData = cachedData;
         updateKodeDisplay();
@@ -366,7 +495,10 @@ async function loadKodeData(forceRefresh = false) {
 
     kodeData = loadedData || { active: [], mutated: [] };
     sortKodeData();
-    saveToCache(kodeData, currentDataSource);
+    
+    // Simpan ke cache dengan key yang sesuai
+    saveToCache(kodeData, currentDataSource, cacheKey);
+    
     updateKodeDisplay();
     updateCounters();
     updateDataSourceIndicator();
@@ -374,7 +506,22 @@ async function loadKodeData(forceRefresh = false) {
   } catch (error) {
     console.error("Error loading kode data:", error);
     Swal.close();
-    showAlert("Gagal memuat data kode: " + error.message, "Error", "error");
+    
+    // Coba gunakan cache sebagai fallback jika terjadi error
+    const today = getLocalDateString();
+    const cacheKey = `${CACHE_KEY}_${today}`;
+    const cachedData = getFromCache(cacheKey);
+    
+    if (cachedData) {
+      console.log("Using cached data as fallback due to error");
+      kodeData = cachedData;
+      updateKodeDisplay();
+      updateCounters();
+      updateDataSourceIndicator();
+      showAlert("Data dimuat dari cache karena terjadi kesalahan koneksi", "Peringatan", "warning");
+    } else {
+      showAlert("Gagal memuat data kode: " + error.message, "Error", "error");
+    }
   }
 }
 
@@ -405,19 +552,33 @@ function updateDataSourceIndicator() {
         <small class="text-muted">
           <i class="fas fa-database me-1"></i>
           Sumber data: <span id="dataSourceText">-</span>
+          <span id="cacheIndicator" class="ms-2 badge bg-info" style="display: none;"></span>
         </small>
       </div>
     `);
   }
 
   const sourceText = currentDataSource === "penjualanAksesoris" ? "Transaksi Penjualan" : "Mutasi Kode";
-
   const sourceColor = currentDataSource === "penjualanAksesoris" ? "text-success" : "text-info";
 
   $("#dataSourceText").text(sourceText).removeClass("text-success text-info").addClass(sourceColor);
+  
+  // Tampilkan indikator cache jika menggunakan data cache
+  const today = getLocalDateString();
+  const cacheKey = `${CACHE_KEY}_${today}`;
+  if (kodeDataCache.has(cacheKey)) {
+    const cacheTime = new Date(kodeDataCacheMeta.get(cacheKey));
+    const formattedTime = cacheTime.toLocaleTimeString('id-ID', {
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+    $("#cacheIndicator").text(`Cache (${formattedTime})`).show();
+  } else {
+    $("#cacheIndicator").hide();
+  }
 }
 
-// Fungsi untuk setup real-time listener berdasarkan sumber data
+// Fungsi untuk setup real-time listener dengan cache management
 function setupRealtimeListener() {
   try {
     // Hapus listener sebelumnya jika ada
@@ -448,7 +609,12 @@ function setupRealtimeListener() {
 
           kodeData = processedData;
           sortKodeData();
-          saveToCache(kodeData, currentDataSource);
+          
+          // Update cache dengan real-time data
+          const today = getLocalDateString();
+          const cacheKey = `${CACHE_KEY}_${today}`;
+          saveToCache(kodeData, currentDataSource, cacheKey);
+          
           updateKodeDisplay();
           updateCounters();
           resetSelections();
@@ -468,7 +634,12 @@ function setupRealtimeListener() {
           console.log("Real-time update from mutasiKode");
           kodeData = processMutasiKodeData(snapshot.docs);
           sortKodeData();
-          saveToCache(kodeData, currentDataSource);
+          
+          // Update cache dengan real-time data
+          const today = getLocalDateString();
+          const cacheKey = `${CACHE_KEY}_${today}`;
+          saveToCache(kodeData, currentDataSource, cacheKey);
+          
           updateKodeDisplay();
           updateCounters();
           resetSelections();
@@ -576,7 +747,7 @@ async function mutateSelectedKodes() {
     $("#btnMutasiSelected").prop("disabled", true).html(`<i class="fas fa-exchange-alt me-2"></i>Mutasi Terpilih`);
 
     // Clear cache untuk refresh data
-    localStorage.removeItem(CACHE_KEY);
+    clearAllCache();
 
     Swal.fire({
       title: "Berhasil!",
@@ -647,6 +818,9 @@ async function restoreSelectedKodes() {
 
     selectedKodes.mutated = new Set();
 
+    // Clear cache setelah restore
+    clearAllCache();
+
     Swal.fire({
       title: "Berhasil",
       text: `${selectedItems.length} kode berhasil dikembalikan`,
@@ -705,6 +879,9 @@ async function deleteSelectedKodes() {
 
     selectedKodes.mutated = new Set();
 
+    // Clear cache setelah delete
+    clearAllCache();
+
     Swal.fire({
       title: "Berhasil",
       text: `${selectedItems.length} kode berhasil dihapus`,
@@ -722,16 +899,34 @@ async function deleteSelectedKodes() {
   }
 }
 
-// Fungsi untuk refresh data manual
+// Fungsi untuk refresh data manual dengan cache clearing
 async function refreshData() {
   try {
-    localStorage.removeItem(CACHE_KEY);
+    clearAllCache();
     await loadKodeData(true);
     showAlert("Data berhasil diperbarui", "Berhasil", "success");
   } catch (error) {
     console.error("Error refreshing data:", error);
     showAlert("Gagal memperbarui data: " + error.message, "Error", "error");
   }
+}
+
+// Fungsi untuk membersihkan semua cache
+function clearAllCache() {
+  kodeDataCache.clear();
+  kodeDataCacheMeta.clear();
+  
+  // Hapus dari localStorage
+  const keysToRemove = [];
+  for (let i = 0; i < localStorage.length; i++) {
+    const key = localStorage.key(i);
+    if (key && key.includes('kode')) {
+      keysToRemove.push(key);
+    }
+  }
+  
+  keysToRemove.forEach(key => localStorage.removeItem(key));
+  console.log("All cache cleared");
 }
 
 // Fungsi utility yang sudah ada sebelumnya
@@ -1137,9 +1332,12 @@ function initializeEventHandlers() {
   });
 }
 
-// Initialize page
+// Initialize page dengan cache loading
 async function initializePage() {
   try {
+    // Load cache dari storage terlebih dahulu
+    loadCacheFromStorage();
+    
     Swal.fire({
       title: "Memuat Data",
       text: "Mohon tunggu...",
@@ -1155,6 +1353,10 @@ async function initializePage() {
     initializeEventHandlers();
 
     console.log("Page initialized successfully");
+    
+    // Setup periodic cache cleanup
+    setInterval(clearOldCache, 30 * 60 * 1000); // Cleanup setiap 30 menit
+    
   } catch (error) {
     console.error("Error initializing page:", error);
     Swal.fire({
@@ -1172,6 +1374,9 @@ function cleanup() {
     unsubscribeListener();
     console.log("Real-time listener unsubscribed");
   }
+  
+  // Simpan cache sebelum cleanup
+  saveCacheToStorage();
 }
 
 // Authentication functions

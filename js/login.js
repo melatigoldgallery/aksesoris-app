@@ -29,7 +29,7 @@ document.getElementById('loginForm').addEventListener('submit', async (e) => {
       }));
       
       // Redirect based on role
-      window.location.href = result.role === 'admin' ? 'dashboard.html' : 'operator.html';
+      window.location.href = 'dashboard.html';
     } else {
       alert(result.message || 'Username atau password salah');
     }

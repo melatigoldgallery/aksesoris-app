@@ -587,24 +587,6 @@
     </div>
     <!-- Scripts -->
     <script type="module" src="js/main.js"></script>
-    <script type="module" src="js/components/sidebar.js"></script>
-    <script type="module" src="js/components/header.js"></script>
     <script type="module" src="js/tambahAksesoris.js"></script>
-    <script>
-      // Initialize datepicker
-      $(document).ready(function () {
-        $("#tanggal").datepicker({
-          format: "dd/mm/yyyy",
-          autoclose: true,
-          language: "id",
-          todayHighlight: true,
-        });
-
-        // Calendar icon click handler
-        $("#calendarIcon").on("click", function () {
-          $("#tanggal").datepicker("show");
-        });
-      });
-    </script>
   </body>
 </html>

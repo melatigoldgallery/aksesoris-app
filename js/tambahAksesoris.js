@@ -14,23 +14,111 @@ import {
   serverTimestamp,
 } from "https://www.gstatic.com/firebasejs/10.4.0/firebase-firestore.js";
 
+// ===== IMPROVED CACHE MANAGEMENT =====
+const CACHE_TTL_STANDARD = 60 * 60 * 1000; // 1 jam untuk data statis
+const CACHE_TTL_TODAY = 5 * 60 * 1000;     // 5 menit untuk data hari ini
+const CACHE_TTL_STOCK = 2 * 60 * 1000;     // 2 menit untuk data stok
+
+// Cache storage dengan timestamp
+const cacheStorage = {
+  kodeAksesoris: new Map(),
+  stockAdditions: new Map(),
+  stockData: new Map(),
+  timestamps: new Map()
+};
+
+// Fungsi untuk menyimpan cache dengan timestamp
+function setCacheWithTimestamp(key, data, ttl = CACHE_TTL_STANDARD) {
+  cacheStorage.kodeAksesoris.set(key, data);
+  cacheStorage.timestamps.set(key, {
+    timestamp: Date.now(),
+    ttl: ttl
+  });
+  
+  // Simpan ke sessionStorage untuk persistensi
+  try {
+    sessionStorage.setItem(`cache_${key}`, JSON.stringify({
+      data: data,
+      timestamp: Date.now(),
+      ttl: ttl
+    }));
+  } catch (error) {
+    console.warn("Failed to save cache to sessionStorage:", error);
+  }
+}
+
+// Fungsi untuk mengambil cache dengan validasi TTL
+function getCacheWithValidation(key) {
+  const now = Date.now();
+  
+  // Cek memory cache terlebih dahulu
+  if (cacheStorage.kodeAksesoris.has(key) && cacheStorage.timestamps.has(key)) {
+    const meta = cacheStorage.timestamps.get(key);
+    if ((now - meta.timestamp) < meta.ttl) {
+      return cacheStorage.kodeAksesoris.get(key);
+    } else {
+      // Cache expired, hapus dari memory
+      cacheStorage.kodeAksesoris.delete(key);
+      cacheStorage.timestamps.delete(key);
+    }
+  }
+  
+  // Cek sessionStorage sebagai fallback
+  try {
+    const cached = sessionStorage.getItem(`cache_${key}`);
+    if (cached) {
+      const parsedCache = JSON.parse(cached);
+      if ((now - parsedCache.timestamp) < parsedCache.ttl) {
+        // Restore ke memory cache
+        cacheStorage.kodeAksesoris.set(key, parsedCache.data);
+        cacheStorage.timestamps.set(key, {
+          timestamp: parsedCache.timestamp,
+          ttl: parsedCache.ttl
+        });
+        return parsedCache.data;
+      } else {
+        // Cache expired, hapus dari sessionStorage
+        sessionStorage.removeItem(`cache_${key}`);
+      }
+    }
+  } catch (error) {
+    console.warn("Failed to read cache from sessionStorage:", error);
+  }
+  
+  return null;
+}
+
+// Fungsi untuk menghapus cache
+function invalidateCache(pattern = null) {
+  if (pattern) {
+    // Hapus cache yang sesuai dengan pattern
+    for (const key of cacheStorage.kodeAksesoris.keys()) {
+      if (key.includes(pattern)) {
+        cacheStorage.kodeAksesoris.delete(key);
+        cacheStorage.timestamps.delete(key);
+        sessionStorage.removeItem(`cache_${key}`);
+      }
+    }
+  } else {
+    // Hapus semua cache
+    cacheStorage.kodeAksesoris.clear();
+    cacheStorage.timestamps.clear();
+    
+    // Hapus dari sessionStorage
+    for (let i = sessionStorage.length - 1; i >= 0; i--) {
+      const key = sessionStorage.key(i);
+      if (key && key.startsWith('cache_')) {
+        sessionStorage.removeItem(key);
+      }
+    }
+  }
+}
+
 // Utility functions
 export const aksesorisSaleHandler = {
-  // Cache properties
+  // Simplified cache properties
   cache: {
-    kodeAksesoris: {
-      kotak: null,
-      aksesoris: null,
-      lastFetched: null,
-    },
-    stockAdditions: {
-      data: {},
-      lastFetched: {},
-    },
-    stockData: {
-      data: null,
-      lastFetched: null,
-    },
+    lastUpdate: null,
   },
 
   // Other properties
@@ -113,7 +201,7 @@ export const aksesorisSaleHandler = {
     this.elements = elements;
   },
 
-  // Fungsi untuk memuat data kode aksesoris dengan caching
+  // IMPROVED: Fungsi untuk memuat data kode aksesoris dengan caching yang lebih efisien
   async loadKodeAksesorisData() {
     const { OPSI_KOTAK, OPSI_AKSESORIS } = await this.fetchKodeAksesoris();
     this.OPSI_KOTAK = OPSI_KOTAK;
@@ -378,29 +466,25 @@ export const aksesorisSaleHandler = {
     });
   },
 
-  // Fungsi untuk mengambil data kode aksesoris dari Firestore dengan caching
+  // IMPROVED: Fungsi untuk mengambil data kode aksesoris dari Firestore dengan caching yang efisien
   async fetchKodeAksesoris() {
     try {
-      // Check cache validity (cache expires after 10 minutes)
-      const now = new Date().getTime();
-      const cacheExpiry = 10 * 60 * 1000; // 10 minutes in milliseconds
-
-      if (
-        this.cache.kodeAksesoris.lastFetched &&
-        now - this.cache.kodeAksesoris.lastFetched < cacheExpiry &&
-        this.cache.kodeAksesoris.kotak &&
-        this.cache.kodeAksesoris.aksesoris
-      ) {
+      const cacheKey = "kodeAksesoris_all";
+      
+      // Cek cache terlebih dahulu
+      const cachedData = getCacheWithValidation(cacheKey);
+      if (cachedData) {
         console.log("Using cached kode aksesoris data");
-        return {
-          OPSI_KOTAK: this.cache.kodeAksesoris.kotak,
-          OPSI_AKSESORIS: this.cache.kodeAksesoris.aksesoris,
-        };
+        return cachedData;
       }
 
       console.log("Fetching fresh kode aksesoris data");
-      const kotakSnapshot = await getDocs(collection(firestore, "kodeAksesoris", "kategori", "kotak"));
-      const aksesorisSnapshot = await getDocs(collection(firestore, "kodeAksesoris", "kategori", "aksesoris"));
+      
+      // Fetch data dari Firestore
+      const [kotakSnapshot, aksesorisSnapshot] = await Promise.all([
+        getDocs(collection(firestore, "kodeAksesoris", "kategori", "kotak")),
+        getDocs(collection(firestore, "kodeAksesoris", "kategori", "aksesoris"))
+      ]);
 
       const OPSI_KOTAK = [{ value: "0", text: "Pilih Kategori" }];
       const OPSI_AKSESORIS = [{ value: "0", text: "Pilih Kategori" }];
@@ -423,12 +507,12 @@ export const aksesorisSaleHandler = {
         });
       });
 
-      // Update cache
-      this.cache.kodeAksesoris.kotak = OPSI_KOTAK;
-      this.cache.kodeAksesoris.aksesoris = OPSI_AKSESORIS;
-      this.cache.kodeAksesoris.lastFetched = now;
+      const result = { OPSI_KOTAK, OPSI_AKSESORIS };
+      
+      // Simpan ke cache dengan TTL standar (data ini jarang berubah)
+      setCacheWithTimestamp(cacheKey, result, CACHE_TTL_STANDARD);
 
-      return { OPSI_KOTAK, OPSI_AKSESORIS };
+      return result;
     } catch (error) {
       console.error("Error fetching kode aksesoris:", error);
       return {
@@ -459,9 +543,19 @@ export const aksesorisSaleHandler = {
     });
   },
 
-  // Fungsi untuk memuat data kode barang untuk diedit
+  // IMPROVED: Fungsi untuk memuat data kode barang untuk diedit dengan caching
   async loadKodeBarangData(docId, kategori) {
     try {
+      const cacheKey = `kodeBarang_${kategori}_${docId}`;
+      
+      // Cek cache terlebih dahulu
+      const cachedData = getCacheWithValidation(cacheKey);
+      if (cachedData) {
+        document.getElementById("textKode").value = cachedData.text;
+        document.getElementById("namaKode").value = cachedData.nama;
+        return;
+      }
+
       const docRef = doc(firestore, "kodeAksesoris", "kategori", kategori, docId);
       const docSnap = await getDoc(docRef);
 
@@ -469,6 +563,9 @@ export const aksesorisSaleHandler = {
         const data = docSnap.data();
         document.getElementById("textKode").value = data.text;
         document.getElementById("namaKode").value = data.nama;
+        
+        // Simpan ke cache
+        setCacheWithTimestamp(cacheKey, data, CACHE_TTL_STANDARD);
       } else {
         console.error("Dokumen tidak ditemukan!");
         alert("Data tidak ditemukan!");
@@ -585,7 +682,7 @@ export const aksesorisSaleHandler = {
     }
   },
 
-  // Fungsi untuk menyimpan data penambahan stok
+  // IMPROVED: Fungsi untuk menyimpan data penambahan stok dengan cache invalidation
   async simpanData() {
     try {
       // Show loading indicator
@@ -613,6 +710,10 @@ export const aksesorisSaleHandler = {
 
       // Update stok aksesoris
       await this.updateStokAksesoris(items);
+
+      // IMPROVED: Invalidate related caches
+      invalidateCache("stockAdditions");
+      invalidateCache("stockData");
 
       // Hitung total item yang ditambahkan
       const totalItems = items.reduce((total, item) => total + item.jumlah, 0);
@@ -684,7 +785,6 @@ export const aksesorisSaleHandler = {
         kategori: this.elements.selectKategori.value === "1" ? "kotak" : "aksesoris",
       });
     });
-
     return isValid ? items : null;
   },
 
@@ -717,11 +817,11 @@ export const aksesorisSaleHandler = {
     }
   },
 
-  // Fungsi untuk memperbarui stok aksesoris
+  // IMPROVED: Fungsi untuk memperbarui stok aksesoris dengan cache invalidation
   async updateStokAksesoris(items) {
     try {
-      // Refresh stock data cache
-      this.cache.stockData.data = null;
+      // Invalidate stock cache sebelum update
+      invalidateCache("stockData");
 
       for (const item of items) {
         // Cek apakah item sudah ada di koleksi stokAksesoris
@@ -777,285 +877,304 @@ export const aksesorisSaleHandler = {
   },
 
   printLaporanTambahBarang() {
-  const filterDateStart = document.getElementById("filterDateStart");
-  const filterDateEnd = document.getElementById("filterDateEnd");
+    const filterDateStart = document.getElementById("filterDateStart");
+    const filterDateEnd = document.getElementById("filterDateEnd");
 
-  if (!filterDateStart?.value || !filterDateEnd?.value) {
-    this.showErrorNotification("Silakan pilih rentang tanggal terlebih dahulu!");
-    return;
-  }
+    if (!filterDateStart?.value || !filterDateEnd?.value) {
+      this.showErrorNotification("Silakan pilih rentang tanggal terlebih dahulu!");
+      return;
+    }
 
-  if (!this.laporanData || this.laporanData.length === 0) {
-    this.showErrorNotification("Tidak ada data untuk dicetak pada rentang tanggal tersebut!");
-    return;
-  }
+    if (!this.laporanData || this.laporanData.length === 0) {
+      this.showErrorNotification("Tidak ada data untuk dicetak pada rentang tanggal tersebut!");
+      return;
+    }
 
-  const printWindow = window.open("", "_blank");
-  if (!printWindow) {
-    this.showErrorNotification("Popup diblokir oleh browser. Mohon izinkan popup untuk mencetak.");
-    return;
-  }
+    const printWindow = window.open("", "_blank");
+    if (!printWindow) {
+      this.showErrorNotification("Popup diblokir oleh browser. Mohon izinkan popup untuk mencetak.");
+      return;
+    }
 
-  const html = this.generateLaporanHTML();
-  printWindow.document.write(html);
-  printWindow.document.close();
-},
+    const html = this.generateLaporanHTML();
+    printWindow.document.write(html);
+    printWindow.document.close();
+  },
 
-// Method untuk generate HTML laporan
-generateLaporanHTML() {
-  const filterDateStart = document.getElementById("filterDateStart").value;
-  const filterDateEnd = document.getElementById("filterDateEnd").value;
-  
-  // Group data by kategori
-  const groupedData = this.laporanData.reduce((acc, item) => {
-    const kategori = item.jenisText || "Lainnya";
-    if (!acc[kategori]) acc[kategori] = [];
-    acc[kategori].push(item);
-    return acc;
-  }, {});
-
-  // Hitung total
-  const totalItems = this.laporanData.reduce((sum, item) => sum + (item.jumlah || 0), 0);
-
-  let laporanHTML = `
-    <!DOCTYPE html>
-    <html>
-    <head>
-      <title>Laporan Tambah Barang</title>
-      <style>
-        @page { size: A4; margin: 1cm; }
-        body { font-family: Arial, sans-serif; font-size: 12px; margin: 0; padding: 0; }
-        .header { text-align: center; margin-bottom: 20px; border-bottom: 2px solid #000; padding-bottom: 10px; }
-        .header h2 { margin: 5px 0; }
-        .header h3 { margin: 5px 0; color: #666; }
-        .period { text-align: center; margin: 15px 0; font-weight: bold; }
-        .category-section { margin: 20px 0; }
-        .category-title { background-color: #f0f0f0; padding: 8px; font-weight: bold; border: 1px solid #ccc; }
-        table { width: 100%; border-collapse: collapse; margin-bottom: 15px; }
-        th, td { border: 1px solid #ccc; padding: 6px; text-align: left; }
-        th { background-color: #f8f9fa; font-weight: bold; }
-        .text-center { text-align: center; }
-        .text-right { text-align: right; }
-        .summary { margin-top: 20px; border-top: 2px solid #000; padding-top: 10px; }
-        .summary table { width: 50%; margin-left: auto; }
-        .footer { margin-top: 30px; text-align: right; }
-        .no-data { text-align: center; color: #666; font-style: italic; }
-      </style>
-    </head>
-    <body>
-      <div class="header">
-        <h2>MELATI BAWAH</h2>
-        <h2>LAPORAN PENAMBAHAN STOK</h2>
-      </div>
-      
-      <div class="period">
-        Periode: ${filterDateStart} s/d ${filterDateEnd}
-      </div>
-  `;
-
-  // Tambahkan data per kategori
-  Object.entries(groupedData).forEach(([kategori, items]) => {
-    const subtotal = items.reduce((sum, item) => sum + (item.jumlah || 0), 0);
+  // Method untuk generate HTML laporan
+  generateLaporanHTML() {
+    const filterDateStart = document.getElementById("filterDateStart").value;
+    const filterDateEnd = document.getElementById("filterDateEnd").value;
     
-    laporanHTML += `
-      <div class="category-section">
-        <div class="category-title">${kategori.toUpperCase()} (${subtotal} pcs)</div>
-        <table>
-          <thead>
-            <tr>
-              <th width="15%">Tanggal</th>
-              <th width="20%">Kode Barang</th>
-              <th width="45%">Nama Barang</th>
-              <th width="20%" class="text-center">Jumlah</th>
-            </tr>
-          </thead>
-          <tbody>
+    // Group data by kategori
+    const groupedData = this.laporanData.reduce((acc, item) => {
+      const kategori = item.jenisText || "Lainnya";
+      if (!acc[kategori]) acc[kategori] = [];
+      acc[kategori].push(item);
+      return acc;
+    }, {});
+
+    // Hitung total
+    const totalItems = this.laporanData.reduce((sum, item) => sum + (item.jumlah || 0), 0);
+
+    let laporanHTML = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>Laporan Tambah Barang</title>
+        <style>
+          @page { size: A4; margin: 1cm; }
+          body { font-family: Arial, sans-serif; font-size: 12px; margin: 0; padding: 0; }
+          .header { text-align: center; margin-bottom: 20px; border-bottom: 2px solid #000; padding-bottom: 10px; }
+          .header h2 { margin: 5px 0; }
+          .header h3 { margin: 5px 0; color: #666; }
+          .period { text-align: center; margin: 15px 0; font-weight: bold; }
+          .category-section { margin: 20px 0; }
+          .category-title { background-color: #f0f0f0; padding: 8px; font-weight: bold; border: 1px solid #ccc; }
+          table { width: 100%; border-collapse: collapse; margin-bottom: 15px; }
+          th, td { border: 1px solid #ccc; padding: 6px; text-align: left; }
+          th { background-color: #f8f9fa; font-weight: bold; }
+          .text-center { text-align: center; }
+          .text-right { text-align: right; }
+          .summary { margin-top: 20px; border-top: 2px solid #000; padding-top: 10px; }
+          .summary table { width: 50%; margin-left: auto; }
+          .footer { margin-top: 30px; text-align: right; }
+          .no-data { text-align: center; color: #666; font-style: italic; }
+        </style>
+      </head>
+      <body>
+        <div class="header">
+          <h2>MELATI BAWAH</h2>
+          <h2>LAPORAN PENAMBAHAN STOK</h2>
+        </div>
+        
+        <div class="period">
+          Periode: ${filterDateStart} s/d ${filterDateEnd}
+        </div>
     `;
 
-    items.forEach(item => {
+    // Tambahkan data per kategori
+    Object.entries(groupedData).forEach(([kategori, items]) => {
+      const subtotal = items.reduce((sum, item) => sum + (item.jumlah || 0), 0);
+      
       laporanHTML += `
-        <tr>
-          <td>${item.tanggal || "-"}</td>
-          <td>${item.kodeText || "-"}</td>
-          <td>${item.nama || "-"}</td>
-          <td class="text-center"><strong>${item.jumlah || 0}</strong></td>
-        </tr>
+        <div class="category-section">
+          <div class="category-title">${kategori.toUpperCase()} (${subtotal} pcs)</div>
+          <table>
+            <thead>
+              <tr>
+                <th width="15%">Tanggal</th>
+                <th width="20%">Kode Barang</th>
+                <th width="45%">Nama Barang</th>
+                <th width="20%" class="text-center">Jumlah</th>
+              </tr>
+            </thead>
+            <tbody>
+      `;
+
+      items.forEach(item => {
+        laporanHTML += `
+          <tr>
+            <td>${item.tanggal || "-"}</td>
+            <td>${item.kodeText || "-"}</td>
+            <td>${item.nama || "-"}</td>
+            <td class="text-center"><strong>${item.jumlah || 0}</strong></td>
+          </tr>
+        `;
+      });
+
+      laporanHTML += `
+            </tbody>
+            <tfoot>
+              <tr style="background-color: #f8f9fa;">
+                <td colspan="3" class="text-right"><strong>Subtotal ${kategori}:</strong></td>
+                <td class="text-center"><strong>${subtotal} pcs</strong></td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
       `;
     });
 
     laporanHTML += `
-          </tbody>
-          <tfoot>
-            <tr style="background-color: #f8f9fa;">
-              <td colspan="3" class="text-right"><strong>Subtotal ${kategori}:</strong></td>
-              <td class="text-center"><strong>${subtotal} pcs</strong></td>
+        <div class="summary">
+          <table>
+            <tr>
+              <td><strong>TOTAL KESELURUHAN:</strong></td>
+              <td class="text-center"><strong>${totalItems} pcs</strong></td>
             </tr>
-          </tfoot>
-        </table>
-      </div>
+          </table>
+        </div>
+        
+        <div class="footer">
+          <p>Dicetak pada: ${new Date().toLocaleString('id-ID')}</p>
+          <p>Admin: ${localStorage.getItem('currentUser') || 'Admin'}</p>
+        </div>
+        
+        <script>
+          window.onload = function() {
+            setTimeout(() => {
+              window.print();
+              setTimeout(() => window.close(), 500);
+            }, 500);
+          };
+        </script>
+      </body>
+      </html>
     `;
-  });
 
-  laporanHTML += `
-      <div class="summary">
-        <table>
-          <tr>
-            <td><strong>TOTAL KESELURUHAN:</strong></td>
-            <td class="text-center"><strong>${totalItems} pcs</strong></td>
-          </tr>
-        </table>
-      </div>
+    return laporanHTML;
+  },
+
+  // IMPROVED: Fungsi untuk memuat riwayat penambahan stok dengan caching yang efisien
+  async loadStockAdditionHistory() {
+    try {
+      const filterDateStart = document.getElementById("filterDateStart");
+      const filterDateEnd = document.getElementById("filterDateEnd");
       
-      <div class="footer">
-        <p>Dicetak pada: ${new Date().toLocaleString('id-ID')}</p>
-        <p>Admin: ${localStorage.getItem('currentUser') || 'Admin'}</p>
-      </div>
+      // Validasi elemen ada dan memiliki value
+      if (!filterDateStart || !filterDateEnd || !filterDateStart.value || !filterDateEnd.value) {
+        console.log("Filter tanggal belum diset, menggunakan tanggal hari ini");
+        this.setDefaultFilterDates();
+        return;
+      }
+
+      // Parse tanggal filter dengan validasi
+      const startParts = filterDateStart.value.split("/");
+      const endParts = filterDateEnd.value.split("/");
       
-      <script>
-        window.onload = function() {
-          setTimeout(() => {
-            window.print();
-            setTimeout(() => window.close(), 500);
-          }, 500);
-        };
-      </script>
-    </body>
-    </html>
-  `;
+      if (startParts.length !== 3 || endParts.length !== 3) {
+        throw new Error("Format tanggal tidak valid");
+      }
 
-  return laporanHTML;
-},
+      const startDate = new Date(startParts[2], startParts[1] - 1, startParts[0]);
+      const endDate = new Date(endParts[2], endParts[1] - 1, endParts[0]);
+      
+      // Validasi tanggal valid
+      if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
+        throw new Error("Tanggal tidak valid");
+      }
+      
+      startDate.setHours(0, 0, 0, 0);
+      endDate.setHours(23, 59, 59, 999);
 
-  // Fungsi untuk memuat riwayat penambahan stok dengan caching
- async loadStockAdditionHistory() {
-  try {
+      // Create cache key
+      const cacheKey = `stockAdditions_${filterDateStart.value}_${filterDateEnd.value}`;
+      
+      // Cek apakah rentang tanggal mencakup hari ini untuk menentukan TTL
+      const today = new Date();
+      const includesCurrentDay = (startDate <= today && today <= endDate);
+      const ttl = includesCurrentDay ? CACHE_TTL_TODAY : CACHE_TTL_STANDARD;
+
+      // Cek cache terlebih dahulu
+      const cachedData = getCacheWithValidation(cacheKey);
+      if (cachedData) {
+        console.log("Using cached stock addition history");
+        this.laporanData = cachedData;
+        this.renderStockAdditionHistory(cachedData);
+        return;
+      }
+
+      // Query data dari Firestore
+      const stockAdditionsRef = collection(firestore, "stockAdditions");
+      const q = query(
+        stockAdditionsRef,
+        where("timestamp", ">=", startDate),
+        where("timestamp", "<=", endDate),
+        orderBy("timestamp", "desc")
+      );
+
+      const snapshot = await getDocs(q);
+      const historyData = [];
+
+      snapshot.forEach((doc) => {
+        const data = doc.data();
+        if (data.items && data.items.length) {
+          data.items.forEach((item) => {
+            historyData.push({
+              id: doc.id,
+              timestamp: data.timestamp,
+              tanggal: data.tanggal,
+              jenisText: data.jenisText,
+              kodeText: item.kodeText,
+              nama: item.nama,
+              jumlah: item.jumlah,
+            });
+          });
+        }
+      });
+
+      // Simpan ke cache
+      setCacheWithTimestamp(cacheKey, historyData, ttl);
+
+      // Simpan data untuk laporan
+      this.laporanData = historyData;
+
+      // Render data
+      this.renderStockAdditionHistory(historyData);
+      
+    } catch (error) {
+      console.error("Error loading stock addition history:", error);
+      this.renderStockAdditionHistory([]); // Render tabel kosong dengan pesan error
+    }
+  },
+
+  // Method untuk set default filter dates
+  setDefaultFilterDates() {
+    const today = new Date();
+    const day = String(today.getDate()).padStart(2, "0");
+    const month = String(today.getMonth() + 1).padStart(2, "0");
+    const year = today.getFullYear();
+    const formattedDate = `${day}/${month}/${year}`;
+
     const filterDateStart = document.getElementById("filterDateStart");
     const filterDateEnd = document.getElementById("filterDateEnd");
     
-    // Validasi elemen ada dan memiliki value
-    if (!filterDateStart || !filterDateEnd || !filterDateStart.value || !filterDateEnd.value) {
-      console.log("Filter tanggal belum diset, menggunakan tanggal hari ini");
-      this.setDefaultFilterDates();
+    if (filterDateStart) filterDateStart.value = formattedDate;
+    if (filterDateEnd) filterDateEnd.value = formattedDate;
+    
+    // Load data setelah set tanggal
+    setTimeout(() => this.loadStockAdditionHistory(), 100);
+  },
+
+  // Render riwayat penambahan stok ke tabel
+  renderStockAdditionHistory(historyData = []) {
+    const tableBody = document.querySelector("#tableRiwayatTambahStok tbody");
+    
+    if (!tableBody) {
+      console.error("Table body element not found");
       return;
     }
 
-    // Parse tanggal filter dengan validasi
-    const startParts = filterDateStart.value.split("/");
-    const endParts = filterDateEnd.value.split("/");
-    
-    if (startParts.length !== 3 || endParts.length !== 3) {
-      throw new Error("Format tanggal tidak valid");
+    // Clear existing content
+    tableBody.innerHTML = "";
+
+    if (!historyData || historyData.length === 0) {
+      tableBody.innerHTML = `
+        <tr>
+          <td colspan="4" class="text-center text-muted py-4">
+            <i class="fas fa-inbox fa-2x mb-2 d-block"></i>
+            <span>Tidak ada data penambahan stok pada periode ini</span>
+          </td>
+        </tr>
+      `;
+      return;
     }
-
-    const startDate = new Date(startParts[2], startParts[1] - 1, startParts[0]);
-    const endDate = new Date(endParts[2], endParts[1] - 1, endParts[0]);
-    
-    // Validasi tanggal valid
-    if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
-      throw new Error("Tanggal tidak valid");
-    }
-    
-    startDate.setHours(0, 0, 0, 0);
-    endDate.setHours(23, 59, 59, 999);
-
-    // Query data
-    const stockAdditionsRef = collection(firestore, "stockAdditions");
-    const q = query(
-      stockAdditionsRef,
-      where("timestamp", ">=", startDate),
-      where("timestamp", "<=", endDate),
-      orderBy("timestamp", "desc")
-    );
-
-    const snapshot = await getDocs(q);
-    const historyData = [];
-
-    snapshot.forEach((doc) => {
-      const data = doc.data();
-      if (data.items && data.items.length) {
-        data.items.forEach((item) => {
-          historyData.push({
-            id: doc.id,
-            timestamp: data.timestamp,
-            tanggal: data.tanggal,
-            jenisText: data.jenisText,
-            kodeText: item.kodeText,
-            nama: item.nama,
-            jumlah: item.jumlah,
-          });
-        });
-      }
-    });
-
-    // Simpan data untuk laporan
-    this.laporanData = historyData;
 
     // Render data
-    this.renderStockAdditionHistory(historyData);
-    
-  } catch (error) {
-    console.error("Error loading stock addition history:", error);
-    this.renderStockAdditionHistory([]); // Render tabel kosong dengan pesan error
-  }
-},
-
-// Method untuk set default filter dates
-setDefaultFilterDates() {
-  const today = new Date();
-  const day = String(today.getDate()).padStart(2, "0");
-  const month = String(today.getMonth() + 1).padStart(2, "0");
-  const year = today.getFullYear();
-  const formattedDate = `${day}/${month}/${year}`;
-
-  const filterDateStart = document.getElementById("filterDateStart");
-  const filterDateEnd = document.getElementById("filterDateEnd");
-  
-  if (filterDateStart) filterDateStart.value = formattedDate;
-  if (filterDateEnd) filterDateEnd.value = formattedDate;
-  
-  // Load data setelah set tanggal
-  setTimeout(() => this.loadStockAdditionHistory(), 100);
-},
-
-
-  // Render riwayat penambahan stok ke tabel
- renderStockAdditionHistory(historyData = []) {
-  const tableBody = document.querySelector("#tableRiwayatTambahStok tbody");
-  
-  if (!tableBody) {
-    console.error("Table body element not found");
-    return;
-  }
-
-  // Clear existing content
-  tableBody.innerHTML = "";
-
-  if (!historyData || historyData.length === 0) {
-    tableBody.innerHTML = `
-      <tr>
-        <td colspan="4" class="text-center text-muted py-4">
-          <i class="fas fa-inbox fa-2x mb-2 d-block"></i>
-          <span>Tidak ada data penambahan stok pada periode ini</span>
+    historyData.forEach((item) => {
+      const row = document.createElement("tr");
+      row.innerHTML = `
+        <td>${item.tanggal || "-"}</td>
+        <td>${item.kodeText || "-"}</td>
+        <td>${item.nama || "-"}</td>
+        <td class="text-center">
+          <span class="badge bg-primary">${item.jumlah || 0} pcs</span>
         </td>
-      </tr>
-    `;
-    return;
-  }
-
-  // Render data
-  historyData.forEach((item) => {
-    const row = document.createElement("tr");
-    row.innerHTML = `
-      <td>${item.tanggal || "-"}</td>
-      <td>${item.kodeText || "-"}</td>
-      <td>${item.nama || "-"}</td>
-      <td class="text-center">
-        <span class="badge bg-primary">${item.jumlah || 0} pcs</span>
-      </td>
-    `;
-    tableBody.appendChild(row);
-  });
-},
+      `;
+      tableBody.appendChild(row);
+    });
+  },
 
   // Fungsi untuk menampilkan loading indicator
   showLoading(isLoading) {
@@ -1188,7 +1307,7 @@ setDefaultFilterDates() {
     this.modalKelolaKode.show();
   },
 
-  // Fungsi untuk memuat data kode barang dengan caching
+  // IMPROVED: Fungsi untuk memuat data kode barang dengan caching yang efisien
   async loadKodeBarang(kategori) {
     try {
       const tableId = kategori === "kotak" ? "tableKodeKotak" : "tableKodeAksesoris";
@@ -1201,17 +1320,14 @@ setDefaultFilterDates() {
 
       tableBody.innerHTML = '<tr><td colspan="5" class="text-center">Loading...</td></tr>';
 
-      // Check cache
-      const now = new Date().getTime();
-      const cacheExpiry = 5 * 60 * 1000; // 5 minutes
-
-      if (
-        this.cache.kodeAksesoris[kategori] &&
-        this.cache.kodeAksesoris.lastFetched &&
-        now - this.cache.kodeAksesoris.lastFetched < cacheExpiry
-      ) {
+      // Create cache key
+      const cacheKey = `kodeBarang_${kategori}`;
+      
+      // Cek cache terlebih dahulu
+      const cachedData = getCacheWithValidation(cacheKey);
+      if (cachedData) {
         console.log(`Using cached ${kategori} data`);
-        this.renderKodeBarangTable(tableBody, this.cache.kodeAksesoris[kategori], kategori);
+        this.renderKodeBarangTable(tableBody, cachedData, kategori);
         return;
       }
 
@@ -1233,11 +1349,8 @@ setDefaultFilterDates() {
         });
       });
 
-      // Update cache
-      this.cache.kodeAksesoris[kategori] = kodeData;
-      if (!this.cache.kodeAksesoris.lastFetched) {
-        this.cache.kodeAksesoris.lastFetched = now;
-      }
+      // Simpan ke cache
+      setCacheWithTimestamp(cacheKey, kodeData, CACHE_TTL_STANDARD);
 
       // Render table
       this.renderKodeBarangTable(tableBody, kodeData, kategori);
@@ -1325,7 +1438,7 @@ setDefaultFilterDates() {
     this.modalFormKode.show();
   },
 
-  // Fungsi untuk menyimpan kode barang
+  // IMPROVED: Fungsi untuk menyimpan kode barang dengan cache invalidation
   async simpanKodeBarang() {
     // Validasi form
     if (!this.validateKodeBarangForm()) {
@@ -1353,8 +1466,9 @@ setDefaultFilterDates() {
         await this.addKodeBarang(kategori, data);
       }
 
-      // Invalidate cache
-      this.cache.kodeAksesoris.lastFetched = null;
+      // IMPROVED: Invalidate related caches
+      invalidateCache("kodeAksesoris");
+      invalidateCache(`kodeBarang_${kategori}`);
 
       // Reload data
       this.modalFormKode.hide();
@@ -1424,7 +1538,7 @@ setDefaultFilterDates() {
     }
   },
 
-  // Ganti confirm di deleteKodeBarang
+  // IMPROVED: Ganti confirm di deleteKodeBarang dengan cache invalidation
   async deleteKodeBarang(docId, kategori) {
     const confirmed = await this.showConfirmation("Apakah Anda yakin ingin menghapus kode ini?");
     if (!confirmed) {
@@ -1436,15 +1550,16 @@ setDefaultFilterDates() {
       await deleteDoc(docRef);
       this.showSuccessNotification("Data berhasil dihapus!");
 
-      // Invalidate cache
-      this.cache.kodeAksesoris.lastFetched = null;
+      // IMPROVED: Invalidate related caches
+      invalidateCache("kodeAksesoris");
+      invalidateCache(`kodeBarang_${kategori}`);
 
       // Reload data
       this.loadKodeBarang(kategori);
 
       // Reload kode aksesoris data for the main form
       await this.loadKodeAksesorisData();
-
+      
       // Update dropdown options if category is active
       const selectKategori = document.getElementById("jenis-aksesoris");
       if (
@@ -1460,12 +1575,13 @@ setDefaultFilterDates() {
       this.showErrorNotification("Gagal menghapus data: " + error.message);
     }
   },
+
   // Fungsi untuk mengedit kode barang
   async editKodeBarang(docId, kategori) {
     this.showFormKodeModal(kategori, docId);
   },
 
-  // Fungsi untuk mengatur stok awal hari berikutnya
+  // IMPROVED: Fungsi untuk mengatur stok awal hari berikutnya dengan cache invalidation
   async setNextDayStartingStock() {
     try {
       // Ambil semua data stok
@@ -1493,21 +1609,100 @@ setDefaultFilterDates() {
       await batch.commit();
       console.log("Stok awal hari berikutnya berhasil diatur");
 
-      // Invalidate cache
-      this.cache.stockData.data = null;
-      this.cache.stockData.lastFetched = null;
+      // IMPROVED: Invalidate stock cache setelah update
+      invalidateCache("stockData");
+      invalidateCache("stockAdditions");
     } catch (error) {
       console.error("Error setting next day starting stock:", error);
       throw error;
     }
   },
+
+  // IMPROVED: Tambahkan fungsi untuk force refresh cache
+  async forceRefreshCache() {
+    try {
+      // Hapus semua cache
+      invalidateCache();
+      
+      // Reload data utama
+      await this.loadKodeAksesorisData();
+      
+      // Reload riwayat jika ada filter tanggal
+      const filterDateStart = document.getElementById("filterDateStart");
+      const filterDateEnd = document.getElementById("filterDateEnd");
+      
+      if (filterDateStart?.value && filterDateEnd?.value) {
+        await this.loadStockAdditionHistory();
+      }
+      
+      this.showSuccessNotification("Cache berhasil disegarkan!");
+    } catch (error) {
+      console.error("Error refreshing cache:", error);
+      this.showErrorNotification("Gagal menyegarkan cache: " + error.message);
+    }
+  },
+
+  // IMPROVED: Tambahkan fungsi untuk mendapatkan status cache
+  getCacheStatus() {
+    const now = Date.now();
+    const cacheInfo = [];
+    
+    for (const [key, meta] of cacheStorage.timestamps.entries()) {
+      const isExpired = (now - meta.timestamp) > meta.ttl;
+      const ageMinutes = Math.floor((now - meta.timestamp) / (1000 * 60));
+      
+      cacheInfo.push({
+        key: key,
+        age: ageMinutes,
+        expired: isExpired,
+        ttl: Math.floor(meta.ttl / (1000 * 60)) // TTL in minutes
+      });
+    }
+    
+    return cacheInfo;
+  },
+
+  // IMPROVED: Tambahkan fungsi untuk cleanup cache yang expired
+  cleanupExpiredCache() {
+    const now = Date.now();
+    const expiredKeys = [];
+    
+    for (const [key, meta] of cacheStorage.timestamps.entries()) {
+      if ((now - meta.timestamp) > meta.ttl) {
+        expiredKeys.push(key);
+      }
+    }
+    
+    expiredKeys.forEach(key => {
+      cacheStorage.kodeAksesoris.delete(key);
+      cacheStorage.timestamps.delete(key);
+      sessionStorage.removeItem(`cache_${key}`);
+    });
+    
+    if (expiredKeys.length > 0) {
+      console.log(`Cleaned up ${expiredKeys.length} expired cache entries`);
+    }
+    
+    return expiredKeys.length;
+  }
 };
 
-// Initialize when document is ready
+// IMPROVED: Auto cleanup expired cache setiap 5 menit
+setInterval(() => {
+  aksesorisSaleHandler.cleanupExpiredCache();
+}, 5 * 60 * 1000);
+
+// IMPROVED: Cleanup cache saat halaman akan ditutup
+window.addEventListener('beforeunload', () => {
+  aksesorisSaleHandler.cleanupExpiredCache();
+});
+
+// IMPROVED: Tambahkan event listener untuk tombol refresh cache jika ada
 document.addEventListener("DOMContentLoaded", function () {
+  // Initialize handler
   aksesorisSaleHandler.init();
 
-  // Set up datepicker for filterDate
+  // Set up datepicker untuk filterDate
   $("#filterDate").datepicker({
     format: "dd/mm/yyyy",
     autoclose: true,
@@ -1519,4 +1714,77 @@ document.addEventListener("DOMContentLoaded", function () {
   $("#filterDateIcon").on("click", function () {
     $("#filterDate").datepicker("show");
   });
+
+  // IMPROVED: Tambahkan tombol refresh cache jika belum ada
+  const addRefreshCacheButton = () => {
+    const existingButton = document.getElementById("refreshCacheBtn");
+    if (existingButton) return;
+
+    // Cari container yang sesuai untuk menambahkan tombol
+    const buttonContainer = document.querySelector(".card-header .d-flex") || 
+                           document.querySelector(".btn-group") ||
+                           document.querySelector(".card-body .row .col-auto");
+
+    if (buttonContainer) {
+      const refreshButton = document.createElement("button");
+      refreshButton.id = "refreshCacheBtn";
+      refreshButton.className = "btn btn-outline-secondary btn-sm ms-2";
+      refreshButton.innerHTML = '<i class="fas fa-sync-alt"></i> Refresh Cache';
+      refreshButton.title = "Segarkan semua data dari server";
+      
+      refreshButton.addEventListener("click", () => {
+        if (confirm("Apakah Anda yakin ingin menyegarkan semua cache? Data akan diambil ulang dari server.")) {
+          aksesorisSaleHandler.forceRefreshCache();
+        }
+      });
+      
+      buttonContainer.appendChild(refreshButton);
+    }
+  };
+
+  // Tambahkan tombol setelah DOM selesai dimuat
+  setTimeout(addRefreshCacheButton, 1000);
+
+  // IMPROVED: Tambahkan indikator cache status jika diperlukan
+  const addCacheStatusIndicator = () => {
+    const existingIndicator = document.getElementById("cacheStatusIndicator");
+    if (existingIndicator) return;
+
+    const statusContainer = document.querySelector(".card-footer") || 
+                           document.querySelector(".card-body");
+
+    if (statusContainer) {
+      const indicator = document.createElement("small");
+      indicator.id = "cacheStatusIndicator";
+      indicator.className = "text-muted d-block mt-2";
+      indicator.innerHTML = '<i class="fas fa-database"></i> <span id="cacheStatusText">Cache aktif</span>';
+      
+      // Update status setiap 30 detik
+      const updateCacheStatus = () => {
+        const cacheInfo = aksesorisSaleHandler.getCacheStatus();
+        const activeCache = cacheInfo.filter(info => !info.expired).length;
+        const expiredCache = cacheInfo.filter(info => info.expired).length;
+        
+        const statusText = document.getElementById("cacheStatusText");
+        if (statusText) {
+          statusText.textContent = `Cache: ${activeCache} aktif, ${expiredCache} expired`;
+        }
+      };
+      
+      statusContainer.appendChild(indicator);
+      updateCacheStatus();
+      setInterval(updateCacheStatus, 30000);
+    }
+  };
+
+  // Tambahkan indikator setelah DOM selesai dimuat
+  setTimeout(addCacheStatusIndicator, 1500);
 });
+
+// IMPROVED: Export fungsi cache management untuk debugging
+window.aksesorisCacheDebug = {
+  getStatus: () => aksesorisSaleHandler.getCacheStatus(),
+  cleanup: () => aksesorisSaleHandler.cleanupExpiredCache(),
+  invalidate: (pattern) => invalidateCache(pattern),
+  refresh: () => aksesorisSaleHandler.forceRefreshCache()
+};

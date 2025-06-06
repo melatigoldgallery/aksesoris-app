@@ -132,14 +132,13 @@ function calculateBuyback(e) {
     const hargaBeli = parseFloat(row.querySelector("[name='hargaBeli']").value);
     const hargaHariIni = parseFloat(row.querySelector("[name='hargaHariIni']").value);
 
-    if (!kadar || !asalToko || !kondisiBarang || isNaN(hargaBeli) || isNaN(hargaHariIni)) {
+    if (!kadar || !kondisiBarang || isNaN(hargaBeli) || isNaN(hargaHariIni)) {
       isValid = false;
       return;
     }
 
     items.push({
       kadar,
-      asalToko,
       namaBarang,
       kondisiBarang,
       hargaBeli,
@@ -171,14 +170,11 @@ function calculateBuybackPrice(items) {
     let buybackPrice = 0;
 
     if (item.hargaBeli <= item.hargaHariIni) {
-      // Gunakan persentase standar berdasarkan kondisi barang saja
-      const persentaseMap = {
-        1: 85, // K1 - Kondisi Sangat Baik
-        2: 80, // K2 - Kondisi Sedang  
-        3: 75, // K3 - Kondisi Kurang
-      };
+      // Hitung persentase beli terhadap harga hari ini
+      const persentaseBeli = (item.hargaBeli / item.hargaHariIni) * 100;
       
-      buybackPercentage = persentaseMap[item.kondisiBarang] || 70;
+      // Gunakan helper function calculatePersentase
+      buybackPercentage = calculatePersentase(parseInt(item.kondisiBarang), persentaseBeli);
       buybackPrice = (item.hargaHariIni * buybackPercentage) / 100;
       buybackPrice = roundBuybackPrice(buybackPrice);
 
@@ -220,7 +216,7 @@ function roundBuybackPrice(price) {
 }
 
 // New helper functions for calculating percentages
-function calculateMelatiPersentase(kondisiBarang, persentaseBeli) {
+function calculatePersentase(kondisiBarang, persentaseBeli) {
   if (persentaseBeli >= 95) {
     const persentaseMap = {
       1: 98,
@@ -264,15 +260,6 @@ function calculateMelatiPersentase(kondisiBarang, persentaseBeli) {
     };
     return persentaseMap[kondisiBarang];
   }
-}
-
-function calculateLuarTokoPersentase(kondisiBarang) {
-  const persentaseMap = {
-    1: 72,
-    2: 70,
-    3: 65,
-  };
-  return persentaseMap[kondisiBarang] || 60;
 }
 
 // Show results in modal
