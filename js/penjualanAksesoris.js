@@ -1256,7 +1256,7 @@ const penjualanHandler = {
         return;
       }
 
-      const jenisBarang = { C: "Cincin", K: "Kalung", L: "Liontin", A: "Anting", G: "Gelang", S: "Giwang" };
+      const jenisBarang = { C: "Cincin", K: "Kalung", L: "Liontin", A: "Anting", G: "Gelang", S: "Giwang", Z: "HALA", V: "HALA"};
       const duplicatePromises = [];
 
       transactionData.items.forEach((item, index) => {
