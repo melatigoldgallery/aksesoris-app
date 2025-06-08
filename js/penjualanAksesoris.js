@@ -388,81 +388,96 @@ const penjualanHandler = {
 
   // Load stock data with smart caching - mengadopsi dari kehadiran.js
   async loadStockData(forceRefresh = false) {
-    if (this.isLoadingStock) return;
+  if (this.isLoadingStock) return;
 
-    try {
-      this.isLoadingStock = true;
-      const cacheKey = "stockData";
+  try {
+    this.isLoadingStock = true;
+    const cacheKey = "stockData";
 
-      // Check in-memory cache first (fastest)
-      const cacheAge = Date.now() - this.lastStockUpdate;
-      if (!forceRefresh && cacheAge < 2 * 60 * 1000 && this.stockData.length > 0) {
-        console.log("Using in-memory stock cache");
+    // ✅ PERTAHANKAN: Check in-memory cache first (fastest)
+    const cacheAge = Date.now() - this.lastStockUpdate;
+    if (!forceRefresh && cacheAge < 2 * 60 * 1000 && this.stockData.length > 0) {
+      console.log("📦 Using in-memory stock cache");
+      this.populateStockTables();
+      return;
+    }
+
+    // ✅ PERTAHANKAN: Check localStorage cache dengan smart TTL
+    if (!forceRefresh && !cacheManager.shouldUpdateCache(cacheKey)) {
+      const cachedData = cacheManager.get(cacheKey);
+      if (cachedData) {
+        console.log("📦 Using localStorage stock cache");
+        this.stockData = cachedData;
+        this.stockCache.clear();
+        this.stockData.forEach((item) => {
+          this.stockCache.set(item.kode, item.stokAkhir);
+        });
+        this.lastStockUpdate = Date.now();
         this.populateStockTables();
         return;
       }
-
-      // Check localStorage cache dengan smart TTL
-      if (!forceRefresh && !cacheManager.shouldUpdateCache(cacheKey)) {
-        const cachedData = cacheManager.get(cacheKey);
-        if (cachedData) {
-          console.log("Using localStorage stock cache");
-          this.stockData = cachedData;
-          this.stockCache.clear();
-          this.stockData.forEach((item) => {
-            this.stockCache.set(item.kode, item.stokAkhir);
-          });
-          this.lastStockUpdate = Date.now();
-          this.populateStockTables();
-          return;
-        }
-      }
-
-      utils.showLoading(true);
-      console.log("Fetching fresh stock data from Firestore");
-
-      // Optimized query
-      const stockSnapshot = await getDocs(
-        query(
-          collection(firestore, "stokAksesoris"),
-          where("stokAkhir", ">", 0)
-        )
-      );
-
-      const stockData = [];
-      stockSnapshot.forEach((doc) => {
-        const data = doc.data();
-        stockData.push({
-          id: doc.id,
-          ...data,
-          lastChecked: Date.now(),
-        });
-
-        this.stockCache.set(data.kode, data.stokAkhir || 0);
-      });
-
-      // Cache dengan TTL yang sesuai
-      cacheManager.set(cacheKey, stockData, cacheManager.stockTTL);
-      this.stockData = stockData;
-      this.lastStockUpdate = Date.now();
-      this.populateStockTables();
-    } catch (error) {
-      console.error("Error loading stock:", error);
-      
-      // Fallback ke cache jika ada error
-      const cachedData = cacheManager.get("stockData");
-      if (cachedData) {
-        console.log("Using cached stock data due to error");
-        this.stockData = cachedData;
-        this.populateStockTables();
-      } else {
-        utils.showAlert("Gagal memuat data stok: " + error.message, "Error", "error");
-      }
-    } finally {
-      this.isLoadingStock = false;
-      utils.showLoading(false);
     }
-  },
+
+    utils.showLoading(true);
+    console.log("🔄 Fetching fresh stock data from Firestore");
+
+    // ✅ PERBAIKAN: Gunakan query sederhana seperti kode asli Anda
+    // Batching tidak diperlukan untuk collection stok yang relatif kecil
+    const stockSnapshot = await getDocs(
+      query(
+        collection(firestore, "stokAksesoris"),
+        where("stokAkhir", ">", 0)
+      )
+    );
+
+    const stockData = [];
+    stockSnapshot.forEach((doc) => {
+      const data = doc.data();
+      stockData.push({
+        id: doc.id,
+        ...data,
+        lastChecked: Date.now(),
+      });
+      
+      this.stockCache.set(data.kode, data.stokAkhir || 0);
+    });
+
+    // ✅ PERTAHANKAN: Cache dengan TTL yang sesuai
+    cacheManager.set(cacheKey, stockData, cacheManager.stockTTL);
+    this.stockData = stockData;
+    this.lastStockUpdate = Date.now();
+    
+    // ✅ TAMBAHAN: Simpan timestamp untuk change detection
+    localStorage.setItem("lastStockUpdateTime", Date.now().toString());
+
+    this.populateStockTables();
+    
+    console.log(`✅ Loaded ${stockData.length} stock items from Firestore`);
+
+  } catch (error) {
+    console.error("Error loading stock:", error);
+
+    // ✅ PERTAHANKAN: Fallback ke cache jika ada error
+    const cachedData = cacheManager.get("stockData");
+    if (cachedData) {
+      console.log("📦 Using cached stock data due to error");
+      this.stockData = cachedData;
+      
+      // ✅ TAMBAHAN: Rebuild stockCache dari cached data
+      this.stockCache.clear();
+      this.stockData.forEach((item) => {
+        this.stockCache.set(item.kode, item.stokAkhir);
+      });
+      
+      this.populateStockTables();
+    } else {
+      utils.showAlert("Gagal memuat data stok: " + error.message, "Error", "error");
+    }
+  } finally {
+    this.isLoadingStock = false;
+    utils.showLoading(false);
+  }
+},
 
   // Optimized stock checking dengan cache yang efisien
   async getStockForItem(kode) {
@@ -1230,23 +1245,88 @@ const penjualanHandler = {
 
   // Refresh stock dengan cache invalidation yang efisien
   async refreshStock() {
-    try {
-      utils.showLoading(true);
-      
-      // Clear cache secara selektif
-      cacheManager.remove("stockData");
-      this.stockCache.clear();
-      this.lastStockUpdate = 0;
-      
-      await this.loadStockData(true);
-      utils.showAlert("Data stok berhasil diperbarui", "Sukses", "success");
-    } catch (error) {
-      console.error("Error refreshing stock:", error);
-      utils.showAlert("Gagal memperbarui data stok", "Error", "error");
-    } finally {
-      utils.showLoading(false);
+  try {
+    utils.showLoading(true);
+    
+    // ✅ Cek apakah benar-benar perlu refresh
+    const lastRefresh = localStorage.getItem('lastStockRefresh');
+    const now = Date.now();
+    
+    if (lastRefresh && (now - parseInt(lastRefresh)) < 60000) { // 1 menit
+      utils.showAlert("Data baru saja diperbarui. Tunggu 1 menit sebelum refresh lagi.", "Info", "info");
+      return;
     }
-  },
+    
+    // ✅ Cek perubahan data dengan lightweight query
+    const hasChanges = await this.checkForStockChanges();
+    
+    if (!hasChanges) {
+      utils.showAlert("Tidak ada perubahan data stok", "Info", "info");
+      return;
+    }
+    
+    // ✅ Clear cache secara selektif
+    cacheManager.remove("stockData");
+    this.stockCache.clear();
+    this.lastStockUpdate = 0;
+    
+    await this.loadStockData(true);
+    
+    // ✅ Simpan timestamp refresh
+    localStorage.setItem('lastStockRefresh', now.toString());
+    
+    utils.showAlert("Data stok berhasil diperbarui", "Sukses", "success");
+  } catch (error) {
+    console.error("Error refreshing stock:", error);
+    utils.showAlert("Gagal memperbarui data stok", "Error", "error");
+  } finally {
+    utils.showLoading(false);
+  }
+},
+
+// ✅ BARU: Method untuk cek perubahan dengan minimal reads
+async checkForStockChanges() {
+  try {
+    // ✅ Query hanya metadata perubahan (1-5 reads max)
+    const lastUpdate = localStorage.getItem('lastStockUpdateTime') || '0';
+    const lastUpdateTime = new Date(parseInt(lastUpdate));
+    
+    // Cek apakah ada transaksi stok baru
+    const recentTransQuery = query(
+      collection(firestore, "stokAksesorisTransaksi"),
+      where("timestamp", ">", Timestamp.fromDate(lastUpdateTime)),
+      limit(1) // ✅ Hanya 1 dokumen untuk cek
+    );
+    
+    const recentTransSnapshot = await getDocs(recentTransQuery);
+    
+    if (!recentTransSnapshot.empty) {
+      console.log("📊 Stock changes detected");
+      return true;
+    }
+    
+    // Cek apakah ada penambahan stok baru
+    const recentAddQuery = query(
+      collection(firestore, "stockAdditions"),
+      where("timestamp", ">", Timestamp.fromDate(lastUpdateTime)),
+      limit(1) // ✅ Hanya 1 dokumen untuk cek
+    );
+    
+    const recentAddSnapshot = await getDocs(recentAddQuery);
+    
+    if (!recentAddSnapshot.empty) {
+      console.log("📦 New stock additions detected");
+      return true;
+    }
+    
+    console.log("✅ No stock changes detected");
+    return false;
+    
+  } catch (error) {
+    console.warn("Error checking stock changes, proceeding with refresh:", error);
+    return true; // Default ke refresh jika error
+  }
+},
 
   // Fungsi untuk menduplikat transaksi manual ke mutasiKode
   async duplicateToMutasiKode(transactionData, transactionId) {
@@ -1256,7 +1336,7 @@ const penjualanHandler = {
         return;
       }
 
-      const jenisBarang = { C: "Cincin", K: "Kalung", L: "Liontin", A: "Anting", G: "Gelang", S: "Giwang", Z: "HALA", V: "HALA"};
+      const jenisBarang = { C: "Cincin", K: "Kalung", L: "Liontin", A: "Anting", G: "Gelang", S: "Giwang", Z: "HALA", V: "HALA", };
       const duplicatePromises = [];
 
       transactionData.items.forEach((item, index) => {
@@ -1834,7 +1914,7 @@ const penjualanHandler = {
     printWindow.document.close();
   },
 
-    // Print invoice
+  // Print invoice
   printInvoice() {
     if (!currentTransactionData) {
       utils.showAlert("Tidak ada data transaksi untuk dicetak!");
@@ -1845,7 +1925,7 @@ const penjualanHandler = {
     const printWindow = window.open("", "_blank");
 
     if (!printWindow) {
-      
+      utils.showAlert("Popup diblokir oleh browser. Mohon izinkan popup untuk mencetak.", "Error", "error");
       return;
     }
 
