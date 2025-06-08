@@ -119,8 +119,8 @@ function createPasswordModal() {
   const verifyPasswordBtn = document.getElementById('verifyPasswordBtn');
   const passwordError = document.getElementById('passwordError');
   
-  // Verify password event
-  verifyPasswordBtn.addEventListener('click', function() {
+  // Function to verify password
+  const verifyPassword = function() {
     const password = verificationPassword.value;
     const correctPassword = 'smlt116'; // Ganti dengan password yang diinginkan
     
@@ -131,11 +131,27 @@ function createPasswordModal() {
       verificationPassword.classList.add('is-invalid');
       passwordError.textContent = 'Password salah!';
     }
+  };
+  
+  // Verify password event - button click
+  verifyPasswordBtn.addEventListener('click', verifyPassword);
+  
+  // Verify password event - Enter key press
+  verificationPassword.addEventListener('keypress', function(e) {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      verifyPassword();
+    }
   });
   
   // Reset form when modal is hidden and remove from DOM
   document.getElementById('passwordModal').addEventListener('hidden.bs.modal', function() {
     document.getElementById('passwordModal').remove();
+  });
+  
+  // Auto focus on password input when modal is shown
+  document.getElementById('passwordModal').addEventListener('shown.bs.modal', function() {
+    verificationPassword.focus();
   });
   
   // Show modal
