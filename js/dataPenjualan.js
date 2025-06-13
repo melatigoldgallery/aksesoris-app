@@ -1418,27 +1418,21 @@ class OptimizedDataPenjualanApp {
     }
   }
 
-  // ✅ TAMBAHAN: Function baru untuk batal penjualan
   // ✅ GANTI: Function cancelTransaction() yang ada dengan versi sederhana
   async cancelTransaction() {
     try {
       utils.showLoading(true);
 
       const transaction = this.currentTransaction;
-      console.log("🔄 Canceling transaction:", transaction.id);
+      console.log("🔄 Cancelling transaction:", transaction.id);
 
-      // Step 1: Hapus data penjualan
+      // Step 1: Delete sales transaction
       await deleteDoc(doc(firestore, "penjualanAksesoris", transaction.id));
-      console.log("✅ Sales transaction deleted");
 
-      // Step 2: Hapus data stok transaksi
-      if (transaction.items && transaction.items.length > 0) {
-        const removedCount = await this.removeStockTransactions(transaction);
-        console.log(`✅ Removed ${removedCount} stock transactions`);
-
-        if (removedCount === 0) {
-          console.warn("⚠️ No stock transactions found to remove");
-        }
+      // Step 2: Remove stock transactions & restore stock
+      let restoredCount = 0;
+      if (transaction.items?.length > 0) {
+        restoredCount = await this.removeStockTransactions(transaction);
       }
 
       // Step 3: Update local data
@@ -1448,12 +1442,18 @@ class OptimizedDataPenjualanApp {
 
       this.updateDataTable();
       this.updateSummary();
-
       $("#deleteModal").modal("hide");
-      utils.showAlert("Transaksi berhasil dibatalkan dan stok dikembalikan", "Sukses", "success");
+
+      // ✅ PESAN SUKSES SEDERHANA
+      const message =
+        restoredCount > 0
+          ? `Transaksi berhasil dibatalkan dan ${restoredCount} stok dikembalikan`
+          : "Transaksi berhasil dibatalkan";
+
+      utils.showAlert(message, "Sukses", "success");
     } catch (error) {
       console.error("❌ Error canceling transaction:", error);
-      utils.showAlert("Terjadi kesalahan saat membatalkan transaksi: " + error.message, "Error", "error");
+      utils.showAlert("Gagal membatalkan transaksi: " + error.message, "Error", "error");
     } finally {
       utils.showLoading(false);
     }
@@ -1463,131 +1463,128 @@ class OptimizedDataPenjualanApp {
   async removeStockTransactions(transaction) {
     try {
       let removedCount = 0;
-      
-      // Get transaction date dengan error handling
-      let transactionDate;
-      try {
-        if (transaction.timestamp && typeof transaction.timestamp.toDate === "function") {
-          transactionDate = transaction.timestamp.toDate();
-        } else if (transaction.timestamp instanceof Date) {
-          transactionDate = transaction.timestamp;
-        } else if (transaction.tanggal) {
-          transactionDate = utils.parseDate(transaction.tanggal);
-        } else {
-          transactionDate = new Date();
-        }
-        
-        if (!transactionDate || isNaN(transactionDate.getTime())) {
-          throw new Error("Invalid transaction date");
-        }
-      } catch (error) {
-        console.error("❌ Error parsing transaction date:", error);
-        throw new Error("Gagal parsing tanggal transaksi");
+
+      let transactionDate = this.getTransactionDate(transaction);
+      if (!transactionDate) {
+        throw new Error("Invalid transaction date");
       }
-  
+
       const startOfDay = new Date(transactionDate);
       startOfDay.setHours(0, 0, 0, 0);
       const endOfDay = new Date(transactionDate);
       endOfDay.setHours(23, 59, 59, 999);
-  
-      console.log(`🔍 Searching stock transactions for date: ${transactionDate.toDateString()}`);
-  
-      // ✅ MAPPING: Tentukan jenis berdasarkan transaction
-      const stockJenis = this.getStockJenisFromTransaction(transaction);
-      console.log(`📋 Expected stock jenis: ${stockJenis.join(', ')}`);
-  
-      // Loop through each item and remove its stock transaction
+
+      console.log(`🔍 Processing cancellation for: ${transactionDate.toDateString()}`);
+
+      const isGantiLock = transaction.isGantiLock || transaction.jenisPenjualan === "gantiLock";
+
       for (const item of transaction.items) {
-        const kodeBarang = item.kodeText || item.barcode || item.kode;
-        
-        if (kodeBarang) {
-          console.log(`🔍 Searching for kode: ${kodeBarang}`);
-  
-          let found = false;
-  
-          // ✅ COBA SETIAP JENIS YANG MUNGKIN
-          for (const jenis of stockJenis) {
-            try {
-              console.log(`🔍 Trying jenis: ${jenis} for ${kodeBarang}`);
-  
-              const stockQuery = query(
-                collection(firestore, "stokAksesorisTransaksi"),
-                where("kode", "==", kodeBarang),
-                where("jenis", "==", jenis),
-                where("timestamp", ">=", Timestamp.fromDate(startOfDay)),
-                where("timestamp", "<=", Timestamp.fromDate(endOfDay)),
-                limit(1)
-              );
-  
-              const stockSnapshot = await getDocs(stockQuery);
-              
-              if (stockSnapshot.size > 0) {
-                const stockDoc = stockSnapshot.docs[0];
-                const stockData = stockDoc.data();
-                
-                console.log(`🎯 Found matching stock transaction: ${stockDoc.id}`);
-                console.log(`📋 Stock data:`, {
-                  kode: stockData.kode,
-                  nama: stockData.nama,
-                  jenis: stockData.jenis,
-                  timestamp: stockData.timestamp?.toDate?.()
-                });
-                
-                await deleteDoc(doc(firestore, "stokAksesorisTransaksi", stockDoc.id));
-                removedCount++;
-                found = true;
-                break; // Keluar dari loop jenis
-              }
-            } catch (queryError) {
-              console.error(`❌ Error querying ${jenis} for ${kodeBarang}:`, queryError);
-              // Continue ke jenis berikutnya
-            }
-          }
-          
-          if (!found) {
-            console.warn(`⚠️ No stock transaction found for: ${kodeBarang} with any jenis`);
-          }
+        let kodeToSearch, jenisToSearch;
+
+        if (isGantiLock) {
+          // ✅ GANTI LOCK: gunakan kode lock yang digunakan
+          kodeToSearch = item.kodeLock; // LSG, dll
+          jenisToSearch = "ganti lock";
         } else {
+          // ✅ PENJUALAN NORMAL: gunakan kode barang
+          kodeToSearch = item.kodeText || item.barcode || item.kodeLock;
+          jenisToSearch =
+            transaction.statusPembayaran === "Free" || transaction.metodeBayar === "free" ? "free" : "laku";
+        }
+
+        if (!kodeToSearch) {
           console.warn(`⚠️ No kode found for item:`, item);
+          continue;
+        }
+
+        console.log(`🔄 Processing: ${kodeToSearch} (${jenisToSearch})`);
+
+        try {
+          // STEP 1: Cari dan hapus stock transaction
+          const stockQuery = query(
+            collection(firestore, "stokAksesorisTransaksi"),
+            where("kode", "==", kodeToSearch),
+            where("jenis", "==", jenisToSearch),
+            where("timestamp", ">=", Timestamp.fromDate(startOfDay)),
+            where("timestamp", "<=", Timestamp.fromDate(endOfDay)),
+            limit(1)
+          );
+
+          const stockSnapshot = await getDocs(stockQuery);
+
+          if (stockSnapshot.size > 0) {
+            const stockDoc = stockSnapshot.docs[0];
+
+            // Hapus dari stokAksesorisTransaksi
+            await deleteDoc(doc(firestore, "stokAksesorisTransaksi", stockDoc.id));
+
+            // ✅ STEP 2: Restore stok ke stokAksesoris (SEMUA JENIS)
+            await this.restoreStockQuantity(kodeToSearch, item.jumlah || 1);
+
+            removedCount++;
+            console.log(`✅ ${jenisToSearch} cancelled & stock restored: ${kodeToSearch} +${item.jumlah || 1}`);
+          } else {
+            console.warn(`⚠️ No stock transaction found: ${kodeToSearch} (${jenisToSearch})`);
+          }
+        } catch (error) {
+          console.error(`❌ Error processing ${kodeToSearch}:`, error);
         }
       }
-  
-      console.log(`✅ Total removed: ${removedCount} stock transactions`);
+
+      console.log(`✅ Total cancelled: ${removedCount} items with stock restored`);
       return removedCount;
     } catch (error) {
-      console.error("❌ Error removing stock transactions:", error);
-      throw new Error("Gagal menghapus transaksi stok: " + error.message);
+      console.error("❌ Error in removeStockTransactions:", error);
+      throw error;
     }
-  }
-  
-  // ✅ TAMBAH: Helper function untuk mapping jenis
-  getStockJenisFromTransaction(transaction) {
-    const jenisList = [];
-  
-    // ✅ MAPPING berdasarkan kondisi transaction
-    if (transaction.statusPembayaran === "Free" || transaction.metodeBayar === "free") {
-      jenisList.push("free");
-    }
-    
-    if (transaction.isGantiLock || transaction.jenisPenjualan === "gantiLock") {
-      jenisList.push("ganti lock");
-    }
-    
-    // Default: laku (untuk penjualan normal)
-    if (jenisList.length === 0 || 
-        transaction.statusPembayaran === "Lunas" || 
-        transaction.statusPembayaran === "DP") {
-      jenisList.push("laku");
-    }
-  
-    // ✅ FALLBACK: Coba semua jenis jika tidak yakin
-    if (jenisList.length === 0) {
-      jenisList.push("laku", "free", "ganti lock");
-    }
-  
-    return jenisList;
   }
 
+  // ✅ FINAL: restoreStockQuantity (tidak ada perubahan, sudah optimal)
+  async restoreStockQuantity(kode, jumlah) {
+    try {
+      const stockQuery = query(collection(firestore, "stokAksesoris"), where("kode", "==", kode), limit(1));
+
+      const stockSnapshot = await getDocs(stockQuery);
+
+      if (stockSnapshot.size > 0) {
+        const stockDoc = stockSnapshot.docs[0];
+        const stockData = stockDoc.data();
+        const currentStock = stockData.stokAkhir || 0;
+        const newStock = currentStock + jumlah;
+
+        await updateDoc(doc(firestore, "stokAksesoris", stockDoc.id), {
+          stokAkhir: newStock,
+          lastUpdated: serverTimestamp(),
+        });
+
+        console.log(`📦 Stock updated: ${kode} (${currentStock} → ${newStock})`);
+      } else {
+        console.warn(`⚠️ Stock document not found: ${kode}`);
+      }
+    } catch (error) {
+      console.error(`❌ Error restoring stock ${kode}:`, error);
+      throw error;
+    }
+  }
+
+  // ✅ TAMBAHAN: Helper function untuk get transaction date
+  getTransactionDate(transaction) {
+    try {
+      if (transaction.timestamp && typeof transaction.timestamp.toDate === "function") {
+        return transaction.timestamp.toDate();
+      } else if (transaction.timestamp instanceof Date) {
+        return transaction.timestamp;
+      } else if (transaction.timestamp && typeof transaction.timestamp === "object" && transaction.timestamp.seconds) {
+        return new Date(transaction.timestamp.seconds * 1000);
+      } else if (transaction.tanggal) {
+        return utils.parseDate(transaction.tanggal);
+      }
+      return new Date(); // fallback
+    } catch (error) {
+      console.error("Error parsing transaction date:", error);
+      return null;
+    }
+  }
 
   // Print document (receipt or invoice)
   printDocument(type) {
