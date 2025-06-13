@@ -1358,11 +1358,11 @@ class OptimizedDataPenjualanApp {
     const confirmBtn = document.getElementById("btnConfirmAction");
     if (confirmBtn) {
       if (actionType === "hapus") {
-        confirmBtn.innerHTML = '<i class="fas fa-trash me-2"></i>Hapus Penjualan';
-        confirmBtn.className = "btn btn-warning";
+        confirmBtn.innerHTML = '<i class="fas fa-trash me-2"></i> Konfirmasi Hapus Penjualan';
+        confirmBtn.className = "btn btn-success";
       } else {
-        confirmBtn.innerHTML = '<i class="fas fa-undo me-2"></i>Batal Penjualan';
-        confirmBtn.className = "btn btn-danger";
+        confirmBtn.innerHTML = '<i class="fas fa-undo me-2"></i>Konfirmasi Batal Penjualan';
+        confirmBtn.className = "btn btn-success";
       }
     }
 
