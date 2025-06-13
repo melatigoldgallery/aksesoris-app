@@ -4,156 +4,38 @@ import {
   getDocs,
   addDoc,
   doc,
-  getDoc,
   updateDoc,
-  deleteDoc,
   query,
   where,
   orderBy,
+  limit,
   Timestamp,
   serverTimestamp,
+  onSnapshot,
 } from "https://www.gstatic.com/firebasejs/10.4.0/firebase-firestore.js";
 
 // Global variables
 let activeLockRow = null;
 let currentTransactionData = null;
 
-// Enhanced Cache management with localStorage and TTL - mengadopsi dari kehadiran.js
-const cacheManager = {
-  prefix: "melati_penjualan_",
-  stockTTL: 10 * 60 * 1000, // 10 menit untuk data stok
-  salesTTL: 2 * 60 * 1000, // 2 menit untuk data penjualan
-  todayTTL: 1 * 60 * 1000, // 1 menit untuk data hari ini
+// Enhanced smart cache with real-time sync capabilities
+const simpleCache = {
+  data: new Map(),
 
-  set(key, data, ttl) {
-    try {
-      const item = {
-        data,
-        timestamp: Date.now(),
-        ttl,
-        version: Date.now(),
-      };
-      localStorage.setItem(this.prefix + key, JSON.stringify(item));
-    } catch (error) {
-      console.warn("Cache set failed:", error);
-      this.clearOldCache();
-      try {
-        localStorage.setItem(this.prefix + key, JSON.stringify(item));
-      } catch (retryError) {
-        console.error("Cache retry failed:", retryError);
-      }
-    }
+  set(key, value) {
+    this.data.set(key, value);
   },
 
   get(key) {
-    try {
-      const item = JSON.parse(localStorage.getItem(this.prefix + key));
-      if (!item) return null;
-
-      if (Date.now() - item.timestamp > item.ttl) {
-        this.remove(key);
-        return null;
-      }
-
-      return item.data;
-    } catch (error) {
-      console.warn("Cache get failed:", error);
-      this.remove(key);
-      return null;
-    }
+    return this.data.get(key);
   },
 
   remove(key) {
-    try {
-      localStorage.removeItem(this.prefix + key);
-    } catch (error) {
-      console.warn("Cache remove failed:", error);
-    }
+    this.data.delete(key);
   },
 
   clear() {
-    try {
-      Object.keys(localStorage)
-        .filter((key) => key.startsWith(this.prefix))
-        .forEach((key) => localStorage.removeItem(key));
-    } catch (error) {
-      console.warn("Cache clear failed:", error);
-    }
-  },
-
-  clearOldCache() {
-    const now = Date.now();
-    try {
-      Object.keys(localStorage)
-        .filter((key) => key.startsWith(this.prefix))
-        .forEach((key) => {
-          try {
-            const item = JSON.parse(localStorage.getItem(key));
-            if (item && now - item.timestamp > item.ttl) {
-              localStorage.removeItem(key);
-            }
-          } catch (error) {
-            localStorage.removeItem(key);
-          }
-        });
-    } catch (error) {
-      console.warn("Clear old cache failed:", error);
-    }
-  },
-
-  // Cek apakah cache perlu diperbarui
-  shouldUpdateCache(key) {
-    const item = localStorage.getItem(this.prefix + key);
-    if (!item) return true;
-
-    try {
-      const parsed = JSON.parse(item);
-      const now = Date.now();
-      
-      // Jika cache untuk data hari ini, gunakan TTL yang lebih pendek
-      const today = this.getLocalDateString();
-      if (key.includes(today)) {
-        return (now - parsed.timestamp) > this.todayTTL;
-      }
-      
-      return (now - parsed.timestamp) > parsed.ttl;
-    } catch (error) {
-      return true;
-    }
-  },
-
-  // Helper untuk mendapatkan tanggal hari ini
-  getLocalDateString() {
-    const now = new Date();
-    const year = now.getFullYear();
-    const month = String(now.getMonth() + 1).padStart(2, '0');
-    const day = String(now.getDate()).padStart(2, '0');
-    return `${year}-${month}-${day}`;
-  },
-
-  // Get cache info for debugging
-  getCacheInfo() {
-    const info = {};
-    try {
-      Object.keys(localStorage)
-        .filter((key) => key.startsWith(this.prefix))
-        .forEach((key) => {
-          try {
-            const item = JSON.parse(localStorage.getItem(key));
-            const age = Date.now() - item.timestamp;
-            info[key.replace(this.prefix, "")] = {
-              age: Math.round(age / 1000) + "s",
-              valid: age < item.ttl,
-              size: JSON.stringify(item.data).length,
-            };
-          } catch (error) {
-            info[key.replace(this.prefix, "")] = "corrupted";
-          }
-        });
-    } catch (error) {
-      console.warn("Get cache info failed:", error);
-    }
-    return info;
+    this.data.clear();
   },
 };
 
@@ -218,6 +100,13 @@ const utils = {
     if (loader) loader.style.display = show ? "flex" : "none";
   },
 
+  isSameDate: (date1, date2) => {
+    if (!date1 || !date2) return false;
+    const d1 = date1 instanceof Date ? date1 : new Date(date1);
+    const d2 = date2 instanceof Date ? date2 : new Date(date2);
+    return d1.toDateString() === d2.toDateString();
+  },
+
   debounce: (func, wait) => {
     let timeout;
     return function executedFunction(...args) {
@@ -229,18 +118,79 @@ const utils = {
       timeout = setTimeout(later, wait);
     };
   },
+};
 
-  throttle: (func, limit) => {
-    let inThrottle;
-    return function () {
-      const args = arguments;
-      const context = this;
-      if (!inThrottle) {
-        func.apply(context, args);
-        inThrottle = true;
-        setTimeout(() => (inThrottle = false), limit);
-      }
+// Enhanced reads monitor for Firestore optimization
+const readsMonitor = {
+  reads: {},
+  dailyLimit: 50000,
+
+  increment(operation, count = 1) {
+    const today = new Date().toDateString();
+    if (!this.reads[today]) {
+      this.reads[today] = {};
+    }
+    if (!this.reads[today][operation]) {
+      this.reads[today][operation] = 0;
+    }
+    this.reads[today][operation] += count;
+
+    try {
+      localStorage.setItem("firestore_reads", JSON.stringify(this.reads));
+    } catch (error) {
+      console.warn("Failed to store reads data:", error);
+    }
+
+    this.checkLimits();
+  },
+
+  getTodayReads() {
+    const today = new Date().toDateString();
+    const todayReads = this.reads[today] || {};
+    return Object.values(todayReads).reduce((sum, count) => sum + count, 0);
+  },
+
+  // PERBAIKAN: Tambahkan method yang hilang
+  getUsagePercent() {
+    const todayReads = this.getTodayReads();
+    return (todayReads / this.dailyLimit) * 100;
+  },
+
+  checkLimits() {
+    const percentage = this.getUsagePercent();
+
+    if (percentage > 80) {
+      console.warn(`🔥 Firestore reads at ${percentage.toFixed(1)}% of daily limit`);
+    }
+
+    if (percentage > 95) {
+      console.error("🚨 Firestore reads approaching daily limit!");
+    }
+  },
+
+  getStats() {
+    const today = new Date().toDateString();
+    const todayReads = this.reads[today] || {};
+    const total = this.getTodayReads();
+
+    return {
+      today: todayReads,
+      total,
+      percentage: this.getUsagePercent(),
+      remaining: this.dailyLimit - total,
     };
+  },
+
+  init() {
+    try {
+      const stored = localStorage.getItem("firestore_reads");
+      if (stored) {
+        this.reads = JSON.parse(stored);
+      }
+    } catch (error) {
+      console.warn("Failed to load reads data:", error);
+      this.reads = {};
+    }
   },
 };
 
@@ -249,29 +199,354 @@ const penjualanHandler = {
   stockData: [],
   salesData: [],
   stockCache: new Map(),
-  lastStockUpdate: 0,
-  dataTable: null,
-  isLoadingStock: false,
-  isLoadingSales: false,
-  refreshInterval: null,
+
+  // Real-time listeners
+  stockListener: null,
+  salesListener: null,
+
+  // User activity tracking
+  isUserActive: true,
+  lastActivity: Date.now(),
+  inactivityTimer: null,
+  INACTIVITY_TIMEOUT: 10 * 60 * 1000, // 10 menit
 
   // Initialize application
   async init() {
     this.setupEventListeners();
     this.initDatePicker();
     this.setDefaultDate();
+    this.setupInactivityMonitor();
 
-    // Load data with cache
-    await Promise.all([this.loadStockData(), this.loadTodaySales()]);
+    // Load initial data
+    await this.loadInitialData();
+
+    // Setup real-time listeners
+    this.setupSmartListeners();
 
     this.updateUIForSalesType("aksesoris");
     $("#sales").focus();
 
-    // Auto refresh dengan interval yang lebih panjang
-    this.startAutoRefresh();
+    console.log(`📊 Reads usage: ${readsMonitor.getUsagePercent()}%`);
+  },
 
-    // Log cache info for debugging
-    console.log("Cache info:", cacheManager.getCacheInfo());
+  // Setup inactivity monitoring
+  setupInactivityMonitor() {
+    const activityEvents = ["mousedown", "mousemove", "keypress", "scroll", "touchstart"];
+
+    const resetInactivityTimer = () => {
+      this.isUserActive = true;
+      this.lastActivity = Date.now();
+
+      clearTimeout(this.inactivityTimer);
+      this.inactivityTimer = setTimeout(() => {
+        this.handleUserInactivity();
+      }, this.INACTIVITY_TIMEOUT);
+    };
+
+    activityEvents.forEach((event) => {
+      document.addEventListener(event, resetInactivityTimer, { passive: true });
+    });
+
+    // Initial timer
+    resetInactivityTimer();
+  },
+
+  // Handle user inactivity
+  handleUserInactivity() {
+    this.isUserActive = false;
+    console.log("🔇 User inactive - pausing real-time updates");
+
+    // Remove listeners to save resources
+    this.removeListeners();
+
+    // Show notification
+    const notification = document.createElement("div");
+    notification.id = "inactivityNotification";
+    notification.className = "alert alert-info position-fixed";
+    notification.style.cssText = "top: 20px; right: 20px; z-index: 9999; cursor: pointer;";
+    notification.innerHTML = `
+      <i class="fas fa-pause-circle me-2"></i>
+      Mode hemat aktif - Klik untuk mengaktifkan kembali
+    `;
+
+    notification.onclick = () => {
+      this.handleUserReactivation();
+      notification.remove();
+    };
+
+    document.body.appendChild(notification);
+
+    // Auto remove notification after 30 seconds
+    setTimeout(() => {
+      if (document.getElementById("inactivityNotification")) {
+        notification.remove();
+      }
+    }, 30000);
+  },
+
+  // Handle user reactivation
+  handleUserReactivation() {
+    this.isUserActive = true;
+    this.lastActivity = Date.now();
+    console.log("🔊 User reactivated - resuming real-time updates");
+
+    // Resume listeners
+    this.setupSmartListeners();
+  },
+
+  // Load initial data with minimal reads
+  async loadInitialData() {
+    try {
+      utils.showLoading(true);
+
+      // HAPUS: TTL check, langsung load dari cache atau firestore
+      const cachedStock = simpleCache.get("stockData");
+
+      if (cachedStock && cachedStock.length > 0) {
+        console.log("📦 Using cached stock data");
+        this.stockData = cachedStock;
+        this.buildStockCache();
+        this.populateStockTables();
+      } else {
+        await this.loadStockData();
+      }
+
+      // Setup real-time listeners setelah load initial
+      this.setupSmartListeners();
+    } catch (error) {
+      console.error("Error loading initial data:", error);
+      utils.showAlert("Gagal memuat data awal: " + error.message, "Error", "error");
+    } finally {
+      utils.showLoading(false);
+    }
+  },
+
+  // Load today's sales data
+  async loadStockData() {
+    try {
+      console.log("🔄 Loading stock data from Firestore");
+
+      const stockQuery = query(
+        collection(firestore, "stokAksesoris"),
+        where("stokAkhir", ">", 0) // Hanya ambil yang stoknya > 0
+      );
+
+      const snapshot = await getDocs(stockQuery);
+      readsMonitor.increment("Load Stock Data", snapshot.size);
+
+      this.stockData = [];
+      snapshot.forEach((doc) => {
+        this.stockData.push({
+          id: doc.id,
+          ...doc.data(),
+        });
+      });
+
+      // GANTI: Gunakan simple cache
+      simpleCache.set("stockData", this.stockData);
+      this.buildStockCache();
+      this.populateStockTables();
+
+      console.log(`✅ Loaded ${this.stockData.length} stock items`);
+    } catch (error) {
+      console.error("Error loading stock data:", error);
+      throw error;
+    }
+  },
+
+  // Setup smart real-time listeners
+  setupSmartListeners() {
+    if (!this.isUserActive) return;
+
+    // Remove existing listeners
+    this.removeListeners();
+
+    // Stock listener - hanya untuk perubahan stok
+    const stockQuery = query(
+      collection(firestore, "stokAksesoris"),
+      where("stokAkhir", ">", 0) // Hanya yang masih ada stok
+    );
+
+    this.stockListener = onSnapshot(
+      stockQuery,
+      (snapshot) => {
+        if (!snapshot.metadata.hasPendingWrites) {
+          // PERBAIKAN: Hanya proses perubahan, bukan semua data
+          this.handleStockChanges(snapshot.docChanges());
+        }
+      },
+      (error) => {
+        console.error("Stock listener error:", error);
+        this.stockListener = null;
+      }
+    );
+
+    console.log("🔊 Real-time listeners activated (changes only)");
+  },
+
+  // TAMBAH: Method baru untuk handle stock changes
+  handleStockChanges(changes) {
+    if (changes.length === 0) return;
+
+    let hasUpdates = false;
+
+    changes.forEach((change) => {
+      const data = { id: change.doc.id, ...change.doc.data() };
+
+      if (change.type === "added" || change.type === "modified") {
+        // Update atau tambah item
+        const index = this.stockData.findIndex((item) => item.id === data.id);
+        if (index !== -1) {
+          this.stockData[index] = data;
+        } else {
+          this.stockData.push(data);
+        }
+
+        // Update cache untuk quick lookup
+        this.stockCache.set(data.kode, data.stokAkhir || 0);
+        hasUpdates = true;
+      } else if (change.type === "removed") {
+        // Hapus item (stok = 0)
+        this.stockData = this.stockData.filter((item) => item.id !== data.id);
+        this.stockCache.delete(data.kode);
+        hasUpdates = true;
+      }
+    });
+
+    if (hasUpdates) {
+      // Update cache dan UI
+      simpleCache.set("stockData", this.stockData);
+      this.populateStockTables();
+
+      console.log(`✅ Stock updated: ${changes.length} changes processed`);
+    }
+  },
+
+  // TAMBAH: Show stock warning
+  showStockWarning(kode) {
+    const warningId = `stock-warning-${kode}`;
+
+    // Hindari duplikasi warning
+    if (document.getElementById(warningId)) return;
+
+    const warning = $(`
+    <div id="${warningId}" class="alert alert-warning alert-dismissible fade show mt-2">
+      <i class="fas fa-exclamation-triangle me-2"></i>
+      <strong>Perhatian!</strong> Stok untuk kode ${kode} sudah habis.
+      <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
+  `);
+
+    $(".container-fluid").prepend(warning);
+
+    // Auto remove after 5 seconds
+    setTimeout(() => {
+      warning.alert("close");
+    }, 5000);
+  },
+
+  // Remove all listeners
+  removeListeners() {
+    if (this.stockListener) {
+      this.stockListener();
+      this.stockListener = null;
+    }
+    if (this.salesListener) {
+      this.salesListener();
+      this.salesListener = null;
+    }
+  },
+
+  // Handle stock updates from real-time listener
+  handleStockUpdates(changes) {
+    let hasChanges = false;
+    
+    changes.forEach((change) => {
+      const data = { id: change.doc.id, ...change.doc.data() };
+      
+      if (change.type === "added" || change.type === "modified") {
+        const index = this.stockData.findIndex((item) => item.id === data.id);
+        if (index !== -1) {
+          this.stockData[index] = data;
+        } else {
+          this.stockData.push(data);
+        }
+        
+        // Update cache
+        this.stockCache.set(data.kode, data.stokAkhir || 0);
+        hasChanges = true;
+      } else if (change.type === "removed") {
+        this.stockData = this.stockData.filter((item) => item.id !== data.id);
+        this.stockCache.delete(data.kode);
+        hasChanges = true;
+      }
+    });
+    
+    if (hasChanges) {
+      simpleCache.set("stockData", this.stockData);
+      this.populateStockTables();
+      console.log("✅ Stock data updated from real-time listener");
+    }
+  },
+
+  // Handle sales updates from real-time listener
+  handleSalesUpdates(changes) {
+    let hasChanges = false;
+    
+    changes.forEach((change) => {
+      const data = { id: change.doc.id, ...change.doc.data() };
+      
+      if (change.type === "added") {
+        // Add new sale to beginning of array
+        this.salesData.unshift(data);
+        hasChanges = true;
+      } else if (change.type === "modified") {
+        const index = this.salesData.findIndex((item) => item.id === data.id);
+        if (index !== -1) {
+          this.salesData[index] = data;
+          hasChanges = true;
+        }
+      } else if (change.type === "removed") {
+        this.salesData = this.salesData.filter((item) => item.id !== data.id);
+        hasChanges = true;
+      }
+    });
+    
+    if (hasChanges) {
+      const dateKey = new Date().toISOString().split('T')[0]; // Format: YYYY-MM-DD
+      simpleCache.set(`salesData_${dateKey}`, this.salesData);
+      console.log("✅ Sales data updated from real-time listener");
+    }
+  },
+
+  // Refresh stale data when user becomes active
+  async refreshStaleData() {
+    try {
+      console.log('🔄 Refreshing data from Firestore');
+      
+      // Langsung load ulang tanpa TTL check
+      await Promise.all([
+        this.loadStockData(),
+        this.loadTodaySales()
+      ]);
+      
+      console.log('✅ Data refreshed successfully');
+    } catch (error) {
+      console.error('Error refreshing data:', error);
+    }
+  },
+
+  // Build stock cache for quick lookups
+  buildStockCache() {
+    this.stockCache.clear();
+    this.stockData.forEach((item) => {
+      this.stockCache.set(item.kode, item.stokAkhir || 0);
+    });
+  },
+
+  // Get stock for item (from cache first)
+  getStockForItem(kode) {
+    return this.stockCache.get(kode) || 0;
   },
 
   // Setup all event listeners
@@ -295,12 +570,10 @@ const penjualanHandler = {
       e.preventDefault();
       this.printDocument("receipt");
     });
-
     $("#btnPrintInvoice").on("click", (e) => {
       e.preventDefault();
       this.printDocument("invoice");
     });
-    $("#refreshStok").on("click", () => this.refreshStock());
 
     // Input events with debouncing
     $("#jumlahBayar").on(
@@ -317,10 +590,10 @@ const penjualanHandler = {
       $(this).val(utils.formatRupiah(parseInt(value || 0)));
     });
 
-    // Search events with throttling
+    // Search events
     $("#searchAksesoris, #searchKotak, #searchLock").on(
       "input",
-      utils.throttle((e) => {
+      utils.debounce((e) => {
         this.searchTable(e.target);
       }, 300)
     );
@@ -331,41 +604,6 @@ const penjualanHandler = {
       $(this).removeClass("is-invalid is-valid");
       $(this).next(".invalid-feedback").remove();
     });
-  },
-
-  // Start auto refresh dengan interval yang lebih efisien
-  startAutoRefresh() {
-    if (this.refreshInterval) {
-      clearInterval(this.refreshInterval);
-    }
-
-    // Refresh sales data setiap 2 menit (lebih jarang)
-    this.refreshInterval = setInterval(async () => {
-      try {
-        // Hanya refresh jika tidak sedang loading
-        if (!this.isLoadingSales) {
-          await this.loadTodaySales(false); // Gunakan cache jika masih valid
-          console.log("Auto-refreshed sales data");
-        }
-      } catch (error) {
-        console.error("Auto-refresh failed:", error);
-      }
-    }, 2 * 60 * 1000); // 2 menit
-
-    // Refresh stock data setiap 10 menit (lebih jarang)
-    setInterval(async () => {
-      try {
-        if (!this.isLoadingStock) {
-          // Hanya refresh jika cache sudah expired
-          if (cacheManager.shouldUpdateCache("stockData")) {
-            await this.loadStockData(true);
-            console.log("Auto-refreshed stock data");
-          }
-        }
-      } catch (error) {
-        console.error("Stock auto-refresh failed:", error);
-      }
-    }, 10 * 60 * 1000); // 10 menit
   },
 
   // Initialize date picker
@@ -386,243 +624,58 @@ const penjualanHandler = {
     $("#tanggal").val(utils.formatDate(today));
   },
 
-  // Load stock data with smart caching - mengadopsi dari kehadiran.js
-  async loadStockData(forceRefresh = false) {
-  if (this.isLoadingStock) return;
-
-  try {
-    this.isLoadingStock = true;
-    const cacheKey = "stockData";
-
-    // ✅ PERTAHANKAN: Check in-memory cache first (fastest)
-    const cacheAge = Date.now() - this.lastStockUpdate;
-    if (!forceRefresh && cacheAge < 2 * 60 * 1000 && this.stockData.length > 0) {
-      console.log("📦 Using in-memory stock cache");
-      this.populateStockTables();
-      return;
-    }
-
-    // ✅ PERTAHANKAN: Check localStorage cache dengan smart TTL
-    if (!forceRefresh && !cacheManager.shouldUpdateCache(cacheKey)) {
-      const cachedData = cacheManager.get(cacheKey);
-      if (cachedData) {
-        console.log("📦 Using localStorage stock cache");
-        this.stockData = cachedData;
-        this.stockCache.clear();
-        this.stockData.forEach((item) => {
-          this.stockCache.set(item.kode, item.stokAkhir);
-        });
-        this.lastStockUpdate = Date.now();
-        this.populateStockTables();
-        return;
-      }
-    }
-
-    utils.showLoading(true);
-    console.log("🔄 Fetching fresh stock data from Firestore");
-
-    // ✅ PERBAIKAN: Gunakan query sederhana seperti kode asli Anda
-    // Batching tidak diperlukan untuk collection stok yang relatif kecil
-    const stockSnapshot = await getDocs(
-      query(
-        collection(firestore, "stokAksesoris"),
-        where("stokAkhir", ">", 0)
-      )
-    );
-
-    const stockData = [];
-    stockSnapshot.forEach((doc) => {
-      const data = doc.data();
-      stockData.push({
-        id: doc.id,
-        ...data,
-        lastChecked: Date.now(),
-      });
-      
-      this.stockCache.set(data.kode, data.stokAkhir || 0);
-    });
-
-    // ✅ PERTAHANKAN: Cache dengan TTL yang sesuai
-    cacheManager.set(cacheKey, stockData, cacheManager.stockTTL);
-    this.stockData = stockData;
-    this.lastStockUpdate = Date.now();
-    
-    // ✅ TAMBAHAN: Simpan timestamp untuk change detection
-    localStorage.setItem("lastStockUpdateTime", Date.now().toString());
-
-    this.populateStockTables();
-    
-    console.log(`✅ Loaded ${stockData.length} stock items from Firestore`);
-
-  } catch (error) {
-    console.error("Error loading stock:", error);
-
-    // ✅ PERTAHANKAN: Fallback ke cache jika ada error
-    const cachedData = cacheManager.get("stockData");
-    if (cachedData) {
-      console.log("📦 Using cached stock data due to error");
-      this.stockData = cachedData;
-      
-      // ✅ TAMBAHAN: Rebuild stockCache dari cached data
-      this.stockCache.clear();
-      this.stockData.forEach((item) => {
-        this.stockCache.set(item.kode, item.stokAkhir);
-      });
-      
-      this.populateStockTables();
-    } else {
-      utils.showAlert("Gagal memuat data stok: " + error.message, "Error", "error");
-    }
-  } finally {
-    this.isLoadingStock = false;
-    utils.showLoading(false);
-  }
-},
-
-  // Optimized stock checking dengan cache yang efisien
-  async getStockForItem(kode) {
-    // Check in-memory cache first
-    if (this.stockCache.has(kode)) {
-      const cachedStock = this.stockCache.get(kode);
-      const cacheAge = Date.now() - this.lastStockUpdate;
-
-      // Jika cache masih fresh (< 2 menit), gunakan cache
-      if (cacheAge < 2 * 60 * 1000) {
-        return cachedStock;
-      }
-    }
-
-    // Jika tidak ada di cache atau cache expired, ambil dari stockData
-    const stockItem = this.stockData.find((item) => item.kode === kode);
-    if (stockItem) {
-      this.stockCache.set(kode, stockItem.stokAkhir);
-      return stockItem.stokAkhir;
-    }
-
-    // Last resort: query Firestore (jarang terjadi)
-    try {
-      const stockQuery = query(collection(firestore, "stokAksesoris"), where("kode", "==", kode));
-      const stockSnapshot = await getDocs(stockQuery);
-
-      if (!stockSnapshot.empty) {
-        const stock = stockSnapshot.docs[0].data().stokAkhir || 0;
-        this.stockCache.set(kode, stock);
-        return stock;
-      }
-    } catch (error) {
-      console.warn("Failed to get stock for", kode, error);
-    }
-
-    return 0;
-  },
-
-  // Load today's sales data dengan smart caching
-  async loadTodaySales(forceRefresh = false) {
-    if (this.isLoadingSales) return;
-
-    try {
-      this.isLoadingSales = true;
-      const today = cacheManager.getLocalDateString();
-      const cacheKey = `todaySales_${today}`;
-
-      // Check cache dengan TTL yang lebih pendek untuk data hari ini
-      if (!forceRefresh && !cacheManager.shouldUpdateCache(cacheKey)) {
-        const cachedData = cacheManager.get(cacheKey);
-        if (cachedData) {
-          console.log("Using cached sales data");
-          this.salesData = cachedData;
-          return;
-        }
-      }
-
-      const todayDate = new Date();
-      todayDate.setHours(0, 0, 0, 0);
-      const tomorrow = new Date(todayDate);
-      tomorrow.setDate(tomorrow.getDate() + 1);
-
-      const q = query(
-        collection(firestore, "penjualanAksesoris"),
-        where("timestamp", ">=", Timestamp.fromDate(todayDate)),
-        where("timestamp", "<", Timestamp.fromDate(tomorrow)),
-        orderBy("timestamp", "desc")
-      );
-
-      const snapshot = await getDocs(q);
-      const salesData = [];
-
-      snapshot.forEach((doc) => {
-        salesData.push({ id: doc.id, ...doc.data() });
-      });
-
-      // Cache dengan TTL khusus untuk data hari ini
-      cacheManager.set(cacheKey, salesData, cacheManager.todayTTL);
-      this.salesData = salesData;
-    } catch (error) {
-      console.error("Error loading sales:", error);
-      
-      // Fallback ke cache
-      const today = cacheManager.getLocalDateString();
-      const cachedData = cacheManager.get(`todaySales_${today}`);
-      if (cachedData) {
-        console.log("Using cached sales data due to error");
-        this.salesData = cachedData;
-      } else {
-        utils.showAlert("Gagal memuat data penjualan: " + error.message, "Error", "error");
-      }
-    } finally {
-      this.isLoadingSales = false;
-    }
-  },
-
   // Populate stock tables
   populateStockTables() {
     const categories = {
       aksesoris: "#tableAksesoris",
       kotak: "#tableKotak",
     };
-
+  
     Object.entries(categories).forEach(([category, selector]) => {
       const tbody = $(`${selector} tbody`);
       tbody.empty();
-
-      const items = this.stockData.filter((item) => item.kategori === category);
-
+  
+      // FILTER: Hanya tampilkan yang stoknya > 0
+      const items = this.stockData.filter((item) => 
+        item.kategori === category && (item.stokAkhir || 0) > 0
+      );
+  
       if (items.length === 0) {
-        tbody.append(`<tr><td colspan="2" class="text-center">Tidak ada data ${category}</td></tr>`);
+        tbody.append(`<tr><td colspan="2" class="text-center text-muted">Tidak ada stok ${category}</td></tr>`);
       } else {
         items.forEach((item) => {
           const row = `
           <tr data-kode="${item.kode}" data-nama="${item.nama}" data-harga="${item.hargaJual || 0}">
             <td>${item.kode || "-"}</td>
             <td>${item.nama || "-"}</td>
-          </tr>
-        `;
+          </tr>`;
           tbody.append(row);
         });
       }
     });
-
-    // Populate lock table (using aksesoris data)
+  
+    // Update lock table
     const lockTable = $("#tableLock tbody");
     lockTable.empty();
-
-    const lockItems = this.stockData.filter((item) => item.kategori === "aksesoris");
-
+    
+    const lockItems = this.stockData.filter((item) => 
+      item.kategori === "aksesoris" && (item.stokAkhir || 0) > 0
+    );
+  
     if (lockItems.length === 0) {
-      lockTable.append('<tr><td colspan="2" class="text-center">Tidak ada data lock</td></tr>');
+      lockTable.append('<tr><td colspan="2" class="text-center text-muted">Tidak ada stok lock</td></tr>');
     } else {
       lockItems.forEach((item) => {
         const row = `
         <tr data-kode="${item.kode}" data-nama="${item.nama}" data-harga="${item.hargaJual || 0}">
           <td>${item.kode || "-"}</td>
           <td>${item.nama || "-"}</td>
-        </tr>
-      `;
+        </tr>`;
         lockTable.append(row);
       });
     }
-
-    // Attach click handlers
+  
+    // Re-attach click handlers
     this.attachTableRowClickHandlers();
   },
 
@@ -689,31 +742,31 @@ const penjualanHandler = {
   addAksesorisToTable(data) {
     const { kode, nama, harga } = data;
     const newRow = `
-    <tr>
-      <td>${kode}</td>
-      <td>${nama}</td>
-      <td>
-        <input type="number" class="form-control form-control-sm jumlah-input" value="1" min="1">
-      </td>
-      <td>
-        <input type="text" class="form-control form-control-sm kadar-input" value="" placeholder="Masukkan kadar" required>
-      </td>
-      <td>
-        <input type="text" class="form-control form-control-sm berat-input" value="" placeholder="0.00" required>
-      </td>
-      <td>
-        <input type="text" class="form-control form-control-sm harga-per-gram-input" value="0" readonly>
-      </td>
-      <td>
-        <input type="text" class="form-control form-control-sm total-harga-input" value="" placeholder="Masukkan harga" required>
-      </td>
-      <td>
-        <button class="btn btn-sm btn-danger btn-delete">
-          <i class="fas fa-trash"></i>
-        </button>
-      </td>
-    </tr>
-  `;
+      <tr>
+        <td>${kode}</td>
+        <td>${nama}</td>
+        <td>
+          <input type="number" class="form-control form-control-sm jumlah-input" value="1" min="1">
+        </td>
+        <td>
+          <input type="text" class="form-control form-control-sm kadar-input" value="" placeholder="Masukkan kadar" required>
+        </td>
+        <td>
+          <input type="text" class="form-control form-control-sm berat-input" value="" placeholder="0.00" required>
+        </td>
+        <td>
+          <input type="text" class="form-control form-control-sm harga-per-gram-input" value="0" readonly>
+        </td>
+        <td>
+          <input type="text" class="form-control form-control-sm total-harga-input" value="" placeholder="Masukkan harga" required>
+        </td>
+        <td>
+          <button class="btn btn-sm btn-danger btn-delete">
+            <i class="fas fa-trash"></i>
+          </button>
+        </td>
+      </tr>
+    `;
 
     $("#tableAksesorisDetail tbody").append(newRow);
     const $newRow = $("#tableAksesorisDetail tbody tr:last-child");
@@ -730,32 +783,29 @@ const penjualanHandler = {
     const totalHarga = jumlah * hargaSatuan;
 
     const newRow = `
-    <tr>
-      <td>${kode}</td>
-      <td>${nama}</td>
-      <td>
-        <input type="number" class="form-control form-control-sm jumlah-input" value="${jumlah}" min="1">
-      </td>
-      <td>
-        <input type="text" class="form-control form-control-sm harga-input" value="${utils.formatRupiah(
-          hargaSatuan
-        )}" placeholder="Masukkan harga" required>
-      </td>
-      <td class="total-harga">${utils.formatRupiah(totalHarga)}</td>
-      <td>
-        <button class="btn btn-sm btn-danger btn-delete">
-          <i class="fas fa-trash"></i>
-        </button>
-      </td>
-    </tr>
-  `;
+      <tr>
+        <td>${kode}</td>
+        <td>${nama}</td>
+        <td>
+          <input type="number" class="form-control form-control-sm jumlah-input" value="${jumlah}" min="1">
+        </td>
+        <td>
+          <input type="text" class="form-control form-control-sm harga-input" value="${utils.formatRupiah(
+            hargaSatuan
+          )}" placeholder="Masukkan harga" required>
+        </td>
+        <td class="total-harga">${utils.formatRupiah(totalHarga)}</td>
+        <td>
+          <button class="btn btn-sm btn-danger btn-delete">
+            <i class="fas fa-trash"></i>
+          </button>
+        </td>
+      </tr>
+    `;
 
     $("#tableKotakDetail tbody").append(newRow);
     const $newRow = $("#tableKotakDetail tbody tr:last-child");
-
-    // Focus ke harga input untuk kotak
     $newRow.find(".harga-input").focus().select();
-
     this.attachRowEventHandlers($newRow);
     this.updateGrandTotal("kotak");
   },
@@ -834,8 +884,6 @@ const penjualanHandler = {
         const value = $totalHargaInput.val().replace(/\./g, "");
         $totalHargaInput.val(utils.formatRupiah(parseInt(value || 0)));
         calculateHargaPerGram();
-
-        // Langsung ke jumlah bayar
         $("#jumlahBayar").focus();
       }
     });
@@ -870,13 +918,10 @@ const penjualanHandler = {
         const value = $hargaInput.val().replace(/\./g, "");
         $hargaInput.val(utils.formatRupiah(parseInt(value)));
         calculateTotal();
-
-        // Langsung ke jumlah bayar
         $("#jumlahBayar").focus();
       }
     });
 
-    // Enter key navigation untuk jumlah
     $jumlahInput.on("keypress", (e) => {
       if (e.which === 13) {
         e.preventDefault();
@@ -968,25 +1013,25 @@ const penjualanHandler = {
     $("#tableManualDetail tbody").empty();
 
     const inputRow = `
-    <tr class="input-row">
-      <td><input type="text" class="form-control form-control-sm" id="manualInputKode" placeholder="Kode"></td>
-      <td><input type="text" class="form-control form-control-sm" id="manualInputNamaBarang" placeholder="Nama barang"></td>
-      <td>
-        <div class="input-group input-group-sm">
-          <input type="text" class="form-control" id="manualInputKodeLock" placeholder="Pilih kode" readonly>
-          <button class="btn btn-outline-secondary" id="manualBtnPilihKodeLock" type="button">
-            <i class="fas fa-search"></i>
-          </button>
-        </div>
-      </td>
-      <td><input type="text" class="form-control form-control-sm" id="manualInputKadar" placeholder="Kadar" required></td>
-      <td><input type="text" class="form-control form-control-sm" id="manualInputBerat" placeholder="0.00" required></td>
-      <td><input type="text" class="form-control form-control-sm" id="manualInputHargaPerGram" placeholder="0" readonly></td>
-      <td><input type="text" class="form-control form-control-sm" id="manualInputTotalHarga" placeholder="Masukkan harga" required></td>
-      <td><input type="text" class="form-control form-control-sm" id="manualInputKeterangan" placeholder="Keterangan"></td>
-      <td></td>
-    </tr>
-  `;
+      <tr class="input-row">
+        <td><input type="text" class="form-control form-control-sm" id="manualInputKode" placeholder="Kode"></td>
+        <td><input type="text" class="form-control form-control-sm" id="manualInputNamaBarang" placeholder="Nama barang"></td>
+        <td>
+          <div class="input-group input-group-sm">
+            <input type="text" class="form-control" id="manualInputKodeLock" placeholder="Pilih kode" readonly>
+            <button class="btn btn-outline-secondary" id="manualBtnPilihKodeLock" type="button">
+              <i class="fas fa-search"></i>
+            </button>
+          </div>
+        </td>
+        <td><input type="text" class="form-control form-control-sm" id="manualInputKadar" placeholder="Kadar" required></td>
+        <td><input type="text" class="form-control form-control-sm" id="manualInputBerat" placeholder="0.00" required></td>
+        <td><input type="text" class="form-control form-control-sm" id="manualInputHargaPerGram" placeholder="0" readonly></td>
+        <td><input type="text" class="form-control form-control-sm" id="manualInputTotalHarga" placeholder="Masukkan harga" required></td>
+        <td><input type="text" class="form-control form-control-sm" id="manualInputKeterangan" placeholder="Keterangan"></td>
+        <td></td>
+      </tr>
+    `;
 
     $("#tableManualDetail tbody").append(inputRow);
     this.attachManualInputHandlers();
@@ -1084,22 +1129,22 @@ const penjualanHandler = {
     }
 
     const newRow = `
-      <tr>
-        <td>${kode}</td>
-        <td>${namaBarang}</td>
-        <td>${kodeLock}</td>
-        <td>${kadar}</td>
-        <td>${berat}</td>
-        <td>${hargaPerGram}</td>
-        <td class="total-harga">${utils.formatRupiah(totalHarga)}</td>
-        <td class="keterangan">${keterangan}</td>
-        <td>
-          <button class="btn btn-sm btn-danger btn-delete">
-            <i class="fas fa-trash"></i>
-          </button>
-        </td>
-      </tr>
-    `;
+        <tr>
+          <td>${kode}</td>
+          <td>${namaBarang}</td>
+          <td>${kodeLock}</td>
+          <td>${kadar}</td>
+          <td>${berat}</td>
+          <td>${hargaPerGram}</td>
+          <td class="total-harga">${utils.formatRupiah(totalHarga)}</td>
+          <td class="keterangan">${keterangan}</td>
+          <td>
+            <button class="btn btn-sm btn-danger btn-delete">
+              <i class="fas fa-trash"></i>
+            </button>
+          </td>
+        </tr>
+      `;
 
     $(`#table${type.charAt(0).toUpperCase() + type.slice(1)}Detail tbody`).append(newRow);
 
@@ -1197,7 +1242,7 @@ const penjualanHandler = {
   },
 
   // Calculate kembalian
-    calculateKembalian() {
+  calculateKembalian() {
     const paymentMethod = $("#metodeBayar").val();
     const jumlahBayar = parseFloat($("#jumlahBayar").val().replace(/\./g, "")) || 0;
 
@@ -1243,288 +1288,144 @@ const penjualanHandler = {
     }
   },
 
-  // Refresh stock dengan cache invalidation yang efisien
-  async refreshStock() {
-  try {
-    utils.showLoading(true);
-    
-    // ✅ Cek apakah benar-benar perlu refresh
-    const lastRefresh = localStorage.getItem('lastStockRefresh');
-    const now = Date.now();
-    
-    if (lastRefresh && (now - parseInt(lastRefresh)) < 60000) { // 1 menit
-      utils.showAlert("Data baru saja diperbarui. Tunggu 1 menit sebelum refresh lagi.", "Info", "info");
-      return;
-    }
-    
-    // ✅ Cek perubahan data dengan lightweight query
-    const hasChanges = await this.checkForStockChanges();
-    
-    if (!hasChanges) {
-      utils.showAlert("Tidak ada perubahan data stok", "Info", "info");
-      return;
-    }
-    
-    // ✅ Clear cache secara selektif
-    cacheManager.remove("stockData");
-    this.stockCache.clear();
-    this.lastStockUpdate = 0;
-    
-    await this.loadStockData(true);
-    
-    // ✅ Simpan timestamp refresh
-    localStorage.setItem('lastStockRefresh', now.toString());
-    
-    utils.showAlert("Data stok berhasil diperbarui", "Sukses", "success");
-  } catch (error) {
-    console.error("Error refreshing stock:", error);
-    utils.showAlert("Gagal memperbarui data stok", "Error", "error");
-  } finally {
-    utils.showLoading(false);
-  }
-},
-
-// ✅ BARU: Method untuk cek perubahan dengan minimal reads
-async checkForStockChanges() {
-  try {
-    // ✅ Query hanya metadata perubahan (1-5 reads max)
-    const lastUpdate = localStorage.getItem('lastStockUpdateTime') || '0';
-    const lastUpdateTime = new Date(parseInt(lastUpdate));
-    
-    // Cek apakah ada transaksi stok baru
-    const recentTransQuery = query(
-      collection(firestore, "stokAksesorisTransaksi"),
-      where("timestamp", ">", Timestamp.fromDate(lastUpdateTime)),
-      limit(1) // ✅ Hanya 1 dokumen untuk cek
-    );
-    
-    const recentTransSnapshot = await getDocs(recentTransQuery);
-    
-    if (!recentTransSnapshot.empty) {
-      console.log("📊 Stock changes detected");
-      return true;
-    }
-    
-    // Cek apakah ada penambahan stok baru
-    const recentAddQuery = query(
-      collection(firestore, "stockAdditions"),
-      where("timestamp", ">", Timestamp.fromDate(lastUpdateTime)),
-      limit(1) // ✅ Hanya 1 dokumen untuk cek
-    );
-    
-    const recentAddSnapshot = await getDocs(recentAddQuery);
-    
-    if (!recentAddSnapshot.empty) {
-      console.log("📦 New stock additions detected");
-      return true;
-    }
-    
-    console.log("✅ No stock changes detected");
-    return false;
-    
-  } catch (error) {
-    console.warn("Error checking stock changes, proceeding with refresh:", error);
-    return true; // Default ke refresh jika error
-  }
-},
-
-  // Fungsi untuk menduplikat transaksi manual ke mutasiKode
-  async duplicateToMutasiKode(transactionData, transactionId) {
+  // Save transaction
+  async saveTransaction() {
     try {
-      // Hanya proses jika jenis penjualan adalah manual
-      if (transactionData.jenisPenjualan !== "manual" || !transactionData.items) {
+      // Validasi sales name
+      const salesName = $("#sales").val().trim();
+      if (!salesName) {
+        utils.showAlert("Nama sales harus diisi!");
+        $("#sales").focus();
         return;
       }
 
-      const jenisBarang = { C: "Cincin", K: "Kalung", L: "Liontin", A: "Anting", G: "Gelang", S: "Giwang", Z: "HALA", V: "HALA", };
-      const duplicatePromises = [];
+      const salesType = $("#jenisPenjualan").val();
+      const tableSelector =
+        salesType === "aksesoris"
+          ? "#tableAksesorisDetail"
+          : salesType === "kotak"
+          ? "#tableKotakDetail"
+          : "#tableManualDetail";
 
-      transactionData.items.forEach((item, index) => {
-        // Skip item tanpa kode atau kode kosong
-        if (!item.kodeText || item.kodeText === "-" || !item.kodeText.trim()) {
-          return;
-        }
-
-        const kode = item.kodeText.trim();
-        const prefix = kode.charAt(0).toUpperCase();
-
-        // Skip jika prefix tidak valid
-        if (!jenisBarang[prefix]) {
-          return;
-        }
-
-        // Data untuk mutasiKode
-        const mutasiKodeData = {
-          kode: kode,
-          namaBarang: item.nama || "Tidak ada nama",
-          kadar: item.kadar || "-",
-          berat: parseFloat(item.berat) || 0,
-          keterangan: item.keterangan || "",
-          hargaPerGram: parseFloat(item.hargaPerGram) || 0,
-          totalHarga: parseFloat(item.totalHarga) || 0,
-          tanggalInput: transactionData.tanggal,
-          sales: transactionData.sales || "",
-          penjualanId: transactionId,
-          isMutated: false,
-          tanggalMutasi: null,
-          mutasiKeterangan: "",
-          mutasiHistory: [],
-          timestamp: serverTimestamp(),
-          lastUpdated: serverTimestamp(),
-          jenisPrefix: prefix,
-          jenisNama: jenisBarang[prefix]
-        };
-
-        duplicatePromises.push(
-          addDoc(collection(firestore, "mutasiKode"), mutasiKodeData)
-        );
-      });
-
-      if (duplicatePromises.length > 0) {
-        await Promise.all(duplicatePromises);
-        console.log(`✅ Duplicated ${duplicatePromises.length} items to mutasiKode`);
+      // Check if table has rows
+      if ($(tableSelector + " tbody tr:not(.input-row)").length === 0) {
+        utils.showAlert("Tidak ada barang yang ditambahkan!");
+        return;
       }
 
+      // Validasi pembayaran
+      const paymentMethod = $("#metodeBayar").val();
+      if (paymentMethod === "dp") {
+        const nominalDP = parseFloat($("#nominalDP").val().replace(/\./g, "")) || 0;
+        const total = parseFloat($("#totalOngkos").val().replace(/\./g, "")) || 0;
+
+        if (nominalDP <= 0 || nominalDP >= total) {
+          utils.showAlert(
+            nominalDP <= 0 ? "Nominal DP harus diisi!" : "Nominal DP tidak boleh sama dengan atau melebihi total harga!"
+          );
+          $("#nominalDP").focus();
+          return;
+        }
+      } else if (paymentMethod !== "free") {
+        const jumlahBayar = parseFloat($("#jumlahBayar").val().replace(/\./g, "")) || 0;
+        const total = parseFloat($("#totalOngkos").val().replace(/\./g, "")) || 0;
+
+        if (jumlahBayar < total) {
+          utils.showAlert("Jumlah bayar kurang dari total!");
+          $("#jumlahBayar").focus();
+          return;
+        }
+      }
+
+      utils.showLoading(true);
+
+      // Collect items data
+      const items = this.collectItemsData(salesType, tableSelector);
+
+      // Prepare transaction data
+      const transactionData = {
+        jenisPenjualan: salesType,
+        tanggal: $("#tanggal").val(),
+        sales: salesName,
+        metodeBayar: paymentMethod,
+        totalHarga: parseFloat($("#totalOngkos").val().replace(/\./g, "")) || 0,
+        timestamp: serverTimestamp(),
+        items: items,
+      };
+
+      // Mark as ganti lock if applicable
+      if (salesType === "manual" && items.some((item) => item.kodeLock)) {
+        transactionData.isGantiLock = true;
+      }
+
+      // Add payment details
+      if (paymentMethod === "dp") {
+        transactionData.nominalDP = parseFloat($("#nominalDP").val().replace(/\./g, "")) || 0;
+        transactionData.sisaPembayaran = parseFloat($("#sisaPembayaran").val().replace(/\./g, "")) || 0;
+        transactionData.statusPembayaran = "DP";
+      } else if (paymentMethod === "free") {
+        transactionData.statusPembayaran = "Free";
+      } else {
+        transactionData.jumlahBayar = parseFloat($("#jumlahBayar").val().replace(/\./g, "")) || 0;
+        transactionData.kembalian = parseFloat($("#kembalian").val().replace(/\./g, "")) || 0;
+        transactionData.statusPembayaran = "Lunas";
+      }
+
+      // Save transaction
+      const docRef = await addDoc(collection(firestore, "penjualanAksesoris"), transactionData);
+      readsMonitor.increment("Save Transaction", 1);
+
+      // Update stock
+      await this.updateStock(salesType, items);
+
+      // Duplikasi ke mutasiKode jika transaksi manual
+      if (transactionData.jenisPenjualan === "manual") {
+        await this.duplicateToMutasiKode(transactionData, docRef.id);
+      }
+
+      // Update local cache
+      const newTransaction = { id: docRef.id, ...transactionData };
+      this.salesData.unshift(newTransaction);
+      
+     
+      const dateKey = new Date().toISOString().split('T')[0]; // Format: YYYY-MM-DD
+      simpleCache.set(`salesData_${dateKey}`, this.salesData);
+      
+      utils.showAlert("Transaksi berhasil disimpan!", "Sukses", "success");
+
+      // Store transaction data for printing
+      currentTransactionData = {
+        id: docRef.id,
+        salesType: salesType,
+        tanggal: $("#tanggal").val(),
+        sales: salesName,
+        totalHarga: $("#totalOngkos").val(),
+        items: items,
+        metodeBayar: paymentMethod,
+      };
+
+      // Add DP information if applicable
+      if (paymentMethod === "dp") {
+        currentTransactionData.nominalDP = $("#nominalDP").val();
+        currentTransactionData.sisaPembayaran = $("#sisaPembayaran").val();
+      }
+
+      // Show print modal
+      $("#printModal").modal("show");
+
+      // Reset form after modal is closed
+      $("#printModal").on("hidden.bs.modal", () => {
+        this.resetForm();
+        $("#sales").focus();
+        $("#printModal").off("hidden.bs.modal");
+      });
     } catch (error) {
-      console.error("❌ Error duplicating to mutasiKode:", error);
-      // Jangan throw error agar tidak mengganggu proses utama
+      console.error("Error saving transaction:", error);
+      utils.showAlert("Terjadi kesalahan saat menyimpan transaksi: " + error.message, "Error", "error");
+    } finally {
+      utils.showLoading(false);
     }
   },
-
-  // Save transaction dengan cache invalidation yang efisien
-  async saveTransaction() {
-      try {
-        // Validasi sales name
-        const salesName = $("#sales").val().trim();
-        if (!salesName) {
-          utils.showAlert("Nama sales harus diisi!");
-          $("#sales").focus();
-          return;
-        }
-  
-        const salesType = $("#jenisPenjualan").val();
-        const tableSelector =
-          salesType === "aksesoris"
-            ? "#tableAksesorisDetail"
-            : salesType === "kotak"
-            ? "#tableKotakDetail"
-            : "#tableManualDetail";
-  
-        // Check if table has rows
-        if ($(tableSelector + " tbody tr:not(.input-row)").length === 0) {
-          utils.showAlert("Tidak ada barang yang ditambahkan!");
-          return;
-        }
-  
-        // Validasi pembayaran (kode yang sudah ada)...
-        const paymentMethod = $("#metodeBayar").val();
-        if (paymentMethod === "dp") {
-          const nominalDP = parseFloat($("#nominalDP").val().replace(/\./g, "")) || 0;
-          const total = parseFloat($("#totalOngkos").val().replace(/\./g, "")) || 0;
-  
-          if (nominalDP <= 0 || nominalDP >= total) {
-            utils.showAlert(
-              nominalDP <= 0 ? "Nominal DP harus diisi!" : "Nominal DP tidak boleh sama dengan atau melebihi total harga!"
-            );
-            $("#nominalDP").focus();
-            return;
-          }
-        } else if (paymentMethod !== "free") {
-          const jumlahBayar = parseFloat($("#jumlahBayar").val().replace(/\./g, "")) || 0;
-          const total = parseFloat($("#totalOngkos").val().replace(/\./g, "")) || 0;
-  
-          if (jumlahBayar < total) {
-            utils.showAlert("Jumlah bayar kurang dari total!");
-            $("#jumlahBayar").focus();
-            return;
-          }
-        }
-  
-        utils.showLoading(true);
-  
-        // Collect items data
-        const items = this.collectItemsData(salesType, tableSelector);
-  
-        // Prepare transaction data
-        const transactionData = {
-          jenisPenjualan: salesType,
-          tanggal: $("#tanggal").val(),
-          sales: salesName,
-          metodeBayar: paymentMethod,
-          totalHarga: parseFloat($("#totalOngkos").val().replace(/\./g, "")) || 0,
-          timestamp: serverTimestamp(),
-          items: items,
-        };
-  
-        // Mark as ganti lock if applicable
-        if (salesType === "manual" && items.some((item) => item.kodeLock)) {
-          transactionData.isGantiLock = true;
-        }
-  
-        // Add payment details
-        if (paymentMethod === "dp") {
-          transactionData.nominalDP = parseFloat($("#nominalDP").val().replace(/\./g, "")) || 0;
-          transactionData.sisaPembayaran = parseFloat($("#sisaPembayaran").val().replace(/\./g, "")) || 0;
-          transactionData.statusPembayaran = "DP";
-        } else if (paymentMethod === "free") {
-          transactionData.statusPembayaran = "Free";
-        } else {
-          transactionData.jumlahBayar = parseFloat($("#jumlahBayar").val().replace(/\./g, "")) || 0;
-          transactionData.kembalian = parseFloat($("#kembalian").val().replace(/\./g, "")) || 0;
-          transactionData.statusPembayaran = "Lunas";
-        }
-  
-        // Save transaction
-        const docRef = await addDoc(collection(firestore, "penjualanAksesoris"), transactionData);
-  
-        // Update stock
-        await this.updateStock(salesType, items);
-  
-        // Duplikasi ke mutasiKode jika transaksi manual
-        if (transactionData.jenisPenjualan === "manual") {
-          await this.duplicateToMutasiKode(transactionData, docRef.id);
-        }
-  
-        // Smart cache invalidation
-        cacheManager.remove("stockData");
-        cacheManager.remove("todaySales");
-  
-        utils.showAlert("Transaksi berhasil disimpan!", "Sukses", "success");
-  
-        // Store transaction data for printing
-        currentTransactionData = {
-          id: docRef.id,
-          salesType: salesType,
-          tanggal: $("#tanggal").val(),
-          sales: salesName,
-          totalHarga: $("#totalOngkos").val(),
-          items: items,
-          metodeBayar: paymentMethod,
-        };
-  
-        // Add DP information if applicable
-        if (paymentMethod === "dp") {
-          currentTransactionData.nominalDP = $("#nominalDP").val();
-          currentTransactionData.sisaPembayaran = $("#sisaPembayaran").val();
-        }
-  
-        // Show print modal
-        $("#printModal").modal("show");
-  
-        // Reset form after modal is closed
-        $("#printModal").on("hidden.bs.modal", () => {
-          this.resetForm();
-          $("#sales").focus();
-          $("#printModal").off("hidden.bs.modal");
-        });
-  
-      } catch (error) {
-        console.error("Error saving transaction:", error);
-        utils.showAlert("Terjadi kesalahan saat menyimpan transaksi: " + error.message, "Error", "error");
-      } finally {
-        utils.showLoading(false);
-      }
-    },
 
   // Collect items data based on sales type
   collectItemsData(salesType, tableSelector) {
@@ -1594,76 +1495,74 @@ async checkForStockChanges() {
     return items;
   },
 
-  // Update stock after sales dengan cache update yang efisien
+  // Update stock after sales
   async updateStock(salesType, items) {
     try {
       const updatePromises = [];
-      const stockUpdates = new Map();
-
-      // Prepare batch updates
+      
       for (const item of items) {
         const kode = item.kodeText;
         if (!kode || kode === "-") continue;
-
+        
         if (salesType === "manual") {
           // Untuk penjualan manual
           if (item.kodeLock && item.kodeLock !== "-") {
             // Kode aksesoris yang dipilih - mengurangi stok sebagai ganti lock
-            const lockCurrentStock = await this.getStockForItem(item.kodeLock);
+            const currentStock = this.getStockForItem(item.kodeLock);
             const jumlah = parseInt(item.jumlah) || 1;
-            const lockNewStock = Math.max(0, lockCurrentStock - jumlah);
-
-            stockUpdates.set(item.kodeLock, {
-              item: {
-                ...item,
-                kodeText: item.kodeLock,
-                nama: `Ganti lock untuk ${item.nama}`,
-              },
-              currentStock: lockCurrentStock,
-              newStock: lockNewStock,
-              jumlah,
-              isGantiLock: true,
-            });
+            const newStock = Math.max(0, currentStock - jumlah);
+            
+            updatePromises.push(
+              this.processSingleStockUpdate(item.kodeLock, {
+                item: { ...item, kodeText: item.kodeLock, nama: `Ganti lock untuk ${item.nama}` },
+                currentStock,
+                newStock,
+                jumlah,
+                isGantiLock: true,
+              })
+            );
           }
-          // Kode barcode manual tidak mengurangi stok
         } else {
-          // Untuk penjualan aksesoris dan kotak (termasuk yang free)
-          const currentStock = await this.getStockForItem(kode);
+          // Untuk penjualan aksesoris dan kotak
+          const currentStock = this.getStockForItem(kode);
           const jumlah = parseInt(item.jumlah) || 1;
           const newStock = Math.max(0, currentStock - jumlah);
-
-          stockUpdates.set(kode, {
-            item,
-            currentStock,
-            newStock,
-            jumlah,
-            isGantiLock: false,
-          });
+          
+          updatePromises.push(
+            this.processSingleStockUpdate(kode, {
+              item,
+              currentStock,
+              newStock,
+              jumlah,
+              isGantiLock: false,
+            })
+          );
         }
       }
-
-      // Execute batch updates
-      for (const [kode, updateData] of stockUpdates) {
-        updatePromises.push(this.processSingleStockUpdate(kode, updateData));
-      }
-
+      
       await Promise.all(updatePromises);
-
-      // Update local caches secara efisien
-      for (const [kode, updateData] of stockUpdates) {
-        this.stockCache.set(kode, updateData.newStock);
-
-        // Update stockData array
-        const stockIndex = this.stockData.findIndex((item) => item.kode === kode);
-        if (stockIndex !== -1) {
-          this.stockData[stockIndex].stokAkhir = updateData.newStock;
+      
+      // Update local cache
+      for (const item of items) {
+        const kode = item.kodeText;
+        if (kode && kode !== "-") {
+          const currentStock = this.getStockForItem(kode);
+          const jumlah = parseInt(item.jumlah) || 1;
+          const newStock = Math.max(0, currentStock - jumlah);
+          
+          // Update stock cache
+          this.stockCache.set(kode, newStock);
+          
+          // Update stockData array
+          const stockIndex = this.stockData.findIndex((stockItem) => stockItem.kode === kode);
+          if (stockIndex !== -1) {
+            this.stockData[stockIndex].stokAkhir = newStock;
+          }
         }
       }
-
-      // Update cache dengan data terbaru
-      cacheManager.set("stockData", this.stockData, cacheManager.stockTTL);
-      this.lastStockUpdate = Date.now();
-
+      
+      simpleCache.set("stockData", this.stockData);
+      
       return true;
     } catch (error) {
       console.error("Error updating stock:", error);
@@ -1694,6 +1593,7 @@ async checkForStockChanges() {
       // Update stok document
       const stockQuery = query(collection(firestore, "stokAksesoris"), where("kode", "==", kode));
       const stockSnapshot = await getDocs(stockQuery);
+      readsMonitor.increment("Stock Update Query", 1);
 
       if (!stockSnapshot.empty) {
         const stockDoc = stockSnapshot.docs[0];
@@ -1701,6 +1601,7 @@ async checkForStockChanges() {
           stokAkhir: newStock,
           lastUpdate: serverTimestamp(),
         });
+        readsMonitor.increment("Stock Update Write", 1);
       } else {
         // Buat document baru jika tidak ada
         const newStockData = {
@@ -1714,6 +1615,7 @@ async checkForStockChanges() {
         };
 
         await addDoc(collection(firestore, "stokAksesoris"), newStockData);
+        readsMonitor.increment("Stock Create Write", 1);
       }
 
       // Catat transaksi stok
@@ -1730,6 +1632,7 @@ async checkForStockChanges() {
         keterangan,
         isGantiLock: isGantiLock || false,
       });
+      readsMonitor.increment("Stock Transaction Write", 1);
 
       console.log(`Updated stock for ${kode}: ${currentStock} → ${newStock} (${jenisTransaksi})`);
     } catch (error) {
@@ -1744,6 +1647,76 @@ async checkForStockChanges() {
     return "aksesoris";
   },
 
+  // Fungsi untuk menduplikat transaksi manual ke mutasiKode
+  async duplicateToMutasiKode(transactionData, transactionId) {
+    try {
+      // Hanya proses jika jenis penjualan adalah manual
+      if (transactionData.jenisPenjualan !== "manual" || !transactionData.items) {
+        return;
+      }
+
+      const jenisBarang = {
+        C: "Cincin",
+        K: "Kalung",
+        L: "Liontin",
+        A: "Anting",
+        G: "Gelang",
+        S: "Giwang",
+        Z: "HALA",
+        V: "HALA",
+      };
+      const duplicatePromises = [];
+
+      transactionData.items.forEach((item) => {
+        // Skip item tanpa kode atau kode kosong
+        if (!item.kodeText || item.kodeText === "-" || !item.kodeText.trim()) {
+          return;
+        }
+
+        const kode = item.kodeText.trim();
+        const prefix = kode.charAt(0).toUpperCase();
+
+        // Skip jika prefix tidak valid
+        if (!jenisBarang[prefix]) {
+          return;
+        }
+
+        // Data untuk mutasiKode
+        const mutasiKodeData = {
+          kode: kode,
+          namaBarang: item.nama || "Tidak ada nama",
+          kadar: item.kadar || "-",
+          berat: parseFloat(item.berat) || 0,
+          keterangan: item.keterangan || "",
+          hargaPerGram: parseFloat(item.hargaPerGram) || 0,
+          totalHarga: parseFloat(item.totalHarga) || 0,
+          tanggalInput: transactionData.tanggal,
+          sales: transactionData.sales || "",
+          penjualanId: transactionId,
+          isMutated: false,
+          tanggalMutasi: null,
+          mutasiKeterangan: "",
+          mutasiHistory: [],
+          timestamp: serverTimestamp(),
+          lastUpdated: serverTimestamp(),
+          jenisPrefix: prefix,
+          jenisNama: jenisBarang[prefix],
+        };
+
+        duplicatePromises.push(addDoc(collection(firestore, "mutasiKode"), mutasiKodeData));
+      });
+
+      if (duplicatePromises.length > 0) {
+        await Promise.all(duplicatePromises);
+        readsMonitor.increment("Mutasi Kode Write", duplicatePromises.length);
+        console.log(`✅ Duplicated ${duplicatePromises.length} items to mutasiKode`);
+      }
+    } catch (error) {
+      console.error("❌ Error duplicating to mutasiKode:", error);
+      // Jangan throw error agar tidak mengganggu proses utama
+    }
+  },
+
   // Print receipt
   printReceipt() {
     if (!currentTransactionData) {
@@ -1755,82 +1728,82 @@ async checkForStockChanges() {
     const printWindow = window.open("", "_blank");
 
     if (!printWindow) {
-      
+      utils.showAlert("Popup diblokir oleh browser. Mohon izinkan popup untuk mencetak.", "Error", "error");
       return;
     }
 
     let receiptHTML = `
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <title>Struk Kasir</title>
-        <style>
-          body {
-            font-family: consolas;
-            font-size: 14px;
-            margin: 0;
-            padding: 0;
-            width: 80mm;
-          }
-          .receipt {          
-            margin: 0 auto;
-            padding: 5mm;
-          }
-          .receipt h3, .receipt h4 {
-            text-align: center;
-            margin: 2mm 0;
-          }
-          .receipt hr {
-            border-top: 1px dashed #000;
-          }
-          .receipt table {
-            width: 100%;
-            border-collapse: collapse;
-          }
-          .receipt th, .receipt td {
-            text-align: left;
-            padding: 1mm 2mm;
-          }
-          .receipt .tanggal {
-          margin-left: 10px
-          }
-          .text-center {
-            text-align: center;
-          }
-          .text-right {
-            text-align: right;
-          }
-          .keterangan {
-            font-style: italic;
-            font-size: 14px;
-            margin-top: 2mm;
-            border-top: 1px dotted #000;
-            padding-top: 2mm;
-          }
-          .payment-info {
-            margin-top: 2mm;
-            border-top: 1px dotted #000;
-            padding-top: 2mm;
-          }
-        </style>
-      </head>
-      <body>
-        <div class="receipt">
-          <h3>MELATI 3</h3>
-          <h4>JL. DIPONEGORO NO. 116</h4>
-          <h4>NOTA PENJUALAN ${transaction.salesType.toUpperCase()}</h4>
-          <hr>
-          <p class="tanggal">Tanggal: ${transaction.tanggal}<br>Sales: ${transaction.sales}</p>
-          <hr>
-          <table>
-            <tr>
-              <th>Kode</th>
-              <th>Nama</th>
-              <th>Kadar</th>
-              <th>Gr</th>
-              <th>Harga</th>
-            </tr>
-    `;
+          <!DOCTYPE html>
+          <html>
+          <head>
+            <title>Struk Kasir</title>
+            <style>
+              body {
+                font-family: consolas;
+                font-size: 14px;
+                margin: 0;
+                padding: 0;
+                width: 80mm;
+              }
+              .receipt {          
+                margin: 0 auto;
+                padding: 5mm;
+              }
+              .receipt h3, .receipt h4 {
+                text-align: center;
+                margin: 2mm 0;
+              }
+              .receipt hr {
+                border-top: 1px dashed #000;
+              }
+              .receipt table {
+                width: 100%;
+                border-collapse: collapse;
+              }
+              .receipt th, .receipt td {
+                text-align: left;
+                padding: 1mm 2mm;
+              }
+              .receipt .tanggal {
+              margin-left: 10px
+              }
+              .text-center {
+                text-align: center;
+              }
+              .text-right {
+                text-align: right;
+              }
+              .keterangan {
+                font-style: italic;
+                font-size: 14px;
+                margin-top: 2mm;
+                border-top: 1px dotted #000;
+                padding-top: 2mm;
+              }
+              .payment-info {
+                margin-top: 2mm;
+                border-top: 1px dotted #000;
+                padding-top: 2mm;
+              }
+            </style>
+          </head>
+          <body>
+            <div class="receipt">
+              <h3>MELATI 3</h3>
+              <h4>JL. DIPONEGORO NO. 116</h4>
+              <h4>NOTA PENJUALAN ${transaction.salesType.toUpperCase()}</h4>
+              <hr>
+              <p class="tanggal">Tanggal: ${transaction.tanggal}<br>Sales: ${transaction.sales}</p>
+              <hr>
+              <table>
+                <tr>
+                  <th>Kode</th>
+                  <th>Nama</th>
+                  <th>Kadar</th>
+                  <th>Gr</th>
+                  <th>Harga</th>
+                </tr>
+        `;
 
     let hasKeterangan = false;
     let keteranganText = "";
@@ -1838,14 +1811,14 @@ async checkForStockChanges() {
     transaction.items.forEach((item) => {
       const itemHarga = parseInt(item.totalHarga) || 0;
       receiptHTML += `
-        <tr>
-          <td>${item.kodeText || "-"}</td>
-          <td>${item.nama || "-"}</td>
-          <td>${item.kadar || "-"}</td>
-          <td>${item.berat || "-"}</td>
-          <td class="text-right">${utils.formatRupiah(itemHarga)}</td>
-        </tr>
-      `;
+            <tr>
+              <td>${item.kodeText || "-"}</td>
+              <td>${item.nama || "-"}</td>
+              <td>${item.kadar || "-"}</td>
+              <td>${item.berat || "-"}</td>
+              <td class="text-right">${utils.formatRupiah(itemHarga)}</td>
+            </tr>
+          `;
 
       if (item.keterangan && item.keterangan.trim() !== "") {
         hasKeterangan = true;
@@ -1855,12 +1828,12 @@ async checkForStockChanges() {
 
     const totalHarga = parseInt(transaction.totalHarga.replace(/\./g, "")) || 0;
     receiptHTML += `
-            <tr>
-              <td colspan="4" class="text-right"><strong>Total:</strong></td>
-              <td class="text-right"><strong>${utils.formatRupiah(totalHarga)}</strong></td>
-            </tr>
-          </table>
-    `;
+                <tr>
+                  <td colspan="4" class="text-right"><strong>Total:</strong></td>
+                  <td class="text-right"><strong>${utils.formatRupiah(totalHarga)}</strong></td>
+                </tr>
+              </table>
+        `;
 
     // Add DP information if applicable
     if (transaction.metodeBayar === "dp") {
@@ -1868,47 +1841,47 @@ async checkForStockChanges() {
       const remainingAmount = parseInt(transaction.sisaPembayaran.replace(/\./g, "")) || 0;
 
       receiptHTML += `
-          <div class="payment-info">
-            <table>
-              <tr>
-                <td>Total Harga:</td>
-                <td class="text-right">${utils.formatRupiah(totalHarga)}</td>
-              </tr>
-              <tr>
-                <td>DP:</td>
-                <td class="text-right">${utils.formatRupiah(dpAmount)}</td>
-              </tr>
-              <tr>
-                <td><strong>SISA:</strong></td>
-                <td class="text-right"><strong>${utils.formatRupiah(remainingAmount)}</strong></td>
-              </tr>
-            </table>
-          </div>
-      `;
+              <div class="payment-info">
+                <table>
+                  <tr>
+                    <td>Total Harga:</td>
+                    <td class="text-right">${utils.formatRupiah(totalHarga)}</td>
+                  </tr>
+                  <tr>
+                    <td>DP:</td>
+                    <td class="text-right">${utils.formatRupiah(dpAmount)}</td>
+                  </tr>
+                  <tr>
+                    <td><strong>SISA:</strong></td>
+                    <td class="text-right"><strong>${utils.formatRupiah(remainingAmount)}</strong></td>
+                  </tr>
+                </table>
+              </div>
+          `;
     }
 
     // Add keterangan if exists and is manual sale
     if (hasKeterangan && transaction.salesType === "manual") {
       receiptHTML += `
-          <div class="keterangan">
-            <strong>Keterangan:</strong> ${keteranganText.trim()}
-          </div>
-      `;
+              <div class="keterangan">
+                <strong>Keterangan:</strong> ${keteranganText.trim()}
+              </div>
+          `;
     }
 
     receiptHTML += `
-          <hr>
-          <p class="text-center">Terima Kasih<br>Atas Kunjungan Anda</p>
-        </div>
-        <script>
-          window.onload = function() {
-            window.print();
-            setTimeout(function() { window.close(); }, 500);
-          };
-        </script>
-      </body>
-      </html>
-    `;
+              <hr>
+              <p class="text-center">Terima Kasih<br>Atas Kunjungan Anda</p>
+            </div>
+            <script>
+              window.onload = function() {
+                window.print();
+                setTimeout(function() { window.close(); }, 500);
+              };
+            </script>
+          </body>
+          </html>
+        `;
 
     printWindow.document.write(receiptHTML);
     printWindow.document.close();
@@ -1930,81 +1903,81 @@ async checkForStockChanges() {
     }
 
     let invoiceHTML = `
-    <!DOCTYPE html>
-    <html>
-    <head>
-      <title>Invoice Customer</title>
-      <style>
-        @page {
-          size: 10cm 20cm;
-          margin: 0;
-        }
-        body {
-          font-family: Arial, sans-serif;
-          font-size: 12px;
-          margin: 0;
-          padding: 5mm;
-          width: 20cm;
-          box-sizing: border-box;
-        }
-        .invoice {
-          width: 100%;
-        }
-        .header-info {
-          text-align: right;
-          margin-bottom: 2cm;
-          margin-right: 3cm;
-          margin-top: 0.8cm;
-        }         
-        .total-row {
-          margin-top: 0.7cm;
-          text-align: right;
-          font-weight: bold;
-          margin-right: 3cm;
-        }
-        .sales {
-          text-align: right;
-          margin-top: 0.6cm;
-          margin-right: 2cm;
-        }
-        .keterangan {
-          font-style: italic;
-          font-size: 10px;
-          margin-top: 1cm;
-          margin-bottom: 0.5cm;
-          padding-top: 2mm;
-          text-align: left;
-          margin-left: 0.5cm;
-          margin-right: 3cm;
-        }
-        .keterangan-spacer { height: 1.6cm; }
-        .item-details {
-          display: flex;
-          flex-wrap: wrap;
-        }
-        .item-data {
-          display: grid;
-          grid-template-columns: 2cm 1.8cm 5cm 2cm 2cm 2cm;
-          width: 100%;
-          column-gap: 0.2cm;
-          margin-left: 0.5cm;
-          margin-top: 1cm;
-          margin-right: 3cm;
-        }
-        .item-data span {
-          white-space: nowrap;
-          overflow: hidden;
-          text-overflow: ellipsis;
-        }
-      </style>
-    </head>
-    <body>
-      <div class="invoice">
-        <div class="header-info">
-          <p>${transaction.tanggal}</p>
-        </div>
-        <hr>
-  `;
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <title>Invoice Customer</title>
+          <style>
+            @page {
+              size: 10cm 20cm;
+              margin: 0;
+            }
+            body {
+              font-family: Arial, sans-serif;
+              font-size: 12px;
+              margin: 0;
+              padding: 5mm;
+              width: 20cm;
+              box-sizing: border-box;
+            }
+            .invoice {
+              width: 100%;
+            }
+            .header-info {
+              text-align: right;
+              margin-bottom: 2cm;
+              margin-right: 3cm;
+              margin-top: 0.8cm;
+            }         
+            .total-row {
+              margin-top: 0.7cm;
+              text-align: right;
+              font-weight: bold;
+              margin-right: 3cm;
+            }
+            .sales {
+              text-align: right;
+              margin-top: 0.6cm;
+              margin-right: 2cm;
+            }
+            .keterangan {
+              font-style: italic;
+              font-size: 10px;
+              margin-top: 1cm;
+              margin-bottom: 0.5cm;
+              padding-top: 2mm;
+              text-align: left;
+              margin-left: 0.5cm;
+              margin-right: 3cm;
+            }
+            .keterangan-spacer { height: 1.6cm; }
+            .item-details {
+              display: flex;
+              flex-wrap: wrap;
+            }
+            .item-data {
+              display: grid;
+              grid-template-columns: 2cm 1.8cm 5cm 2cm 2cm 2cm;
+              width: 100%;
+              column-gap: 0.2cm;
+              margin-left: 0.5cm;
+              margin-top: 1cm;
+              margin-right: 3cm;
+            }
+            .item-data span {
+              white-space: nowrap;
+              overflow: hidden;
+              text-overflow: ellipsis;
+            }
+          </style>
+        </head>
+        <body>
+          <div class="invoice">
+            <div class="header-info">
+              <p>${transaction.tanggal}</p>
+            </div>
+            <hr>
+      `;
 
     let hasKeterangan = false;
     let keteranganText = "";
@@ -2016,14 +1989,14 @@ async checkForStockChanges() {
       totalHarga += itemHarga;
 
       invoiceHTML += `
-      <div class="item-details">
-        <div class="item-data">
-          <span>${item.kodeText || "-"}</span>
-          <span>${item.jumlah || "1"}pcs</span>
-          <span>${item.nama || "-"}</span>
-          <span>${item.kadar || "-"}</span>
-          <span>${item.berat || "-"}gr</span>
-          <span>${utils.formatRupiah(itemHarga)}</span>
+          <div class="item-details">
+            <div class="item-data">
+              <span>${item.kodeText || "-"}</span>
+              <span>${item.jumlah || "1"}pcs</span>
+              <span>${item.nama || "-"}</span>
+              <span>${item.kadar || "-"}</span>
+              <span>${item.berat || "-"}gr</span>
+              <span>${utils.formatRupiah(itemHarga)}</span>
         </div>
       </div>
     `;
@@ -2119,165 +2092,23 @@ async checkForStockChanges() {
 
   // Cleanup when page unloads
   cleanup() {
-    if (this.refreshInterval) {
-      clearInterval(this.refreshInterval);
-    }
-
-    // Clear old cache entries
-    cacheManager.clearOldCache();
+    this.removeListeners();
   },
-};
-
-// Enhanced shared cache manager untuk multi-device sync
-const sharedCacheManager = {
-  ...cacheManager,
-  
-  // TTL khusus untuk data hari ini
-  todayTTL: 1 * 60 * 1000, // 1 menit untuk data hari ini
-  
-  // Get local date string untuk cache key
-  getLocalDateString() {
-    const today = new Date();
-    return `${today.getDate()}-${today.getMonth() + 1}-${today.getFullYear()}`;
-  },
-
-  // Check if cache should be updated based on time
-  shouldUpdateCache(key, maxAge = null) {
-    const item = this.get(key);
-    if (!item) return true;
-
-    try {
-      const cacheItem = JSON.parse(localStorage.getItem(this.prefix + key));
-      if (!cacheItem) return true;
-
-      const age = Date.now() - cacheItem.timestamp;
-      const ttl = maxAge || cacheItem.ttl;
-      
-      return age >= ttl;
-    } catch (error) {
-      return true;
-    }
-  },
-
-  // Set cache with version for multi-device sync
-  setVersioned(key, data, ttl) {
-    const versionedData = {
-      data,
-      version: Date.now(),
-      deviceId: this.getDeviceId(),
-    };
-    this.set(key, versionedData, ttl);
-  },
-
-  // Get versioned cache data
-  getVersioned(key) {
-    const cachedItem = this.get(key);
-    if (!cachedItem) return null;
-
-    return {
-      data: cachedItem.data,
-      version: cachedItem.version,
-      age: Date.now() - cachedItem.version,
-    };
-  },
-
-  // Get or generate device ID
-  getDeviceId() {
-    let deviceId = localStorage.getItem('melati_device_id');
-    if (!deviceId) {
-      deviceId = 'device_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
-      localStorage.setItem('melati_device_id', deviceId);
-    }
-    return deviceId;
-  },
-
-  // Invalidate related cache entries
-  invalidateRelated(pattern) {
-    try {
-      Object.keys(localStorage)
-        .filter(key => key.startsWith(this.prefix) && key.includes(pattern))
-        .forEach(key => localStorage.removeItem(key));
-    } catch (error) {
-      console.warn("Failed to invalidate related cache:", error);
-    }
-  },
-
-  // Get cache statistics
-  getStats() {
-    const stats = {
-      totalEntries: 0,
-      totalSize: 0,
-      validEntries: 0,
-      expiredEntries: 0,
-      entries: {}
-    };
-
-    try {
-      Object.keys(localStorage)
-        .filter(key => key.startsWith(this.prefix))
-        .forEach(key => {
-          try {
-            const item = JSON.parse(localStorage.getItem(key));
-            const cleanKey = key.replace(this.prefix, '');
-            const age = Date.now() - item.timestamp;
-            const isValid = age < item.ttl;
-            const size = JSON.stringify(item).length;
-
-            stats.totalEntries++;
-            stats.totalSize += size;
-            
-            if (isValid) {
-              stats.validEntries++;
-            } else {
-              stats.expiredEntries++;
-            }
-
-            stats.entries[cleanKey] = {
-              age: Math.round(age / 1000) + 's',
-              size: size + ' bytes',
-              valid: isValid,
-              ttl: Math.round(item.ttl / 1000) + 's'
-            };
-          } catch (error) {
-            // Corrupted entry
-            localStorage.removeItem(key);
-          }
-        });
-    } catch (error) {
-      console.warn("Failed to get cache stats:", error);
-    }
-
-    return stats;
-  }
 };
 
 // Initialize when document is ready
 $(document).ready(async function () {
   try {
-    // Initialize print event handlers
-    $("#btnPrintReceipt")
-      .off("click")
-      .on("click", () => penjualanHandler.printReceipt());
-    $("#btnPrintInvoice")
-      .off("click")
-      .on("click", () => penjualanHandler.printInvoice());
-
-    // Add refresh stock button if not exists
-    if ($("#refreshStok").length === 0) {
-      $(".catalog-select").before(`
-        <button type="button" class="btn btn-outline-primary me-2" id="refreshStok">
-          <i class="fas fa-sync-alt me-1"></i> Refresh Stok
-        </button>
-      `);
-    }
+    // Initialize monitoring
+    readsMonitor.init();
 
     // Initialize the main handler
     await penjualanHandler.init();
 
-    console.log("Penjualan Aksesoris initialized successfully");
-    console.log("Cache info:", sharedCacheManager.getStats());
+    console.log("✅ Penjualan Aksesoris initialized successfully");
+    console.log("🔥 Firestore reads:", readsMonitor.getStats());
   } catch (error) {
-    console.error("Error initializing penjualan aksesoris:", error);
+    console.error("❌ Error initializing penjualan aksesoris:", error);
     utils.showAlert("Terjadi kesalahan saat memuat halaman: " + error.message, "Error", "error");
   }
 });
@@ -2287,30 +2118,151 @@ $(window).on("beforeunload", () => {
   penjualanHandler.cleanup();
 });
 
-// Handle visibility change to refresh data when tab becomes active
+// Handle visibility change for smart data refresh
 document.addEventListener("visibilitychange", async () => {
   if (!document.hidden) {
-    // Page became visible, check if cache is stale
-    const stockCacheAge = 5 * 60 * 1000; // 5 minutes
-    const salesCacheAge = 1 * 60 * 1000; // 1 minute
-
-    if (sharedCacheManager.shouldUpdateCache("stockData", stockCacheAge)) {
-      console.log("Refreshing stale stock cache");
-      await penjualanHandler.loadStockData(true);
-    }
-
-    const today = sharedCacheManager.getLocalDateString();
-    if (sharedCacheManager.shouldUpdateCache(`todaySales_${today}`, salesCacheAge)) {
-      console.log("Refreshing stale sales cache");
-      await penjualanHandler.loadTodaySales(true);
+    console.log("👁️ Page became visible, checking for stale data");
+    if (!penjualanHandler.stockListener || !penjualanHandler.salesListener) {
+      penjualanHandler.setupSmartListeners();
     }
   }
 });
 
+// Handle online/offline status
+window.addEventListener("online", async () => {
+  console.log("🌐 Connection restored");
+  try {
+    penjualanHandler.setupSmartListeners()
+    utils.showAlert("Koneksi pulih, data telah diperbarui", "Info", "info");
+  } catch (error) {
+    console.error("Failed to refresh data after reconnection:", error);
+  }
+});
+
+window.addEventListener("offline", () => {
+  console.log("📡 Connection lost, using cached data");
+  utils.showAlert("Koneksi terputus, menggunakan data cache", "Warning", "warning");
+});
+
+// Performance monitoring and optimization
+const performanceMonitor = {
+  metrics: {},
+
+  start(operation) {
+    this.metrics[operation] = {
+      startTime: performance.now(),
+      memoryStart: this.getMemoryUsage(),
+    };
+  },
+
+  end(operation) {
+    if (!this.metrics[operation]) return;
+
+    const duration = performance.now() - this.metrics[operation].startTime;
+    const memoryEnd = this.getMemoryUsage();
+    const memoryDelta = memoryEnd - this.metrics[operation].memoryStart;
+
+    console.log(
+      `⏱️ ${operation}: ${duration.toFixed(2)}ms (Memory: ${memoryDelta > 0 ? "+" : ""}${memoryDelta.toFixed(2)}MB)`
+    );
+
+    // Log slow operations
+    if (duration > 1000) {
+      console.warn(`🐌 Slow operation: ${operation} took ${duration.toFixed(2)}ms`);
+    }
+
+    delete this.metrics[operation];
+  },
+
+  getMemoryUsage() {
+    if (performance.memory) {
+      return performance.memory.usedJSHeapSize / 1024 / 1024; // MB
+    }
+    return 0;
+  },
+
+  wrap(operation, fn) {
+    return async (...args) => {
+      this.start(operation);
+      try {
+        const result = await fn(...args);
+        this.end(operation);
+        return result;
+      } catch (error) {
+        this.end(operation);
+        throw error;
+      }
+    };
+  },
+};
+
+// Wrap critical functions with performance monitoring
+penjualanHandler.loadStockData = performanceMonitor.wrap(
+  "Load Stock Data",
+  penjualanHandler.loadStockData.bind(penjualanHandler)
+);
+
+penjualanHandler.saveTransaction = performanceMonitor.wrap(
+  "Save Transaction",
+  penjualanHandler.saveTransaction.bind(penjualanHandler)
+);
+
+// Auto-maintenance tasks
+setInterval(() => {
+  // Hanya log performance stats
+  const readsStats = readsMonitor.getStats();
+
+  console.log("📊 System Health Check:", {
+    stockItems: this.stockData?.length || 0,
+    reads: `${readsStats.total}/${readsMonitor.dailyLimit} (${readsStats.percentage.toFixed(1)}%)`,
+  });
+}, 10 * 60 * 1000); // Every 10 minutes
+
+// Error boundary for unhandled errors
+window.addEventListener("error", (event) => {
+  console.error("💥 Unhandled error:", event.error);
+
+  // Don't show alert for minor errors
+  if (
+    event.error &&
+    event.error.message &&
+    !event.error.message.includes("Non-Error promise rejection") &&
+    !event.error.message.includes("ResizeObserver")
+  ) {
+    utils.showAlert(
+      "Terjadi kesalahan tidak terduga. Silakan refresh halaman jika masalah berlanjut.",
+      "Error",
+      "error"
+    );
+  }
+});
+
+window.addEventListener("unhandledrejection", (event) => {
+  console.error("🚫 Unhandled promise rejection:", event.reason);
+  event.preventDefault();
+
+  if (event.reason && typeof event.reason === "object" && event.reason.message) {
+    console.error("Promise rejection details:", event.reason.message);
+  }
+});
+
+// Add remove listeners method to penjualanHandler
+penjualanHandler.removeListeners = function () {
+  // Remove all event listeners to prevent memory leaks
+  $(document).off(".penjualan");
+  $(window).off(".penjualan");
+
+  // Clear intervals
+  if (this.refreshInterval) {
+    clearInterval(this.refreshInterval);
+    this.refreshInterval = null;
+  }
+};
+
 // Export for potential use in other modules
 window.penjualanHandler = penjualanHandler;
-window.cacheManager = cacheManager;
-window.sharedCacheManager = sharedCacheManager;
+window.readsMonitor = readsMonitor;
+window.performanceMonitor = performanceMonitor;
 
 // Utility functions for backward compatibility
 function showAlert(message, title = "Informasi", type = "info") {
@@ -2329,131 +2281,181 @@ function printDocument(type) {
   return penjualanHandler.printDocument(type);
 }
 
-// Auto-clear cache every hour to prevent localStorage bloat
-setInterval(() => {
-  sharedCacheManager.clearOldCache();
-  console.log("Performed automatic cache cleanup");
-}, 60 * 60 * 1000);
+// Add loading states for better UX
+const loadingStates = {
+  show(element, text = "Loading...") {
+    const $el = $(element);
+    $el.prop("disabled", true);
+    const originalText = $el.text();
+    $el.data("original-text", originalText);
+    $el.html(`<i class="fas fa-spinner fa-spin me-2"></i>${text}`);
+  },
 
-// Monitor localStorage usage and performance
-setInterval(() => {
-  try {
-    const usage = JSON.stringify(localStorage).length;
-    const maxSize = 5 * 1024 * 1024; // 5MB typical limit
-    const usagePercent = (usage / maxSize) * 100;
-
-    if (usagePercent > 80) {
-      console.warn(`localStorage usage high: ${usagePercent.toFixed(1)}% (${usage} bytes)`);
-      sharedCacheManager.clearOldCache();
-      
-      // If still high after cleanup, remove oldest entries
-      if (JSON.stringify(localStorage).length > maxSize * 0.7) {
-        console.warn("Performing aggressive cache cleanup");
-        const stats = sharedCacheManager.getStats();
-        
-        // Remove expired entries first
-        Object.keys(stats.entries)
-          .filter(key => !stats.entries[key].valid)
-          .forEach(key => sharedCacheManager.remove(key));
-      }
-    }
-
-    // Log performance metrics every 10 minutes
-    if (Date.now() % (10 * 60 * 1000) < 5000) {
-      console.log("Cache performance:", {
-        usage: `${usagePercent.toFixed(1)}%`,
-        entries: sharedCacheManager.getStats().totalEntries,
-        stockCacheAge: penjualanHandler.lastStockUpdate ? 
-          Math.round((Date.now() - penjualanHandler.lastStockUpdate) / 1000) + 's' : 'none'
-      });
-    }
-  } catch (error) {
-    console.warn("Could not check localStorage usage:", error);
-  }
-}, 5 * 60 * 1000); // Check every 5 minutes
-
-// Handle online/offline status
-window.addEventListener('online', async () => {
-  console.log('Connection restored, refreshing data...');
-  try {
-    await Promise.all([
-      penjualanHandler.loadStockData(true),
-      penjualanHandler.loadTodaySales(true)
-    ]);
-    utils.showAlert('Koneksi pulih, data telah diperbarui', 'Info', 'info');
-  } catch (error) {
-    console.error('Failed to refresh data after reconnection:', error);
-  }
-});
-
-window.addEventListener('offline', () => {
-  console.log('Connection lost, using cached data');
-  utils.showAlert('Koneksi terputus, menggunakan data cache', 'Warning', 'warning');
-});
-
-// Performance monitoring
-const performanceMonitor = {
-  startTime: Date.now(),
-  
-  logTiming(operation, startTime) {
-    const duration = Date.now() - startTime;
-    console.log(`⏱️ ${operation}: ${duration}ms`);
-    
-    if (duration > 3000) {
-      console.warn(`🐌 Slow operation detected: ${operation} took ${duration}ms`);
+  hide(element) {
+    const $el = $(element);
+    $el.prop("disabled", false);
+    const originalText = $el.data("original-text");
+    if (originalText) {
+      $el.text(originalText);
     }
   },
-  
-  measureAsync(operation, asyncFn) {
-    return async (...args) => {
-      const start = Date.now();
-      try {
-        const result = await asyncFn(...args);
-        this.logTiming(operation, start);
-        return result;
-      } catch (error) {
-        this.logTiming(`${operation} (failed)`, start);
-        throw error;
-      }
-    };
-  }
 };
 
-// Wrap critical functions with performance monitoring
-penjualanHandler.loadStockData = performanceMonitor.measureAsync(
-  'Load Stock Data', 
-  penjualanHandler.loadStockData.bind(penjualanHandler)
-);
+// Enhanced error handling with retry mechanism
+const errorHandler = {
+  retryAttempts: 3,
+  retryDelay: 1000,
 
-penjualanHandler.saveTransaction = performanceMonitor.measureAsync(
-  'Save Transaction', 
-  penjualanHandler.saveTransaction.bind(penjualanHandler)
-);
+  async withRetry(operation, context = "Operation") {
+    let lastError;
 
-// Error boundary for unhandled errors
-window.addEventListener('error', (event) => {
-  console.error('Unhandled error:', event.error);
-  
-  // Don't show alert for minor errors
-  if (event.error && event.error.message && 
-      !event.error.message.includes('Non-Error promise rejection')) {
-    utils.showAlert(
-      'Terjadi kesalahan tidak terduga. Silakan refresh halaman jika masalah berlanjut.',
-      'Error',
-      'error'
+    for (let attempt = 1; attempt <= this.retryAttempts; attempt++) {
+      try {
+        return await operation();
+      } catch (error) {
+        lastError = error;
+        console.warn(`${context} failed (attempt ${attempt}/${this.retryAttempts}):`, error);
+
+        if (attempt < this.retryAttempts) {
+          await this.delay(this.retryDelay * attempt);
+        }
+      }
+    }
+
+    throw lastError;
+  },
+
+  delay(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  },
+
+  isRetryableError(error) {
+    // Network errors, timeout errors, etc.
+    return (
+      error.code === "unavailable" ||
+      error.code === "deadline-exceeded" ||
+      error.message.includes("network") ||
+      error.message.includes("timeout")
     );
-  }
+  },
+};
+
+// Add connection status indicator
+const connectionStatus = {
+  indicator: null,
+
+  init() {
+    // Create status indicator
+    this.indicator = $(`
+      <div id="connection-status" class="position-fixed bottom-0 end-0 m-3" style="z-index: 9999;">
+        <div class="badge bg-success">
+          <i class="fas fa-wifi me-1"></i>
+          Online
+        </div>
+      </div>
+    `);
+
+    $("body").append(this.indicator);
+    this.updateStatus();
+  },
+
+  updateStatus() {
+    const isOnline = navigator.onLine;
+    const badge = this.indicator.find(".badge");
+
+    if (isOnline) {
+      badge.removeClass("bg-danger").addClass("bg-success");
+      badge.html('<i class="fas fa-wifi me-1"></i>Online');
+    } else {
+      badge.removeClass("bg-success").addClass("bg-danger");
+      badge.html('<i class="fas fa-wifi-slash me-1"></i>Offline');
+    }
+  },
+};
+
+// Initialize connection status
+$(document).ready(() => {
+  connectionStatus.init();
 });
 
-window.addEventListener('unhandledrejection', (event) => {
-  console.error('Unhandled promise rejection:', event.reason);
-  
-  // Prevent default browser behavior
-  event.preventDefault();
-  
-  if (event.reason && typeof event.reason === 'object' && event.reason.message) {
-    console.error('Promise rejection details:', event.reason.message);
-  }
-});
+window.addEventListener("online", () => connectionStatus.updateStatus());
+window.addEventListener("offline", () => connectionStatus.updateStatus());
 
-console.log('🚀 Penjualan Aksesoris module loaded successfully');
+// Add data validation helpers
+const validators = {
+  required(value, fieldName) {
+    if (!value || value.toString().trim() === "") {
+      throw new Error(`${fieldName} harus diisi`);
+    }
+    return true;
+  },
+
+  numeric(value, fieldName) {
+    if (isNaN(value) || value < 0) {
+      throw new Error(`${fieldName} harus berupa angka positif`);
+    }
+    return true;
+  },
+
+  minValue(value, min, fieldName) {
+    if (parseFloat(value) < min) {
+      throw new Error(`${fieldName} minimal ${min}`);
+    }
+    return true;
+  },
+
+  // TAMBAHAN: Validator khusus untuk total harga dengan metode pembayaran
+  totalHarga(value, metodeBayar, fieldName) {
+    const numValue = parseFloat(value);
+    if (metodeBayar === "free") {
+      // Untuk metode free, total harga boleh 0
+      if (numValue < 0) {
+        throw new Error(`${fieldName} tidak boleh negatif`);
+      }
+    } else {
+      // Untuk metode lain, total harga harus > 0
+      if (numValue <= 0) {
+        throw new Error(`${fieldName} harus lebih dari 0`);
+      }
+    }
+    return true;
+  },
+
+  maxLength(value, max, fieldName) {
+    if (value.toString().length > max) {
+      throw new Error(`${fieldName} maksimal ${max} karakter`);
+    }
+    return true;
+  },
+};
+
+// Add form validation to save transaction
+const originalSaveTransaction = penjualanHandler.saveTransaction;
+penjualanHandler.saveTransaction = async function () {
+  try {
+    // Validate form data
+    const salesName = $("#sales").val().trim();
+    validators.required(salesName, "Nama sales");
+    validators.maxLength(salesName, 50, "Nama sales");
+
+    const totalHarga = parseFloat($("#totalOngkos").val().replace(/\./g, "")) || 0;
+    const metodeBayar = $("#metodeBayar").val();
+
+    // PERBAIKAN: Gunakan validator khusus untuk total harga
+    validators.totalHarga(totalHarga, metodeBayar, "Total harga");
+
+    // Call original function
+    return await originalSaveTransaction.call(this);
+  } catch (error) {
+    if (
+      error.message.includes("harus") ||
+      error.message.includes("tidak boleh") ||
+      error.message.includes("minimal") ||
+      error.message.includes("maksimal")
+    ) {
+      utils.showAlert(error.message, "Validasi Error", "warning");
+      return;
+    }
+    throw error;
+  }
+};
