@@ -220,47 +220,98 @@ const laporanPenjualanHandler = {
     }
   },
 
-  // Enhanced load data with improved cache management
-  async loadSalesData(forceRefresh = false) {
+  // ✅ BARU: Refresh hanya data tanggal spesifik
+  async refreshSpecificDateData() {
+    const startDateStr = document.getElementById("startDate").value;
+    const endDateStr = document.getElementById("endDate").value;
+    
+    if (!startDateStr || !endDateStr) {
+      this.showAlert("Pilih rentang tanggal terlebih dahulu", "Peringatan", "warning");
+      return;
+    }
+    
+    const startDate = parseDate(startDateStr);
+    const endDate = parseDate(endDateStr);
+    
+    if (!startDate || !endDate) {
+      this.showAlert("Format tanggal tidak valid", "Error", "error");
+      return;
+    }
+    
+    // Cek apakah rentang tanggal mencakup hari ini
+    const today = new Date();
+    const todayStr = formatDate(today);
+    const isIncludingToday = startDateStr <= todayStr && endDateStr >= todayStr;
+    
+    if (!isIncludingToday) {
+      this.showAlert("Refresh data hanya untuk rentang tanggal yang mencakup hari ini", "Info", "info");
+      return;
+    }
+    
     try {
-      // Create cache key based on current context
-      const cacheKey = 'salesData_all';
+      this.showLoading(true);
       
-      // Check if we need to force refresh for current day data
-      const includesCurrentDay = true; // Sales data always includes current day potentially
-      forceRefresh = forceRefresh || (includesCurrentDay && !cacheManager.isValid(cacheKey));
+      // Clear cache hanya untuk rentang tanggal spesifik
+      const cacheKey = `salesData_${startDateStr}_${endDateStr}`;
+      cacheManager.clear(cacheKey);
+      
+      // Load data hanya untuk rentang tanggal
+      await this.loadSalesDataByDateRange(startDate, endDate, true);
+      
+      // Filter dan render ulang
+      this.filterSalesData();
+      
+      this.showAlert(`Data untuk periode ${startDateStr} - ${endDateStr} berhasil diperbarui`, "Berhasil", "success");
+      
+    } catch (error) {
+      console.error("Error refreshing specific date data:", error);
+      this.showAlert("Gagal memperbarui data: " + error.message, "Error", "error");
+    } finally {
+      this.showLoading(false);
+    }
+  },
 
+  // ✅ BARU: Load data berdasarkan rentang tanggal
+  async loadSalesDataByDateRange(startDate, endDate, forceRefresh = false) {
+    try {
+      const startDateStr = formatDate(startDate);
+      const endDateStr = formatDate(endDate);
+      const cacheKey = `salesData_${startDateStr}_${endDateStr}`;
+      
+      // Cek cache dulu
       if (!forceRefresh) {
         const cachedData = cacheManager.get(cacheKey);
         if (cachedData) {
-          console.log("Using cached sales data");
-          
-          // Show cache indicator
-          this.showCacheIndicator('Menggunakan data cache');
-          
+          console.log(`📦 Using cached data for ${startDateStr} - ${endDateStr}`);
           this.salesData = cachedData;
-          this.populateSalesPersonFilter();
+          this.showCacheIndicator(`Menggunakan data cache (${startDateStr} - ${endDateStr})`);
           return;
         }
       }
-
-      // Hide cache indicator when fetching fresh data
+      
+      console.log(`🔄 Loading fresh data for ${startDateStr} - ${endDateStr}`);
       this.hideCacheIndicator();
       
-      this.showLoading(true);
-      console.log("Fetching fresh sales data from Firestore");
-
-      const salesSnapshot = await getDocs(collection(firestore, "penjualanAksesoris"));
+      // Query dengan filter tanggal
+      const startTimestamp = Timestamp.fromDate(startDate);
+      const endTimestamp = Timestamp.fromDate(new Date(endDate.getTime() + 24 * 60 * 60 * 1000)); // +1 hari
+      
+      const salesQuery = query(
+        collection(firestore, "penjualanAksesoris"),
+        where("timestamp", ">=", startTimestamp),
+        where("timestamp", "<", endTimestamp),
+        orderBy("timestamp", "desc")
+      );
+      
+      const salesSnapshot = await getDocs(salesQuery);
       const salesData = [];
 
       salesSnapshot.forEach((doc) => {
         const data = doc.data();
-
         if (data.jenisPenjualan === "gantiLock") {
           data.jenisPenjualan = "manual";
           data.isGantiLock = true;
         }
-
         salesData.push({ id: doc.id, ...data });
       });
 
@@ -268,16 +319,76 @@ const laporanPenjualanHandler = {
       cacheManager.set(cacheKey, salesData);
       
       this.salesData = salesData;
+      console.log(`✅ Loaded ${salesData.length} sales records for date range`);
+      
+    } catch (error) {
+      console.error("Error loading sales data by date range:", error);
+      throw error;
+    }
+  },
+
+  // Enhanced load data with improved cache management
+  async loadSalesData(forceRefresh = false) {
+    try {
+      // Cek apakah ada filter tanggal aktif
+      const startDateStr = document.getElementById("startDate").value;
+      const endDateStr = document.getElementById("endDate").value;
+      
+      if (startDateStr && endDateStr) {
+        // Jika ada filter tanggal, gunakan query spesifik
+        const startDate = parseDate(startDateStr);
+        const endDate = parseDate(endDateStr);
+        
+        if (startDate && endDate) {
+          await this.loadSalesDataByDateRange(startDate, endDate, forceRefresh);
+          this.populateSalesPersonFilter();
+          return;
+        }
+      }
+      
+      // Fallback ke load semua data (hanya jika tidak ada filter)
+      const cacheKey = 'salesData_all';
+      
+      if (!forceRefresh) {
+        const cachedData = cacheManager.get(cacheKey);
+        if (cachedData) {
+          console.log("📦 Using cached all sales data");
+          this.showCacheIndicator('Menggunakan data cache (semua data)');
+          this.salesData = cachedData;
+          this.populateSalesPersonFilter();
+          return;
+        }
+      }
+
+      this.hideCacheIndicator();
+      this.showLoading(true);
+      console.log("🔄 Loading all sales data from Firestore");
+
+      const salesSnapshot = await getDocs(collection(firestore, "penjualanAksesoris"));
+      const salesData = [];
+
+      salesSnapshot.forEach((doc) => {
+        const data = doc.data();
+        if (data.jenisPenjualan === "gantiLock") {
+          data.jenisPenjualan = "manual";
+          data.isGantiLock = true;
+        }
+        salesData.push({ id: doc.id, ...data });
+      });
+
+      cacheManager.set(cacheKey, salesData);
+      this.salesData = salesData;
       this.populateSalesPersonFilter();
+      
     } catch (error) {
       console.error("Error loading sales data:", error);
       
-      // Try to use cache as fallback
+      // Try fallback
       const cacheKey = 'salesData_all';
       const cachedData = cacheManager.get(cacheKey);
       
       if (cachedData) {
-        console.log("Using cached data as fallback due to error");
+        console.log("📦 Using cached data as fallback");
         this.showAlert("Terjadi kesalahan saat mengambil data terbaru. Menggunakan data cache.", "Peringatan", "warning");
         this.showCacheIndicator('Menggunakan data cache (fallback)');
         this.salesData = cachedData;
@@ -319,18 +430,16 @@ const laporanPenjualanHandler = {
 
   // Force refresh data function
   forceRefreshData() {
-    if (confirm("Apakah Anda yakin ingin menyegarkan data dari server?")) {
-      // Clear cache
-      cacheManager.clear('salesData_all');
-      
-      // Load fresh data
-      this.loadSalesData(true).then(() => {
-        if (this.filteredSalesData && this.filteredSalesData.length > 0) {
-          this.renderSalesTable();
-        }
-      });
-      
-      this.showAlert("Data sedang disegarkan dari server...", "Info", "info");
+    const startDateStr = document.getElementById("startDate").value;
+    const endDateStr = document.getElementById("endDate").value;
+    
+    if (!startDateStr || !endDateStr) {
+      this.showAlert("Pilih rentang tanggal terlebih dahulu sebelum refresh", "Peringatan", "warning");
+      return;
+    }
+    
+    if (confirm("Apakah Anda yakin ingin menyegarkan data untuk periode yang dipilih?")) {
+      this.refreshSpecificDateData();
     }
   },
 
@@ -394,11 +503,11 @@ const laporanPenjualanHandler = {
             extend: "excel",
             text: '<i class="fas fa-file-excel"></i> Excel',
             className: "btn btn-success btn-sm",
-            title: "Laporan Penjualan Manual / Aksesoris / Kotak \n Melati Bawah",
+            title: "Laporan Penjualan Manual / Aksesoris / Kotak \n Melati Atas",
             filename: function () {
               const startDate = document.getElementById("startDate").value || "semua";
               const endDate = document.getElementById("endDate").value || "semua";
-              return `Laporan_Penjualan_Bawah_${startDate}_${endDate}`;
+              return `Laporan_Penjualan_Atas_${startDate}_${endDate}`;
             },
             exportOptions: {
               columns: ":visible",
@@ -439,11 +548,11 @@ const laporanPenjualanHandler = {
             extend: "pdf",
             text: '<i class="fas fa-file-pdf"></i> PDF',
             className: "btn btn-danger btn-sm",
-            title: "Laporan Penjualan Manual / Aksesoris / Kotak \n Melati Bawah",
+            title: "Laporan Penjualan Manual / Aksesoris / Kotak \n Melati Atas",
             filename: function () {
               const startDate = document.getElementById("startDate").value || "semua";
               const endDate = document.getElementById("endDate").value || "semua";
-              return `Laporan_Penjualan_Bawah_${startDate}_${endDate}`;
+              return `Laporan_Penjualan_Atas_${startDate}_${endDate}`;
             },
             orientation: "potrait",
             pageSize: "A4",
@@ -853,7 +962,7 @@ const laporanPenjualanHandler = {
   },
 
   // Enhanced attach event listeners with refresh button
-  attachEventListeners() {
+ attachEventListeners() {
     document.getElementById("filterSalesBtn")?.addEventListener("click", () => {
       this.loadSalesData().then(() => {
         this.filterSalesData();
@@ -866,25 +975,23 @@ const laporanPenjualanHandler = {
       }
     });
 
-    // Add refresh button functionality
+    // ✅ Update refresh button functionality
     this.addRefreshButton();
   },
 
   // Add refresh button to UI
-  addRefreshButton() {
-    // Check if refresh button already exists
+   addRefreshButton() {
     if (document.getElementById('refreshSalesData')) return;
 
-    // Find appropriate location to add refresh button
     const filterBtn = document.getElementById('filterSalesBtn');
     if (filterBtn && filterBtn.parentNode) {
       const refreshButton = document.createElement('button');
       refreshButton.id = 'refreshSalesData';
       refreshButton.className = 'btn btn-outline-secondary ms-2';
-      refreshButton.innerHTML = '<i class="fas fa-sync-alt"></i> Refresh Data';
+      refreshButton.innerHTML = '<i class="fas fa-sync-alt"></i> Refresh Data Periode';
+      refreshButton.title = 'Refresh data untuk periode yang dipilih';
       refreshButton.addEventListener('click', () => this.forceRefreshData());
       
-      // Insert after filter button
       filterBtn.parentNode.insertBefore(refreshButton, filterBtn.nextSibling);
     }
   },
