@@ -1612,7 +1612,7 @@ class OptimizedDataPenjualanApp {
   generateReceiptHTML(transaction) {
     const tanggal = utils.formatDate(transaction.timestamp || transaction.tanggal);
     let salesType = transaction.jenisPenjualan || "aksesoris";
-    if (salesType === "manual") salesType = "manual";
+    if (salesType === "manual") salesType = "layanan";
 
     let receiptHTML = `
       <!DOCTYPE html>
