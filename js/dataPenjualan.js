@@ -10,133 +10,109 @@ import {
   orderBy,
   Timestamp,
   serverTimestamp,
+  onSnapshot,
+  limit,
 } from "https://www.gstatic.com/firebasejs/10.4.0/firebase-firestore.js";
 
 const VERIFICATION_PASSWORD = "smlt116";
 
-// Improved cache management dengan TTL yang lebih efisien
+// Optimized cache manager - no TTL, real-time updates
 const cacheManager = {
   prefix: "melati_sales_",
-  defaultTTL: 60 * 60 * 1000, // 1 jam untuk data historis
-  todayTTL: 5 * 60 * 1000,    // 5 menit untuk data hari ini
+  cache: new Map(),
 
-  set(key, data, ttl = null) {
-    // Tentukan TTL berdasarkan apakah data mencakup hari ini
-    const actualTTL = ttl || (this.isToday(key) ? this.todayTTL : this.defaultTTL);
-    
-    const item = {
-      data,
+  set(key, data) {
+    this.cache.set(this.prefix + key, {
+      data: data,
       timestamp: Date.now(),
-      ttl: actualTTL,
-      version: Date.now() // Untuk versioning
-    };
-    
-    try {
-      localStorage.setItem(this.prefix + key, JSON.stringify(item));
-      // Simpan metadata terpisah untuk tracking
-      localStorage.setItem(this.prefix + key + "_meta", Date.now().toString());
-    } catch (error) {
-      console.warn("Cache storage failed, clearing old cache:", error);
-      this.clearOldCache();
-      try {
-        localStorage.setItem(this.prefix + key, JSON.stringify(item));
-        localStorage.setItem(this.prefix + key + "_meta", Date.now().toString());
-      } catch (retryError) {
-        console.error("Cache storage failed after cleanup:", retryError);
-      }
-    }
+    });
+    this.saveToStorage();
   },
 
   get(key) {
-    try {
-      const item = JSON.parse(localStorage.getItem(this.prefix + key));
-      if (!item) return null;
+    const item = this.cache.get(this.prefix + key);
+    return item ? item.data : null;
+  },
 
-      const now = Date.now();
-      const age = now - item.timestamp;
-      
-      // Cek apakah cache masih valid
-      if (age > item.ttl) {
-        this.remove(key);
-        return null;
-      }
-
-      // Untuk data hari ini, cek juga apakah ada update terbaru
-      if (this.isToday(key)) {
-        const lastUpdate = localStorage.getItem("lastSalesUpdate");
-        if (lastUpdate && parseInt(lastUpdate) > item.timestamp) {
-          this.remove(key);
-          return null;
-        }
-      }
-
-      return item.data;
-    } catch (error) {
-      console.error("Cache get error:", error);
-      this.remove(key);
-      return null;
-    }
+  has(key) {
+    return this.cache.has(this.prefix + key);
   },
 
   remove(key) {
-    localStorage.removeItem(this.prefix + key);
-    localStorage.removeItem(this.prefix + key + "_meta");
+    this.cache.delete(this.prefix + key);
+    this.saveToStorage();
   },
 
   clear() {
-    Object.keys(localStorage)
-      .filter((key) => key.startsWith(this.prefix))
-      .forEach((key) => localStorage.removeItem(key));
+    this.cache.clear();
+    this.clearStorage();
   },
 
-  // Cek apakah key mencakup data hari ini
-  isToday(key) {
-    const today = new Date().toISOString().split('T')[0];
-    return key.includes(today) || key === "salesData";
+  // Update specific transaction in cache
+  updateTransaction(transactionId, updatedData) {
+    const salesData = this.get("salesData");
+    if (salesData && Array.isArray(salesData)) {
+      const index = salesData.findIndex((item) => item.id === transactionId);
+      if (index !== -1) {
+        salesData[index] = { ...salesData[index], ...updatedData };
+        this.set("salesData", salesData);
+        return true;
+      }
+    }
+    return false;
   },
 
-  // Bersihkan cache lama untuk menghemat storage
-  clearOldCache() {
-    const now = Date.now();
-    const maxAge = 24 * 60 * 60 * 1000; // 24 jam
-    
-    Object.keys(localStorage)
-      .filter(key => key.startsWith(this.prefix) && key.endsWith("_meta"))
-      .forEach(metaKey => {
-        try {
-          const timestamp = parseInt(localStorage.getItem(metaKey));
-          if (now - timestamp > maxAge) {
-            const dataKey = metaKey.replace("_meta", "");
-            localStorage.removeItem(dataKey);
-            localStorage.removeItem(metaKey);
-          }
-        } catch (error) {
-          localStorage.removeItem(metaKey);
-        }
+  // Remove specific transaction from cache
+  removeTransaction(transactionId) {
+    const salesData = this.get("salesData");
+    if (salesData && Array.isArray(salesData)) {
+      const filtered = salesData.filter((item) => item.id !== transactionId);
+      this.set("salesData", filtered);
+      return true;
+    }
+    return false;
+  },
+
+  // Add new transaction to cache
+  addTransaction(newTransaction) {
+    const salesData = this.get("salesData") || [];
+    salesData.unshift(newTransaction); // Add to beginning (newest first)
+    this.set("salesData", salesData);
+  },
+
+  saveToStorage() {
+    try {
+      const cacheData = {};
+      this.cache.forEach((value, key) => {
+        cacheData[key] = value;
       });
+      localStorage.setItem("optimizedSalesCache", JSON.stringify(cacheData));
+    } catch (error) {
+      console.warn("Failed to save cache:", error);
+    }
   },
 
-  // Cek apakah cache perlu diupdate
-  shouldUpdate(key) {
-    const metaKey = this.prefix + key + "_meta";
-    const timestamp = localStorage.getItem(metaKey);
-    
-    if (!timestamp) return true;
-    
-    const now = Date.now();
-    const lastUpdate = parseInt(timestamp);
-    const ttl = this.isToday(key) ? this.todayTTL : this.defaultTTL;
-    
-    return (now - lastUpdate) > ttl;
+  loadFromStorage() {
+    try {
+      const stored = localStorage.getItem("optimizedSalesCache");
+      if (stored) {
+        const cacheData = JSON.parse(stored);
+        Object.entries(cacheData).forEach(([key, value]) => {
+          this.cache.set(key, value);
+        });
+        console.log(`💾 Loaded cache: ${this.cache.size} entries`);
+      }
+    } catch (error) {
+      console.warn("Failed to load cache:", error);
+    }
   },
 
-  // Update timestamp untuk cache invalidation
-  updateTimestamp(key) {
-    localStorage.setItem(this.prefix + key + "_meta", Date.now().toString());
-  }
+  clearStorage() {
+    localStorage.removeItem("optimizedSalesCache");
+  },
 };
 
-// Utility functions (tetap sama)
+// Utility functions
 const utils = {
   showAlert: (message, title = "Informasi", type = "info") =>
     Swal.fire({ title, text: message, icon: type, confirmButtonText: "OK", confirmButtonColor: "#0d6efd" }),
@@ -148,31 +124,81 @@ const utils = {
 
   formatDate: (date) => {
     if (!date) return "-";
+
     try {
-      const d = date.toDate ? date.toDate() : date instanceof Date ? date : new Date(date);
-      return `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}/${d.getFullYear()}`;
-    } catch {
+      let dateObj = null;
+
+      // Handle Firestore Timestamp
+      if (date && typeof date.toDate === "function") {
+        dateObj = date.toDate();
+      }
+      // Handle Date object
+      else if (date instanceof Date) {
+        dateObj = date;
+      }
+      // Handle timestamp number
+      else if (typeof date === "number") {
+        dateObj = new Date(date);
+      }
+      // Handle string
+      else if (typeof date === "string") {
+        dateObj = new Date(date);
+      }
+      // Handle object with seconds (Firestore timestamp format)
+      else if (date && typeof date === "object" && date.seconds) {
+        dateObj = new Date(date.seconds * 1000);
+      }
+
+      // Validate the date
+      if (!dateObj || isNaN(dateObj.getTime())) {
+        console.warn("Invalid date object:", date);
+        return "-";
+      }
+
+      const day = String(dateObj.getDate()).padStart(2, "0");
+      const month = String(dateObj.getMonth() + 1).padStart(2, "0");
+      const year = dateObj.getFullYear();
+
+      return `${day}/${month}/${year}`;
+    } catch (error) {
+      console.error("Error formatting date:", date, error);
       return "-";
     }
   },
 
-parseDate: (dateString) => {
+  // ✅ PERBAIKAN: Parse date dengan validasi yang lebih ketat
+  parseDate: (dateString) => {
     if (!dateString) return null;
-    
+
     try {
       // Jika sudah berupa Date object
       if (dateString instanceof Date) {
-        return dateString;
+        return isNaN(dateString.getTime()) ? null : dateString;
       }
-      
-      // Jika berupa string dengan format dd/mm/yyyy
-      if (typeof dateString === 'string') {
+
+      // Handle Firestore Timestamp
+      if (dateString && typeof dateString.toDate === "function") {
+        try {
+          return dateString.toDate();
+        } catch (error) {
+          console.warn("Error converting Firestore timestamp:", error);
+          return null;
+        }
+      }
+
+      // Handle object with seconds (Firestore timestamp format)
+      if (dateString && typeof dateString === "object" && dateString.seconds) {
+        return new Date(dateString.seconds * 1000);
+      }
+
+      // Handle string dengan format dd/mm/yyyy
+      if (typeof dateString === "string") {
         const parts = dateString.split("/");
         if (parts.length === 3) {
           const day = parseInt(parts[0], 10);
           const month = parseInt(parts[1], 10) - 1; // Month is 0-indexed
           const year = parseInt(parts[2], 10);
-          
+
           // Validasi komponen tanggal
           if (day >= 1 && day <= 31 && month >= 0 && month <= 11 && year >= 1900) {
             const date = new Date(year, month, day);
@@ -182,25 +208,21 @@ parseDate: (dateString) => {
             }
           }
         }
+
+        // Fallback: coba parse langsung
+        const parsedDate = new Date(dateString);
+        return isNaN(parsedDate.getTime()) ? null : parsedDate;
       }
-      
-      // Jika berupa number (timestamp)
-      if (typeof dateString === 'number') {
+
+      // Handle number (timestamp)
+      if (typeof dateString === "number") {
         const date = new Date(dateString);
-        if (!isNaN(date.getTime())) {
-          return date;
-        }
+        return isNaN(date.getTime()) ? null : date;
       }
-      
-      // Fallback: coba parse langsung
-      const date = new Date(dateString);
-      if (!isNaN(date.getTime())) {
-        return date;
-      }
-      
+
       return null;
     } catch (error) {
-      console.warn('Error parsing date:', dateString, error);
+      console.warn("Error parsing date:", dateString, error);
       return null;
     }
   },
@@ -222,73 +244,386 @@ parseDate: (dateString) => {
     };
   },
 
-  throttle: (func, limit) => {
-    let inThrottle;
-    return function () {
-      const args = arguments;
-      const context = this;
-      if (!inThrottle) {
-        func.apply(context, args);
-        inThrottle = true;
-        setTimeout(() => (inThrottle = false), limit);
-      }
-    };
+  isSameDate: (date1, date2) => {
+    if (!date1 || !date2) return false;
+    const d1 = date1 instanceof Date ? date1 : new Date(date1);
+    const d2 = date2 instanceof Date ? date2 : new Date(date2);
+    return d1.getFullYear() === d2.getFullYear() && d1.getMonth() === d2.getMonth() && d1.getDate() === d2.getDate();
   },
 };
 
 // Main application class
-class DataPenjualanApp {
+class OptimizedDataPenjualanApp {
   constructor() {
     this.salesData = [];
     this.filteredData = [];
     this.dataTable = null;
     this.currentTransaction = null;
     this.isLoading = false;
+    this.realtimeListener = null;
+    this.isListeningToday = false;
+    this.currentSelectedDate = null;
+    this.currentDeleteAction = null;
+
+    // ✅ PERBAIKAN: Tambahkan properties untuk inactivity timer
+    this.inactivityTimer = null;
+    this.isUserActive = true;
+    this.INACTIVITY_TIMEOUT = 5 * 60 * 1000; // 5 menit
 
     // Bind methods
-    this.refreshData = utils.debounce(this.refreshData.bind(this), 1000);
-    this.filterData = utils.throttle(this.filterData.bind(this), 500);
+    this.filterData = utils.debounce(this.filterData.bind(this), 300);
+
+    // ✅ PERBAIKAN: Bind inactivity methods
+    this.resetInactivityTimer = this.resetInactivityTimer.bind(this);
+    this.handleUserInactivity = this.handleUserInactivity.bind(this);
+  }
+
+  // ✅ PERBAIKAN: Tambahkan method untuk handle inactivity
+  resetInactivityTimer() {
+    // Clear existing timer
+    if (this.inactivityTimer) {
+      clearTimeout(this.inactivityTimer);
+    }
+
+    // Reactivate listener if user becomes active again
+    if (!this.isUserActive && this.currentSelectedDate) {
+      const today = new Date();
+      const isToday = utils.isSameDate(this.currentSelectedDate, today);
+
+      if (isToday && !this.isListeningToday) {
+        this.setupTodayListener();
+        this.isListeningToday = true;
+        console.log("📡 Real-time listener reactivated due to user activity");
+      }
+    }
+
+    this.isUserActive = true;
+
+    // Set new timer
+    this.inactivityTimer = setTimeout(this.handleUserInactivity, this.INACTIVITY_TIMEOUT);
+  }
+
+  // ✅ PERBAIKAN: Handle user inactivity
+  handleUserInactivity() {
+    this.isUserActive = false;
+
+    if (this.realtimeListener && this.isListeningToday) {
+      this.removeTodayListener();
+      this.isListeningToday = false;
+      console.log("🔇 Real-time listener deactivated due to inactivity (5 minutes)");
+
+      // Show subtle notification
+      this.showInactivityNotification();
+    }
+  }
+
+  // ✅ PERBAIKAN: Show inactivity notification
+  showInactivityNotification() {
+    const existingNotification = document.getElementById("inactivityNotification");
+    if (existingNotification) existingNotification.remove();
+
+    const notification = document.createElement("div");
+    notification.id = "inactivityNotification";
+    notification.className = "alert alert-info alert-dismissible fade show mb-2";
+    notification.innerHTML = `
+      <i class="fas fa-pause-circle me-2"></i>
+      Real-time updates dihentikan sementara untuk menghemat kuota. Klik di mana saja untuk mengaktifkan kembali.
+      <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    `;
+
+    const container = document.querySelector(".container-fluid");
+    if (container) {
+      container.insertBefore(notification, container.firstChild);
+    }
+
+    // Auto remove after 10 seconds
+    setTimeout(() => {
+      if (notification.parentNode) notification.remove();
+    }, 10000);
+  }
+
+  // ✅ PERBAIKAN: Setup inactivity listeners
+  setupInactivityListeners() {
+    // List of events that indicate user activity
+    const activityEvents = ["mousedown", "mousemove", "keypress", "scroll", "touchstart", "click", "focus", "blur"];
+
+    // Add event listeners
+    activityEvents.forEach((event) => {
+      document.addEventListener(event, this.resetInactivityTimer, true);
+    });
+
+    // Start the timer
+    this.resetInactivityTimer();
+
+    console.log("👁️ Inactivity monitoring started (5 minutes timeout)");
+  }
+
+  // ✅ PERBAIKAN: Remove inactivity listeners
+  removeInactivityListeners() {
+    const activityEvents = ["mousedown", "mousemove", "keypress", "scroll", "touchstart", "click", "focus", "blur"];
+
+    activityEvents.forEach((event) => {
+      document.removeEventListener(event, this.resetInactivityTimer, true);
+    });
+
+    if (this.inactivityTimer) {
+      clearTimeout(this.inactivityTimer);
+      this.inactivityTimer = null;
+    }
   }
 
   // Initialize application
   async init() {
+    // Load cache first
+    cacheManager.loadFromStorage();
+
     this.setupEventListeners();
     this.initDatePickers();
     this.setDefaultDates();
-    await this.loadSalesData();
+
+    // Load initial data
+    await this.loadInitialData();
+
     this.initDataTable();
     this.populateSalesFilter();
-
-    // Load filter from URL or set default
     this.loadFilterFromURL();
 
-    // If no URL params, set default date
+    // Set default if no URL params
     const params = new URLSearchParams(window.location.search);
     if (!params.get("date")) {
       this.setDefaultDates();
     }
 
-    // Apply filter
     this.filterData();
+    // ✅ PERBAIKAN: Setup inactivity monitoring
+    this.setupInactivityListeners();
+    console.log("✅ Optimized Data Penjualan initialized");
   }
 
-  // Setup all event listeners (tetap sama)
+  // Load initial data with smart caching
+  async loadInitialData() {
+    try {
+      utils.showLoading(true);
+
+      // Check cache first
+      const cachedData = cacheManager.get("salesData");
+      if (cachedData && Array.isArray(cachedData) && cachedData.length > 0) {
+        console.log("📦 Using cached sales data");
+        this.salesData = cachedData;
+        return;
+      }
+
+      // Load from Firestore if no cache
+      console.log("🔄 Loading fresh data from Firestore");
+      await this.loadSalesDataFromFirestore();
+    } catch (error) {
+      console.error("Error loading initial data:", error);
+      utils.showAlert("Gagal memuat data: " + error.message, "Error", "error");
+    } finally {
+      utils.showLoading(false);
+    }
+  }
+
+  // Load data from Firestore
+  async loadSalesDataFromFirestore() {
+    try {
+      // Load recent data first (last 30 days for better performance)
+      const thirtyDaysAgo = new Date();
+      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+
+      const recentQuery = query(
+        collection(firestore, "penjualanAksesoris"),
+        where("timestamp", ">=", Timestamp.fromDate(thirtyDaysAgo)),
+        orderBy("timestamp", "desc")
+      );
+
+      const recentSnapshot = await getDocs(recentQuery);
+      this.salesData = recentSnapshot.docs.map((doc) => {
+        const data = doc.data();
+        if (data.jenisPenjualan === "gantiLock") {
+          data.jenisPenjualan = "manual";
+          data.isGantiLock = true;
+        }
+        return { id: doc.id, ...data };
+      });
+
+      // Cache the data
+      cacheManager.set("salesData", this.salesData);
+
+      console.log(`✅ Loaded ${this.salesData.length} recent transactions`);
+    } catch (error) {
+      console.error("Error loading from Firestore:", error);
+      throw error;
+    }
+  }
+
+  // Setup real-time listener for today's data
+  setupRealtimeListener(selectedDate) {
+    const today = new Date();
+    const isToday = utils.isSameDate(selectedDate, today);
+
+    // ✅ PERBAIKAN: Cek user activity sebelum setup listener
+    if (isToday && !this.isListeningToday && this.isUserActive) {
+      this.setupTodayListener();
+      this.isListeningToday = true;
+      console.log("📡 Real-time listener activated for today");
+    } else if (!isToday && this.isListeningToday) {
+      this.removeTodayListener();
+      this.isListeningToday = false;
+      console.log("🔇 Real-time listener deactivated");
+    }
+    // ✅ PERBAIKAN: Jika user tidak aktif tapi tanggal hari ini, tampilkan info
+    else if (isToday && !this.isUserActive) {
+      console.log("⏸️ Real-time listener not activated due to user inactivity");
+    }
+  }
+
+  // Setup today's real-time listener
+  setupTodayListener() {
+    const today = new Date();
+    const startOfDay = new Date(today);
+    startOfDay.setHours(0, 0, 0, 0);
+    const endOfDay = new Date(today);
+    endOfDay.setHours(23, 59, 59, 999);
+
+    const todayQuery = query(
+      collection(firestore, "penjualanAksesoris"),
+      where("timestamp", ">=", Timestamp.fromDate(startOfDay)),
+      where("timestamp", "<=", Timestamp.fromDate(endOfDay)),
+      orderBy("timestamp", "desc")
+    );
+
+    this.realtimeListener = onSnapshot(
+      todayQuery,
+      (snapshot) => {
+        if (!snapshot.metadata.hasPendingWrites) {
+          this.handleRealtimeUpdate(snapshot);
+        }
+      },
+      (error) => {
+        console.error("Real-time listener error:", error);
+      }
+    );
+  }
+
+  // Remove today's listener
+  removeTodayListener() {
+    if (this.realtimeListener) {
+      this.realtimeListener();
+      this.realtimeListener = null;
+    }
+  }
+
+  // Handle real-time updates
+  handleRealtimeUpdate(snapshot) {
+    let hasChanges = false;
+
+    snapshot.docChanges().forEach((change) => {
+      const docData = { id: change.doc.id, ...change.doc.data() };
+
+      // Standardize jenis penjualan
+      if (docData.jenisPenjualan === "gantiLock") {
+        docData.jenisPenjualan = "manual";
+        docData.isGantiLock = true;
+      }
+
+      if (change.type === "added") {
+        // ✅ PERBAIKAN: Cek duplikasi lebih ketat
+        const exists = this.salesData.find((item) => item.id === docData.id);
+        if (!exists) {
+          // ✅ PERBAIKAN: Cek apakah data sudah ada di filtered data juga
+          const existsInFiltered = this.filteredData.find((item) => item.id === docData.id);
+          if (!existsInFiltered) {
+            this.salesData.unshift(docData);
+            cacheManager.addTransaction(docData);
+            hasChanges = true;
+            console.log("➕ New transaction added:", docData.id);
+          }
+        }
+      } else if (change.type === "modified") {
+        const index = this.salesData.findIndex((item) => item.id === docData.id);
+        if (index !== -1) {
+          this.salesData[index] = docData;
+          cacheManager.updateTransaction(docData.id, docData);
+          hasChanges = true;
+          console.log("✏️ Transaction updated:", docData.id);
+        }
+      } else if (change.type === "removed") {
+        this.salesData = this.salesData.filter((item) => item.id !== docData.id);
+        cacheManager.removeTransaction(docData.id);
+        hasChanges = true;
+        console.log("🗑️ Transaction removed:", docData.id);
+      }
+    });
+
+    if (hasChanges) {
+      // ✅ PERBAIKAN: Hindari double filtering
+      this.filterData();
+      this.showUpdateIndicator();
+    }
+  }
+
+  // Show update indicator
+  showUpdateIndicator() {
+    const existingIndicator = document.getElementById("updateIndicator");
+    if (existingIndicator) existingIndicator.remove();
+
+    const indicator = document.createElement("div");
+    indicator.id = "updateIndicator";
+    indicator.className = "alert alert-success alert-dismissible fade show mb-2";
+    indicator.innerHTML = `
+      <i class="fas fa-sync-alt me-2"></i>
+      Data telah diperbarui secara real-time
+      <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    `;
+
+    const container = document.querySelector(".container-fluid");
+    if (container) {
+      container.insertBefore(indicator, container.firstChild);
+    }
+
+    setTimeout(() => {
+      if (indicator.parentNode) indicator.remove();
+    }, 3000);
+  }
+
+  // Setup event listeners
   setupEventListeners() {
     const events = {
       btnTambahTransaksi: () => (window.location.href = "penjualanAksesoris.html"),
-      btnRefreshData: () => this.refreshData(true),
+      btnRefreshData: () => this.refreshData(),
       btnPrintReceipt: () => this.printDocument("receipt"),
       btnPrintInvoice: () => this.printDocument("invoice"),
       btnSaveEdit: () => this.saveEditTransaction(),
-      btnConfirmDelete: () => this.confirmDeleteTransaction(),
     };
+
+    // ✅ TAMBAHAN: Event listeners untuk delete options
+    const btnHapusPenjualan = document.getElementById("btnHapusPenjualan");
+    const btnBatalPenjualan = document.getElementById("btnBatalPenjualan");
+    const btnConfirmAction = document.getElementById("btnConfirmAction");
+    const btnBackToOptions = document.getElementById("btnBackToOptions");
+
+    if (btnHapusPenjualan) {
+      btnHapusPenjualan.addEventListener("click", () => this.showPasswordSection("hapus"));
+    }
+
+    if (btnBatalPenjualan) {
+      btnBatalPenjualan.addEventListener("click", () => this.showPasswordSection("batal"));
+    }
+
+    if (btnConfirmAction) {
+      btnConfirmAction.addEventListener("click", () => this.executeDeleteAction());
+    }
+
+    if (btnBackToOptions) {
+      btnBackToOptions.addEventListener("click", () => this.showDeleteOptions());
+    }
 
     Object.entries(events).forEach(([id, handler]) => {
       const element = document.getElementById(id);
       if (element) element.addEventListener("click", handler);
     });
 
-    // Auto filter when filter inputs change
     this.setupAutoFilter();
 
     // Table action handlers
@@ -332,43 +667,37 @@ class DataPenjualanApp {
       );
   }
 
-  // Setup auto filter functionality (tetap sama)
+  // Setup auto filter functionality
   setupAutoFilter() {
-    // Auto filter on date change
     $("#filterTanggal").on("changeDate", () => {
       this.filterData();
     });
 
-    // Auto filter on manual date input
     $("#filterTanggal").on("blur", () => {
       this.filterData();
     });
 
-    // Auto filter on dropdown change
     $("#filterJenisPenjualan, #filterSales").on("change", () => {
       this.filterData();
     });
   }
 
-  // Initialize date pickers (tetap sama)
+  // Initialize date pickers
   initDatePickers() {
     const today = new Date();
 
-    // Initialize single date picker
     $("#filterTanggal")
       .datepicker({
         format: "dd/mm/yyyy",
         autoclose: true,
         language: "id",
         todayHighlight: true,
-        endDate: today, // Tidak bisa pilih tanggal masa depan
+        endDate: today,
       })
       .on("changeDate", () => {
-        // Trigger filter when date changes
         setTimeout(() => this.filterData(), 100);
       });
 
-    // Manual input validation
     $("#filterTanggal").on("blur", (e) => {
       const inputDate = utils.parseDate(e.target.value);
       if (inputDate && inputDate > today) {
@@ -379,94 +708,14 @@ class DataPenjualanApp {
     });
   }
 
-  // Set default date range (tetap sama)
+  // Set default dates
   setDefaultDates() {
     const today = new Date();
     const todayFormatted = utils.formatDate(today);
-
     document.getElementById("filterTanggal").value = todayFormatted;
   }
 
-  // PERBAIKAN: Load sales data dengan cache yang lebih efisien
-  async loadSalesData(forceRefresh = false) {
-    if (this.isLoading) return;
-
-    try {
-      this.isLoading = true;
-      utils.showLoading(true);
-
-      const cacheKey = "salesData";
-      
-      // Cek apakah perlu refresh berdasarkan berbagai kondisi
-      const needsRefresh = forceRefresh || 
-                          cacheManager.shouldUpdate(cacheKey) ||
-                          this.checkForDataUpdates();
-
-      // Cek cache terlebih dahulu jika tidak perlu refresh
-      if (!needsRefresh) {
-        const cachedData = cacheManager.get(cacheKey);
-        if (cachedData && Array.isArray(cachedData)) {
-          console.log("Using cached sales data");
-          this.salesData = cachedData;
-          this.filterData();
-          return;
-        }
-      }
-
-      console.log("Fetching fresh sales data from Firestore");
-      const salesSnapshot = await getDocs(
-        query(collection(firestore, "penjualanAksesoris"), orderBy("timestamp", "desc"))
-      );
-
-      this.salesData = salesSnapshot.docs.map((doc) => {
-        const data = doc.data();
-        // Standardize jenis penjualan
-        if (data.jenisPenjualan === "gantiLock") {
-          data.jenisPenjualan = "manual";
-          data.isGantiLock = true;
-        }
-        return { id: doc.id, ...data };
-      });
-
-      // Simpan ke cache dengan TTL yang sesuai
-      cacheManager.set(cacheKey, this.salesData);
-      
-      // Update timestamp untuk tracking
-      localStorage.setItem("lastSalesUpdate", Date.now().toString());
-
-    } catch (error) {
-      console.error("Error loading sales data:", error);
-      
-      // Fallback ke cache jika ada error
-      const cachedData = cacheManager.get("salesData");
-      if (cachedData && Array.isArray(cachedData)) {
-        console.log("Fallback to cached data due to error");
-        utils.showAlert("Gagal memuat data terbaru. Menggunakan data cache.", "Peringatan", "warning");
-        this.salesData = cachedData;
-      } else {
-        utils.showAlert("Gagal memuat data penjualan: " + error.message, "Error", "error");
-        this.salesData = [];
-      }
-    } finally {
-      this.isLoading = false;
-      utils.showLoading(false);
-    }
-  }
-
-  // TAMBAHAN: Cek apakah ada update data yang memerlukan refresh
-  checkForDataUpdates() {
-    // Cek apakah ada transaksi baru yang ditambahkan
-    const lastTransactionTime = localStorage.getItem("lastTransactionTime");
-    const cacheTimestamp = localStorage.getItem(cacheManager.prefix + "salesData_meta");
-    
-    if (lastTransactionTime && cacheTimestamp) {
-      return parseInt(lastTransactionTime) > parseInt(cacheTimestamp);
-    }
-    
-    return false;
-  }
-
-  // Initialize DataTable (tetap sama)
+  // Initialize DataTable
   initDataTable() {
     if (this.dataTable) {
       this.dataTable.off();
@@ -499,14 +748,8 @@ class DataPenjualanApp {
       fixedColumns: false,
       autoWidth: false,
       columnDefs: [
-        {
-          targets: "_all",
-          className: "text-nowrap",
-        },
-        {
-          targets: [10], // Kolom keterangan
-          className: "text-wrap",
-        },
+        { targets: "_all", className: "text-nowrap" },
+        { targets: [10], className: "text-wrap" },
       ],
       language: {
         decimal: "",
@@ -539,7 +782,7 @@ class DataPenjualanApp {
     });
   }
 
-  // Filter data based on form inputs (tetap sama)
+  // Filter data based on form inputs
   filterData() {
     const filters = {
       selectedDate: utils.parseDate(document.getElementById("filterTanggal").value),
@@ -547,7 +790,13 @@ class DataPenjualanApp {
       sales: document.getElementById("filterSales").value,
     };
 
-    // PERBAIKAN: Jika tidak ada tanggal, tampilkan data kosong
+    // Store current selected date for real-time listener
+    this.currentSelectedDate = filters.selectedDate;
+
+    // Setup real-time listener based on selected date
+    this.setupRealtimeListener(filters.selectedDate);
+
+    // If no date selected, show empty data
     if (!filters.selectedDate) {
       this.filteredData = [];
       this.updateDataTable();
@@ -555,30 +804,37 @@ class DataPenjualanApp {
       return;
     }
 
-    // Set tanggal ke awal dan akhir hari
+    // Set date range for filtering
     const startOfDay = new Date(filters.selectedDate);
     startOfDay.setHours(0, 0, 0, 0);
     const endOfDay = new Date(filters.selectedDate);
     endOfDay.setHours(23, 59, 59, 999);
 
-    this.filteredData = this.salesData.filter((transaction) => {
-      // PERBAIKAN: Tangani berbagai format timestamp dengan error handling yang lebih baik
+    // ✅ PERBAIKAN: Remove duplicates before filtering
+    const uniqueSalesData = this.removeDuplicates(this.salesData);
+
+    this.filteredData = uniqueSalesData.filter((transaction) => {
+      // ✅ PERBAIKAN: Handle different timestamp formats dengan error handling
       let transactionDate = null;
-      
+
       if (transaction.timestamp) {
-        // Jika timestamp adalah Firestore Timestamp dengan method toDate()
-        if (typeof transaction.timestamp.toDate === 'function') {
+        // Handle Firestore Timestamp
+        if (typeof transaction.timestamp.toDate === "function") {
           try {
             transactionDate = transaction.timestamp.toDate();
           } catch (error) {
-            console.warn('Error converting Firestore timestamp:', error);
+            console.warn("Error converting Firestore timestamp:", error);
           }
         }
-        // Jika timestamp sudah dalam format Date object
+        // Handle Date object
         else if (transaction.timestamp instanceof Date) {
           transactionDate = transaction.timestamp;
         }
-        // Jika timestamp adalah string atau number
+        // Handle object with seconds
+        else if (transaction.timestamp && typeof transaction.timestamp === "object" && transaction.timestamp.seconds) {
+          transactionDate = new Date(transaction.timestamp.seconds * 1000);
+        }
+        // Handle number or string
         else {
           transactionDate = new Date(transaction.timestamp);
           if (isNaN(transactionDate.getTime())) {
@@ -586,24 +842,23 @@ class DataPenjualanApp {
           }
         }
       }
-      
-      // Fallback ke field tanggal jika timestamp tidak ada atau tidak valid
+
+      // Fallback to tanggal field
       if (!transactionDate && transaction.tanggal) {
         transactionDate = utils.parseDate(transaction.tanggal);
       }
 
-      // PERBAIKAN: Jika masih tidak bisa mendapatkan tanggal yang valid, log detail dan skip
+      // Skip if no valid date
       if (!transactionDate || isNaN(transactionDate.getTime())) {
-        console.warn('Skipping transaction with invalid date:', {
+        console.warn("Skipping transaction with invalid date:", {
           id: transaction.id,
           timestamp: transaction.timestamp,
           tanggal: transaction.tanggal,
-          parsedDate: transactionDate
         });
         return false;
       }
 
-      // Date filter - hanya untuk hari yang dipilih
+      // Date filter
       if (transactionDate < startOfDay || transactionDate > endOfDay) return false;
 
       // Jenis filter
@@ -620,7 +875,19 @@ class DataPenjualanApp {
     this.updateURLParams(filters);
   }
 
-  // Update URL parameters to maintain filter state (tetap sama)
+  // ✅ PERBAIKAN: Tambahkan method untuk remove duplicates
+  removeDuplicates(data) {
+    const seen = new Set();
+    return data.filter((item) => {
+      if (seen.has(item.id)) {
+        return false;
+      }
+      seen.add(item.id);
+      return true;
+    });
+  }
+
+  // Update URL parameters
   updateURLParams(filters) {
     const params = new URLSearchParams();
 
@@ -634,12 +901,11 @@ class DataPenjualanApp {
       params.set("sales", filters.sales);
     }
 
-    // Update URL without page reload
     const newURL = params.toString() ? `${window.location.pathname}?${params.toString()}` : window.location.pathname;
     window.history.replaceState({}, "", newURL);
   }
 
-  // Load filter state from URL parameters (tetap sama)
+  // Load filter state from URL
   loadFilterFromURL() {
     const params = new URLSearchParams(window.location.search);
 
@@ -654,28 +920,44 @@ class DataPenjualanApp {
     }
   }
 
-  // Update DataTable with filtered data (tetap sama)
+  // Update DataTable with filtered data
   updateDataTable() {
     const tableData = this.prepareTableData();
-
     if (this.dataTable) {
       this.dataTable.clear().rows.add(tableData).draw();
     }
   }
 
-  // Prepare data for DataTable (tetap sama)
-   prepareTableData() {
+  // Prepare data for DataTable
+  prepareTableData() {
     const tableData = [];
-    this.filteredData.forEach((transaction) => {
-      // PERBAIKAN: Tangani berbagai format timestamp untuk display
+
+    // ✅ PERBAIKAN: Remove duplicates sebelum prepare data
+    const uniqueFilteredData = this.removeDuplicates(this.filteredData);
+
+    uniqueFilteredData.forEach((transaction) => {
+      // ✅ PERBAIKAN: Handle timestamp dengan lebih robust
       let displayDate = "-";
+
       if (transaction.timestamp) {
-        if (typeof transaction.timestamp.toDate === 'function') {
-          displayDate = utils.formatDate(transaction.timestamp.toDate());
+        if (typeof transaction.timestamp.toDate === "function") {
+          try {
+            displayDate = utils.formatDate(transaction.timestamp.toDate());
+          } catch (error) {
+            console.warn("Error formatting timestamp:", error);
+            displayDate = utils.formatDate(transaction.tanggal) || "-";
+          }
         } else if (transaction.timestamp instanceof Date) {
           displayDate = utils.formatDate(transaction.timestamp);
+        } else if (
+          transaction.timestamp &&
+          typeof transaction.timestamp === "object" &&
+          transaction.timestamp.seconds
+        ) {
+          displayDate = utils.formatDate(new Date(transaction.timestamp.seconds * 1000));
         } else {
-          displayDate = utils.formatDate(new Date(transaction.timestamp));
+          const parsedDate = new Date(transaction.timestamp);
+          displayDate = isNaN(parsedDate.getTime()) ? "-" : utils.formatDate(parsedDate);
         }
       } else if (transaction.tanggal) {
         displayDate = utils.formatDate(transaction.tanggal);
@@ -723,10 +1005,11 @@ class DataPenjualanApp {
         ]);
       }
     });
+
     return tableData;
   }
 
-  // Format jenis penjualan (tetap sama)
+  // Format jenis penjualan
   formatJenisPenjualan(transaction) {
     if (transaction.isGantiLock || transaction.jenisPenjualan === "gantiLock") {
       const kodeAksesoris = transaction.items?.find((item) => item.kodeLock)?.kodeLock || "";
@@ -742,7 +1025,7 @@ class DataPenjualanApp {
     return jenis.charAt(0).toUpperCase() + jenis.slice(1);
   }
 
-  // Get status badge HTML (tetap sama)
+  // Get status badge HTML
   getStatusBadge(transaction) {
     const status = transaction.statusPembayaran || "Lunas";
 
@@ -755,7 +1038,7 @@ class DataPenjualanApp {
     return badges[status] || `<span class="badge bg-secondary">${status}</span>`;
   }
 
-  // Get action buttons HTML (tetap sama)
+  // Get action buttons HTML
   getActionButtons(transactionId) {
     return `
     <div class="action-buttons">
@@ -772,7 +1055,7 @@ class DataPenjualanApp {
   `;
   }
 
-  // Update summary cards (tetap sama)
+  // Update summary cards
   updateSummary() {
     const totalTransaksi = this.filteredData.length;
     const totalPendapatan = this.calculateTotalRevenue(this.filteredData);
@@ -781,13 +1064,12 @@ class DataPenjualanApp {
     document.getElementById("totalPendapatan").textContent = `Rp ${utils.formatRupiah(totalPendapatan)}`;
   }
 
-  // Helper function to calculate actual revenue (tetap sama)
+  // Calculate actual revenue
   calculateActualRevenue(transaction) {
     if (transaction.metodeBayar === "free" || transaction.statusPembayaran === "Free") {
       return 0;
     }
 
-    // Untuk transaksi manual dengan DP, hitung sisa pembayaran
     if (
       transaction.jenisPenjualan === "manual" &&
       (transaction.metodeBayar === "dp" || transaction.statusPembayaran === "DP")
@@ -795,18 +1077,17 @@ class DataPenjualanApp {
       return transaction.sisaPembayaran || 0;
     }
 
-    // For completed transactions, return full amount
     return transaction.totalHarga || 0;
   }
 
-  // Calculate total revenue (tetap sama)
+  // Calculate total revenue
   calculateTotalRevenue(transactions) {
     return transactions.reduce((total, transaction) => {
       return total + this.calculateActualRevenue(transaction);
     }, 0);
   }
 
-  // Populate sales filter dropdown (tetap sama)
+  // Populate sales filter dropdown
   populateSalesFilter() {
     const salesPersons = [...new Set(this.salesData.map((item) => item.sales).filter(Boolean))];
     const dropdown = document.getElementById("filterSales");
@@ -822,7 +1103,7 @@ class DataPenjualanApp {
     });
   }
 
-  // Handle reprint action (tetap sama)
+  // Handle reprint action
   handleReprint(transactionId) {
     this.currentTransaction = this.salesData.find((t) => t.id === transactionId);
     if (!this.currentTransaction) {
@@ -831,7 +1112,7 @@ class DataPenjualanApp {
     $("#printModal").modal("show");
   }
 
-  // Handle edit action (tetap sama)
+  // Handle edit action
   handleEdit(transactionId) {
     this.currentTransaction = this.salesData.find((t) => t.id === transactionId);
     if (!this.currentTransaction) {
@@ -840,7 +1121,7 @@ class DataPenjualanApp {
     this.showEditModal();
   }
 
-  // Handle delete action (tetap sama)
+  // Handle delete action
   handleDelete(transactionId) {
     this.currentTransaction = this.salesData.find((t) => t.id === transactionId);
     if (!this.currentTransaction) {
@@ -849,7 +1130,7 @@ class DataPenjualanApp {
     this.showDeleteModal();
   }
 
-  // Show edit modal (tetap sama)
+  // Show edit modal
   showEditModal() {
     const transaction = this.currentTransaction;
     const jenisPenjualan = transaction.jenisPenjualan;
@@ -857,13 +1138,11 @@ class DataPenjualanApp {
     const formHtml = this.generateEditForm(transaction, jenisPenjualan);
     document.getElementById("editModalBody").innerHTML = formHtml;
 
-    // Attach form events
     this.attachEditFormEvents(transaction);
-
     $("#editModal").modal("show");
   }
 
-  // Generate edit form HTML (tetap sama)
+  // Generate edit form HTML
   generateEditForm(transaction, jenisPenjualan) {
     let formHtml = `
       <div class="mb-3">
@@ -944,7 +1223,7 @@ class DataPenjualanApp {
     return formHtml;
   }
 
-  // Attach edit form events (tetap sama)
+  // Attach edit form events
   attachEditFormEvents(transaction) {
     if (transaction.items) {
       transaction.items.forEach((item, index) => {
@@ -959,7 +1238,7 @@ class DataPenjualanApp {
     }
   }
 
-  // PERBAIKAN: Save edit transaction dengan cache invalidation
+  // Save edit transaction
   async saveEditTransaction() {
     try {
       utils.showLoading(true);
@@ -996,12 +1275,8 @@ class DataPenjualanApp {
       // Update in Firestore
       await updateDoc(doc(firestore, "penjualanAksesoris", this.currentTransaction.id), updateData);
 
-      // Update local data
+      // Update local data and cache
       this.updateLocalData(this.currentTransaction.id, updateData);
-
-      // PERBAIKAN: Invalidate cache setelah update
-      cacheManager.clear();
-      localStorage.setItem("lastTransactionTime", Date.now().toString());
 
       $("#editModal").modal("hide");
       utils.showAlert("Transaksi berhasil diperbarui", "Sukses", "success");
@@ -1013,7 +1288,7 @@ class DataPenjualanApp {
     }
   }
 
-  // Update local data (tetap sama)
+  // Update local data
   updateLocalData(transactionId, updateData) {
     // Update salesData
     const salesIndex = this.salesData.findIndex((item) => item.id === transactionId);
@@ -1029,35 +1304,75 @@ class DataPenjualanApp {
       delete this.filteredData[filteredIndex].lastUpdated;
     }
 
+    // Update cache
+    cacheManager.updateTransaction(transactionId, updateData);
+
     // Re-render table
     this.updateDataTable();
     this.updateSummary();
   }
 
-  // Show delete modal (tetap sama)
+  // Show delete modal
   showDeleteModal() {
     const transaction = this.currentTransaction;
     const date = utils.formatDate(transaction.timestamp || transaction.tanggal);
 
     document.getElementById("deleteTransactionInfo").innerHTML = `
-    <div class="text-start">
-      <p><strong>Tanggal:</strong> ${date}</p>
-      <p><strong>Sales:</strong> ${transaction.sales || "Admin"}</p>
-      <p><strong>Total Harga:</strong> Rp ${utils.formatRupiah(transaction.totalHarga || 0)}</p>
-    </div>
-  `;
+      <div class="text-start">
+        <p><strong>Tanggal:</strong> ${date}</p>
+        <p><strong>Sales:</strong> ${transaction.sales || "Admin"}</p>
+        <p><strong>Total Harga:</strong> Rp ${utils.formatRupiah(transaction.totalHarga || 0)}</p>
+        ${transaction.items ? `<p><strong>Jumlah Item:</strong> ${transaction.items.length}</p>` : ""}
+      </div>
+    `;
 
-    // Clear password field
-    const passwordInput = document.getElementById("deleteVerificationPassword");
-    if (passwordInput) {
-      passwordInput.value = "";
-    }
+    // Reset modal state
+    this.showDeleteOptions();
 
     $("#deleteModal").modal("show");
   }
 
-  // PERBAIKAN: Confirm delete transaction dengan cache invalidation
-  async confirmDeleteTransaction() {
+  // ✅ TAMBAHAN: Helper functions untuk manage modal state
+  showDeleteOptions() {
+    // Show options, hide password section
+    document.getElementById("passwordSection").style.display = "none";
+    document.getElementById("modalFooter").style.display = "block";
+
+    // Reset password
+    const passwordInput = document.getElementById("deleteVerificationPassword");
+    if (passwordInput) passwordInput.value = "";
+
+    // Reset action type
+    this.currentDeleteAction = null;
+  }
+
+  showPasswordSection(actionType) {
+    // Hide options, show password section
+    document.getElementById("passwordSection").style.display = "block";
+    document.getElementById("modalFooter").style.display = "none";
+
+    // Set action type
+    this.currentDeleteAction = actionType;
+
+    // Update confirmation button text
+    const confirmBtn = document.getElementById("btnConfirmAction");
+    if (confirmBtn) {
+      if (actionType === "hapus") {
+        confirmBtn.innerHTML = '<i class="fas fa-trash me-2"></i>Hapus Penjualan';
+        confirmBtn.className = "btn btn-warning";
+      } else {
+        confirmBtn.innerHTML = '<i class="fas fa-undo me-2"></i>Batal Penjualan';
+        confirmBtn.className = "btn btn-danger";
+      }
+    }
+
+    // Focus on password input
+    setTimeout(() => {
+      document.getElementById("deleteVerificationPassword").focus();
+    }, 100);
+  }
+
+  async executeDeleteAction() {
     const password = document.getElementById("deleteVerificationPassword").value;
 
     if (!password) {
@@ -1068,33 +1383,213 @@ class DataPenjualanApp {
       return utils.showAlert("Kata sandi verifikasi salah.", "Error", "error");
     }
 
+    if (this.currentDeleteAction === "hapus") {
+      await this.deleteTransaction();
+    } else if (this.currentDeleteAction === "batal") {
+      await this.cancelTransaction();
+    }
+  }
+
+  // Confirm delete transaction
+  async deleteTransaction() {
     try {
       utils.showLoading(true);
 
+      // Hapus dari Firestore (logic existing)
       await deleteDoc(doc(firestore, "penjualanAksesoris", this.currentTransaction.id));
 
-      // Remove from local arrays
+      // Update local data (logic existing)
       this.salesData = this.salesData.filter((item) => item.id !== this.currentTransaction.id);
       this.filteredData = this.filteredData.filter((item) => item.id !== this.currentTransaction.id);
 
-      // PERBAIKAN: Invalidate cache setelah delete
-      cacheManager.clear();
-      localStorage.setItem("lastTransactionTime", Date.now().toString());
+      // Update cache
+      cacheManager.removeTransaction(this.currentTransaction.id);
 
       this.updateDataTable();
       this.updateSummary();
 
       $("#deleteModal").modal("hide");
-      utils.showAlert("Transaksi berhasil dihapus", "Sukses", "success");
+      utils.showAlert("Penjualan berhasil dihapus", "Sukses", "success");
     } catch (error) {
       console.error("Error deleting transaction:", error);
-      utils.showAlert("Terjadi kesalahan saat menghapus transaksi: " + error.message, "Error", "error");
+      utils.showAlert("Terjadi kesalahan saat menghapus penjualan: " + error.message, "Error", "error");
     } finally {
       utils.showLoading(false);
     }
   }
 
-  // Print document (receipt or invoice) (tetap sama)
+  // ✅ TAMBAHAN: Function baru untuk batal penjualan
+  // ✅ GANTI: Function cancelTransaction() yang ada dengan versi sederhana
+  async cancelTransaction() {
+    try {
+      utils.showLoading(true);
+
+      const transaction = this.currentTransaction;
+      console.log("🔄 Canceling transaction:", transaction.id);
+
+      // Step 1: Hapus data penjualan
+      await deleteDoc(doc(firestore, "penjualanAksesoris", transaction.id));
+      console.log("✅ Sales transaction deleted");
+
+      // Step 2: Hapus data stok transaksi
+      if (transaction.items && transaction.items.length > 0) {
+        const removedCount = await this.removeStockTransactions(transaction);
+        console.log(`✅ Removed ${removedCount} stock transactions`);
+
+        if (removedCount === 0) {
+          console.warn("⚠️ No stock transactions found to remove");
+        }
+      }
+
+      // Step 3: Update local data
+      this.salesData = this.salesData.filter((item) => item.id !== transaction.id);
+      this.filteredData = this.filteredData.filter((item) => item.id !== transaction.id);
+      cacheManager.removeTransaction(transaction.id);
+
+      this.updateDataTable();
+      this.updateSummary();
+
+      $("#deleteModal").modal("hide");
+      utils.showAlert("Transaksi berhasil dibatalkan dan stok dikembalikan", "Sukses", "success");
+    } catch (error) {
+      console.error("❌ Error canceling transaction:", error);
+      utils.showAlert("Terjadi kesalahan saat membatalkan transaksi: " + error.message, "Error", "error");
+    } finally {
+      utils.showLoading(false);
+    }
+  }
+
+  // ✅ TAMBAHAN: Helper function untuk remove stock transactions
+  async removeStockTransactions(transaction) {
+    try {
+      let removedCount = 0;
+      
+      // Get transaction date dengan error handling
+      let transactionDate;
+      try {
+        if (transaction.timestamp && typeof transaction.timestamp.toDate === "function") {
+          transactionDate = transaction.timestamp.toDate();
+        } else if (transaction.timestamp instanceof Date) {
+          transactionDate = transaction.timestamp;
+        } else if (transaction.tanggal) {
+          transactionDate = utils.parseDate(transaction.tanggal);
+        } else {
+          transactionDate = new Date();
+        }
+        
+        if (!transactionDate || isNaN(transactionDate.getTime())) {
+          throw new Error("Invalid transaction date");
+        }
+      } catch (error) {
+        console.error("❌ Error parsing transaction date:", error);
+        throw new Error("Gagal parsing tanggal transaksi");
+      }
+  
+      const startOfDay = new Date(transactionDate);
+      startOfDay.setHours(0, 0, 0, 0);
+      const endOfDay = new Date(transactionDate);
+      endOfDay.setHours(23, 59, 59, 999);
+  
+      console.log(`🔍 Searching stock transactions for date: ${transactionDate.toDateString()}`);
+  
+      // ✅ MAPPING: Tentukan jenis berdasarkan transaction
+      const stockJenis = this.getStockJenisFromTransaction(transaction);
+      console.log(`📋 Expected stock jenis: ${stockJenis.join(', ')}`);
+  
+      // Loop through each item and remove its stock transaction
+      for (const item of transaction.items) {
+        const kodeBarang = item.kodeText || item.barcode || item.kode;
+        
+        if (kodeBarang) {
+          console.log(`🔍 Searching for kode: ${kodeBarang}`);
+  
+          let found = false;
+  
+          // ✅ COBA SETIAP JENIS YANG MUNGKIN
+          for (const jenis of stockJenis) {
+            try {
+              console.log(`🔍 Trying jenis: ${jenis} for ${kodeBarang}`);
+  
+              const stockQuery = query(
+                collection(firestore, "stokAksesorisTransaksi"),
+                where("kode", "==", kodeBarang),
+                where("jenis", "==", jenis),
+                where("timestamp", ">=", Timestamp.fromDate(startOfDay)),
+                where("timestamp", "<=", Timestamp.fromDate(endOfDay)),
+                limit(1)
+              );
+  
+              const stockSnapshot = await getDocs(stockQuery);
+              
+              if (stockSnapshot.size > 0) {
+                const stockDoc = stockSnapshot.docs[0];
+                const stockData = stockDoc.data();
+                
+                console.log(`🎯 Found matching stock transaction: ${stockDoc.id}`);
+                console.log(`📋 Stock data:`, {
+                  kode: stockData.kode,
+                  nama: stockData.nama,
+                  jenis: stockData.jenis,
+                  timestamp: stockData.timestamp?.toDate?.()
+                });
+                
+                await deleteDoc(doc(firestore, "stokAksesorisTransaksi", stockDoc.id));
+                removedCount++;
+                found = true;
+                break; // Keluar dari loop jenis
+              }
+            } catch (queryError) {
+              console.error(`❌ Error querying ${jenis} for ${kodeBarang}:`, queryError);
+              // Continue ke jenis berikutnya
+            }
+          }
+          
+          if (!found) {
+            console.warn(`⚠️ No stock transaction found for: ${kodeBarang} with any jenis`);
+          }
+        } else {
+          console.warn(`⚠️ No kode found for item:`, item);
+        }
+      }
+  
+      console.log(`✅ Total removed: ${removedCount} stock transactions`);
+      return removedCount;
+    } catch (error) {
+      console.error("❌ Error removing stock transactions:", error);
+      throw new Error("Gagal menghapus transaksi stok: " + error.message);
+    }
+  }
+  
+  // ✅ TAMBAH: Helper function untuk mapping jenis
+  getStockJenisFromTransaction(transaction) {
+    const jenisList = [];
+  
+    // ✅ MAPPING berdasarkan kondisi transaction
+    if (transaction.statusPembayaran === "Free" || transaction.metodeBayar === "free") {
+      jenisList.push("free");
+    }
+    
+    if (transaction.isGantiLock || transaction.jenisPenjualan === "gantiLock") {
+      jenisList.push("ganti lock");
+    }
+    
+    // Default: laku (untuk penjualan normal)
+    if (jenisList.length === 0 || 
+        transaction.statusPembayaran === "Lunas" || 
+        transaction.statusPembayaran === "DP") {
+      jenisList.push("laku");
+    }
+  
+    // ✅ FALLBACK: Coba semua jenis jika tidak yakin
+    if (jenisList.length === 0) {
+      jenisList.push("laku", "free", "ganti lock");
+    }
+  
+    return jenisList;
+  }
+
+
+  // Print document (receipt or invoice)
   printDocument(type) {
     if (!this.currentTransaction) {
       return utils.showAlert("Tidak ada data transaksi untuk dicetak!");
@@ -1113,7 +1608,7 @@ class DataPenjualanApp {
     printWindow.document.close();
   }
 
-  // Generate receipt HTML (tetap sama)
+  // Generate receipt HTML
   generateReceiptHTML(transaction) {
     const tanggal = utils.formatDate(transaction.timestamp || transaction.tanggal);
     let salesType = transaction.jenisPenjualan || "aksesoris";
@@ -1125,7 +1620,7 @@ class DataPenjualanApp {
       <head>
         <title>Struk Kasir</title>
         <style>
-          body { font-family: Roboto; font-size: 14px; margin: 0; padding: 0; width: 80mm; }
+          body { font-family: consolas; font-size: 14px; margin: 0; padding: 0; width: 80mm; }
           .receipt { margin: 0 auto; padding: 5mm; }
           .receipt h3, .receipt h4 { text-align: center; margin: 2mm 0; }
           .receipt hr { border-top: 1px dashed #000; }
@@ -1134,7 +1629,7 @@ class DataPenjualanApp {
           .tanggal {margin-left: 10px}
           .text-center { text-align: center; }
           .text-right { text-align: right; }
-          .keterangan { font-style: italic; font-size: 10px; margin-top: 2mm; border-top: 1px dotted #000; padding-top: 2mm; }
+          .keterangan { font-style: italic; font-size: 14px; margin-top: 2mm; border-top: 1px dotted #000; padding-top: 2mm; }
           .payment-info { margin-top: 2mm; border-top: 1px dotted #000; padding-top: 2mm; }
         </style>
       </head>
@@ -1236,7 +1731,7 @@ class DataPenjualanApp {
     return receiptHTML;
   }
 
-  // Generate invoice HTML (tetap sama)
+  // Generate invoice HTML
   generateInvoiceHTML(transaction) {
     const tanggal = utils.formatDate(transaction.timestamp || transaction.tanggal);
 
@@ -1252,7 +1747,7 @@ class DataPenjualanApp {
         .header-info { text-align: right; margin-bottom: 2cm; margin-right: 3cm; margin-top: 0.8cm; }
         .total-row { margin-top: 0.7cm; text-align: right; font-weight: bold; margin-right: 3cm; }
         .sales { text-align: right; margin-top: 0.6cm; margin-right: 2cm; }
-                .keterangan { font-style: italic; font-size: 10px; margin-top: 1cm; margin-bottom: 0.5cm; padding-top: 2mm; text-align: left; margin-left: 0.5cm; margin-right: 3cm; }
+        .keterangan { font-style: italic; font-size: 10px; margin-top: 1cm; margin-bottom: 0.5cm; padding-top: 2mm; text-align: left; margin-left: 0.5cm; margin-right: 3cm; }
         .keterangan-spacer { height: 1.6cm; }
         .item-details { display: flex; flex-wrap: wrap; }
         .item-data { display: grid; grid-template-columns: 2cm 1.8cm 5cm 2cm 2cm 2cm; width: 100%; column-gap: 0.2cm; margin-left: 0.5cm; margin-top: 1cm; margin-right: 3cm; }
@@ -1271,7 +1766,7 @@ class DataPenjualanApp {
     let keteranganText = "";
     let totalHarga = 0;
 
-    // Loop untuk menampilkan semua item-data terlebih dahulu
+    // Loop untuk menampilkan semua item-data
     transaction.items?.forEach((item) => {
       const itemHarga = parseInt(item.totalHarga || 0);
       totalHarga += itemHarga;
@@ -1296,7 +1791,7 @@ class DataPenjualanApp {
       }
     });
 
-    // Tampilkan keterangan atau spacer untuk menjaga posisi total-row
+    // Tampilkan keterangan atau spacer
     if (hasKeterangan && transaction.jenisPenjualan === "manual") {
       invoiceHTML += `
       <div class="keterangan">
@@ -1305,10 +1800,7 @@ class DataPenjualanApp {
       </div>
     `;
     } else {
-      // Tambahkan spacer jika tidak ada keterangan untuk menjaga posisi total-row
-      invoiceHTML += `
-      <div class="keterangan-spacer"></div>
-    `;
+      invoiceHTML += `<div class="keterangan-spacer"></div>`;
     }
 
     // Tampilkan total dan sales
@@ -1317,9 +1809,6 @@ class DataPenjualanApp {
         Rp ${utils.formatRupiah(totalHarga)}
       </div>
       <div class="sales">${transaction.sales || "-"}</div>
-  `;
-
-    invoiceHTML += `
       </div>
       <script>
         window.onload = function() {
@@ -1334,69 +1823,137 @@ class DataPenjualanApp {
     return invoiceHTML;
   }
 
-  // PERBAIKAN: Refresh data dengan cache management yang lebih baik
-  async refreshData(forceRefresh = false) {
-    // Clear cache sebelum refresh untuk memastikan data terbaru
-    if (forceRefresh) {
+  // Refresh data manually
+  async refreshData() {
+    try {
+      utils.showLoading(true);
+
+      // Clear cache and reload from Firestore
       cacheManager.clear();
+      await this.loadSalesDataFromFirestore();
+
+      this.populateSalesFilter();
+      this.filterData();
+
+      utils.showAlert("Data berhasil diperbarui", "Sukses", "success");
+    } catch (error) {
+      console.error("Error refreshing data:", error);
+      utils.showAlert("Gagal memperbarui data: " + error.message, "Error", "error");
+    } finally {
+      utils.showLoading(false);
     }
-    
-    await this.loadSalesData(forceRefresh);
-    this.populateSalesFilter();
-    utils.showAlert("Data berhasil diperbarui", "Sukses", "success");
+  }
+
+  // Load older data when needed
+  async loadOlderData() {
+    try {
+      const oldestTransaction = this.salesData[this.salesData.length - 1];
+      if (!oldestTransaction) return;
+
+      const olderQuery = query(
+        collection(firestore, "penjualanAksesoris"),
+        where("timestamp", "<", oldestTransaction.timestamp),
+        orderBy("timestamp", "desc"),
+        limit(50)
+      );
+
+      const olderSnapshot = await getDocs(olderQuery);
+      const olderData = olderSnapshot.docs.map((doc) => {
+        const data = doc.data();
+        if (data.jenisPenjualan === "gantiLock") {
+          data.jenisPenjualan = "manual";
+          data.isGantiLock = true;
+        }
+        return { id: doc.id, ...data };
+      });
+
+      if (olderData.length > 0) {
+        this.salesData.push(...olderData);
+        cacheManager.set("salesData", this.salesData);
+        console.log(`📥 Loaded ${olderData.length} older transactions`);
+      }
+
+      return olderData.length;
+    } catch (error) {
+      console.error("Error loading older data:", error);
+      return 0;
+    }
+  }
+
+  // Cleanup method
+  destroy() {
+    console.log("🧹 Destroying Optimized Data Penjualan");
+
+    // Remove real-time listener
+    this.removeTodayListener();
+
+    // ✅ PERBAIKAN: Remove inactivity listeners
+    this.removeInactivityListeners();
+
+    // Destroy DataTable
+    if (this.dataTable) {
+      this.dataTable.off();
+      this.dataTable.destroy();
+      this.dataTable = null;
+    }
+
+    // Clear data
+    this.salesData = [];
+    this.filteredData = [];
+    this.currentTransaction = null;
+    this.isLoading = false;
+    this.isListeningToday = false;
+    this.currentSelectedDate = null;
+
+    console.log("✅ Optimized Data Penjualan destroyed");
   }
 }
 
-// PERBAIKAN: Initialize application dengan cache cleanup
+// Initialize application when DOM is ready
 $(document).ready(async function () {
-  // Bersihkan cache lama saat aplikasi dimulai
-  cacheManager.clearOldCache();
-  
-  // Initialize the application
-  const app = new DataPenjualanApp();
-  await app.init();
-
-  // PERBAIKAN: Auto-refresh yang lebih efisien - hanya jika diperlukan
-  setInterval(() => {
-    // Hanya refresh jika cache sudah expired atau ada indikasi data baru
-    const needsRefresh = cacheManager.shouldUpdate("salesData") || 
-                        app.checkForDataUpdates();
-    
-    if (needsRefresh) {
-      app.refreshData();
+  try {
+    // Check dependencies
+    if (typeof firestore === "undefined") {
+      throw new Error("Firebase Firestore not initialized");
     }
-  }, 5 * 60 * 1000); // Check setiap 5 menit
 
-  // PERBAIKAN: Clear cache yang lebih selektif saat page unload
-  window.addEventListener("beforeunload", () => {
-    // Hanya clear cache yang sudah expired
-    const now = Date.now();
-    Object.keys(localStorage)
-      .filter(key => key.startsWith(cacheManager.prefix))
-      .forEach(key => {
-        try {
-          const item = JSON.parse(localStorage.getItem(key));
-          if (item && item.timestamp && (now - item.timestamp) > item.ttl) {
-            localStorage.removeItem(key);
-          }
-        } catch (error) {
-          // Jika ada error parsing, hapus item tersebut
-          localStorage.removeItem(key);
-        }
-      });
-  });
-
-  // TAMBAHAN: Event listener untuk mendeteksi perubahan data dari tab lain
-  window.addEventListener("storage", (e) => {
-    if (e.key === "lastTransactionTime") {
-      // Ada transaksi baru dari tab lain, refresh data
-      app.refreshData(true);
+    if (typeof $ === "undefined") {
+      throw new Error("jQuery not loaded");
     }
-  });
 
-  console.log("Data Penjualan application initialized with improved cache management");
+    // Initialize the optimized application
+    const app = new OptimizedDataPenjualanApp();
+    await app.init();
+
+    // Make app globally available for debugging
+    window.dataPenjualanApp = app;
+
+    console.log("✅ Optimized Data Penjualan System initialized successfully");
+  } catch (error) {
+    console.error("❌ Failed to initialize Optimized Data Penjualan System:", error);
+    utils.showAlert("Gagal menginisialisasi aplikasi: " + error.message, "Error", "error");
+  }
+});
+
+// Cleanup on page unload
+window.addEventListener("beforeunload", () => {
+  if (window.dataPenjualanApp) {
+    window.dataPenjualanApp.destroy();
+  }
+});
+
+// Cross-tab communication for cache synchronization
+window.addEventListener("storage", (e) => {
+  if (e.key === "optimizedSalesCache" && window.dataPenjualanApp) {
+    // Reload cache when updated from another tab
+    cacheManager.loadFromStorage();
+    window.dataPenjualanApp.salesData = cacheManager.get("salesData") || [];
+    window.dataPenjualanApp.filterData();
+    console.log("🔄 Cache synchronized from another tab");
+  }
 });
 
 // Export for potential use in other modules
-export default DataPenjualanApp;
+export default OptimizedDataPenjualanApp;
 
+console.log("📊 Optimized Data Penjualan Module loaded successfully");
