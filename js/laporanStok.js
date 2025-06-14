@@ -871,14 +871,14 @@ class OptimizedStockReport {
           text: '<i class="fas fa-file-excel me-2"></i>Excel',
           className: "btn btn-success btn-sm me-1",
           exportOptions: { columns: ":visible" },
-          title: `Laporan Stok Kotak & Aksesoris Melati Atas (${selectedDate})`,
+          title: `Laporan Stok Kotak & Aksesoris Melati Bawah (${selectedDate})`,
         },
         {
           extend: "pdf",
           text: '<i class="fas fa-file-pdf me-2"></i>PDF',
           className: "btn btn-danger btn-sm me-1",
           exportOptions: { columns: ":visible" },
-          title: `Laporan Stok Kotak & Aksesoris Melati Atas\n(${selectedDate})`,
+          title: `Laporan Stok Kotak & Aksesoris Melati Bawah\n(${selectedDate})`,
           customize: function (doc) {
             doc.defaultStyle.fontSize = 8;
             doc.styles.tableHeader.fontSize = 9;
