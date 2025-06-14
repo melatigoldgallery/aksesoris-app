@@ -170,8 +170,10 @@ function addHistoryEntry(item, historyEntry) {
     item.history.unshift(historyEntry);
     item.history.sort((a, b) => new Date(b.date) - new Date(a.date));
     
-    if (item.history.length > MAX_HISTORY_RECORDS) {
-        item.history = item.history.slice(0, MAX_HISTORY_RECORDS);
+    // Hapus riwayat yang lebih dari 10, bukan hanya batasi tampilan
+    if (item.history.length > 10) {
+        item.history = item.history.slice(0, 10);
+        console.log(`History trimmed to 10 records for better performance`);
     }
     
     return item.history;
@@ -335,9 +337,9 @@ function showDetailColorStock(category, type) {
     const detailTableBody = document.getElementById('detail-color-table-body');
     
     detailTitle.innerHTML = `
-        <span class="text-primary">${type}</span> 
-        <i class="fas fa-arrow-right mx-2 text-muted"></i> 
-        <span class="text-secondary">${category.toUpperCase()}</span>
+        <span class="text-light">${type}</span> 
+        <i class="fas fa-arrow-right mx-2 text-light"></i> 
+        <span class="text-light">${category.toUpperCase()}</span>
     `;
     detailTableBody.innerHTML = '';
     
@@ -466,10 +468,11 @@ function showHistory(category, type) {
         row.innerHTML = '<td colspan="6" class="text-center">Tidak ada riwayat</td>';
         historyTableBody.appendChild(row);
     } else {
-        // Sort by date descending
+        // Sort by date descending and limit to 10 records
         allHistory.sort((a, b) => new Date(b.date) - new Date(a.date));
+        const limitedHistory = allHistory.slice(0, 10); // Batasi hanya 10 riwayat
         
-        allHistory.forEach(record => {
+        limitedHistory.forEach(record => {
             const row = document.createElement('tr');
             row.innerHTML = `
                 <td>${formatDate(record.date)}</td>
@@ -481,6 +484,21 @@ function showHistory(category, type) {
             `;
             historyTableBody.appendChild(row);
         });
+        
+        // Tampilkan info jika ada lebih dari 10 riwayat
+        if (allHistory.length > 10) {
+            const infoRow = document.createElement('tr');
+            infoRow.className = 'table-info';
+            infoRow.innerHTML = `
+                <td colspan="6" class="text-center">
+                    <small class="text-muted">
+                        <i class="fas fa-info-circle me-1"></i>
+                        Menampilkan 10 riwayat terbaru dari ${allHistory.length} total riwayat
+                    </small>
+                </td>
+            `;
+            historyTableBody.appendChild(infoRow);
+        }
     }
     
     const historyModal = new bootstrap.Modal(document.getElementById('historyModal'));
@@ -870,10 +888,16 @@ function scheduleHistoryCleanup() {
     if (lastCleanup !== today) {
         console.log('Running scheduled history cleanup');
         
-        if (Object.keys(stockData).length > 0) {
-            cleanHistoryData();
-            localStorage.setItem('lastHistoryCleanup', today);
-            console.log(`History cleanup completed. Limited to ${MAX_HISTORY_RECORDS} records per item.`);
+        // Add safer check for stockData
+        if (stockData && typeof stockData === 'object' && Object.keys(stockData).length > 0) {
+            try {
+                cleanHistoryData();
+                localStorage.setItem('lastHistoryCleanup', today);
+                console.log(`History cleanup completed. Limited to ${MAX_HISTORY_RECORDS} records per item.`);
+            } catch (error) {
+                console.error('Error during history cleanup:', error);
+                // Don't let cleanup errors break the app
+            }
         }
     }
 }
@@ -881,15 +905,32 @@ function scheduleHistoryCleanup() {
 // Clean history data
 function cleanHistoryData() {
     Object.keys(stockData).forEach(category => {
+        if (!stockData[category]) return;
+        
         Object.keys(stockData[category]).forEach(type => {
+            if (!stockData[category][type]) return;
+            
             Object.keys(stockData[category][type]).forEach(color => {
                 const item = stockData[category][type][color];
-                if (item.history && Array.isArray(item.history)) {
+                
+                if (!item || typeof item !== 'object') return;
+                
+                if (!item.history) {
+                    item.history = [];
+                    return;
+                }
+                
+                if (Array.isArray(item.history)) {
                     item.history.sort((a, b) => new Date(b.date) - new Date(a.date));
                     
-                    if (item.history.length > MAX_HISTORY_RECORDS) {
-                        item.history = item.history.slice(0, MAX_HISTORY_RECORDS);
+                    // Hapus permanen riwayat yang lebih dari 10
+                    if (item.history.length > 10) {
+                        const deletedCount = item.history.length - 10;
+                        item.history = item.history.slice(0, 10);
+                        console.log(`Deleted ${deletedCount} old history records for ${category}-${type}-${color}`);
                     }
+                } else {
+                    item.history = [];
                 }
             });
         });
