@@ -1609,7 +1609,7 @@ class OptimizedDataPenjualanApp {
   generateReceiptHTML(transaction) {
     const tanggal = utils.formatDate(transaction.timestamp || transaction.tanggal);
     let salesType = transaction.jenisPenjualan || "aksesoris";
-    if (salesType === "manual") salesType = "layanan";
+    if (salesType === "manual") salesType = "manual";
 
     let receiptHTML = `
       <!DOCTYPE html>
@@ -1617,7 +1617,7 @@ class OptimizedDataPenjualanApp {
       <head>
         <title>Struk Kasir</title>
         <style>
-          body { font-family: consolas; font-size: 14px; margin: 0; padding: 0; width: 80mm; }
+          body { font-family: consolas; font-size: 12px; margin: 0; padding: 0; width: 80mm;}
           .receipt { margin: 0 auto; padding: 5mm; }
           .receipt h3, .receipt h4 { text-align: center; margin: 2mm 0; }
           .receipt hr { border-top: 1px dashed #000; }
@@ -1631,7 +1631,7 @@ class OptimizedDataPenjualanApp {
         </style>
       </head>
       <body>
-        <div class="receipt">
+        <div class="receipt d-flex justify-content-center">
           <h3>MELATI 3</h3>
           <h4>JL. DIPONEGORO NO. 116</h4>
           <h4>NOTA PENJUALAN ${salesType.toUpperCase()}</h4>
