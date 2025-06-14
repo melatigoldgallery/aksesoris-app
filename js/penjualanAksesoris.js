@@ -1740,7 +1740,7 @@ const penjualanHandler = {
             <style>
               body {
                 font-family: consolas;
-                font-size: 14px;
+                font-size: 12px;
                 margin: 0;
                 padding: 0;
                 width: 80mm;
