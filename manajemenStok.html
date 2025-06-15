@@ -87,6 +87,66 @@
       .batu-card {
         background-color: #fce4ec;
       }
+      @keyframes fadeInUp {
+        from {
+          opacity: 0;
+          transform: translateY(10px);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+
+      .detail-color-btn {
+        transition: all 0.2s ease-in-out !important;
+      }
+
+      .detail-color-btn:hover:not(:disabled) {
+        transform: translateY(-1px) !important;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1) !important;
+      }
+
+      .detail-color-btn:active:not(:disabled) {
+        transform: translateY(0) !important;
+      }
+
+      .table tbody tr {
+        transition: background-color 0.2s ease;
+      }
+
+      .table tbody tr:hover {
+        background-color: rgba(0, 0, 0, 0.02);
+      }
+
+      .badge {
+        font-weight: 300 !important;
+      }
+      .color-badge {
+        display: inline-block;
+        width: 20px;
+        height: 12px;
+        border-radius: 50%;
+        margin-right: 8px;
+        border: 2px solid #fff;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+      }
+      .color-pink {
+        background-color: #ff7c89;
+      }
+      .color-kuning {
+        background-color: #ffc107;
+      }
+      .color-hijau {
+        background-color: #28a745;
+      }
+      .color-biru {
+        background-color: #007bff;
+      }
+      .color-putih {
+        background-color: #f8f9fa;
+        border-color: #dee2e6;
+      }
     </style>
   </head>
   <body>
@@ -397,12 +457,18 @@
                       <button
                         class="btn btn-primary me-2"
                         data-bs-toggle="modal"
-                        data-bs-target="#tambahStokBrankasModal"
+                        data-bs-target="#tambahStokModal"
+                        data-category="brankas"
                       >
                         <i class="fas fa-plus-circle me-2"></i>
                         Tambah Stok
                       </button>
-                      <button class="btn btn-danger" data-bs-toggle="modal" data-bs-target="#kurangiStokBrankasModal">
+                      <button
+                        class="btn btn-danger"
+                        data-bs-toggle="modal"
+                        data-bs-target="#kurangiStokModal"
+                        data-category="brankas"
+                      >
                         <i class="fas fa-minus-circle me-2"></i>
                         Kurangi Stok
                       </button>
@@ -441,12 +507,18 @@
                       <button
                         class="btn btn-primary me-2"
                         data-bs-toggle="modal"
-                        data-bs-target="#tambahStokAdminModal"
+                        data-bs-target="#tambahStokModal"
+                        data-category="admin"
                       >
                         <i class="fas fa-plus-circle me-2"></i>
                         Tambah Stok
                       </button>
-                      <button class="btn btn-danger" data-bs-toggle="modal" data-bs-target="#kurangiStokAdminModal">
+                      <button
+                        class="btn btn-danger"
+                        data-bs-toggle="modal"
+                        data-bs-target="#kurangiStokModal"
+                        data-category="admin"
+                      >
                         <i class="fas fa-minus-circle me-2"></i>
                         Kurangi Stok
                       </button>
@@ -485,12 +557,18 @@
                       <button
                         class="btn btn-primary me-2"
                         data-bs-toggle="modal"
-                        data-bs-target="#tambahStokPostingModal"
+                        data-bs-target="#tambahStokModal"
+                        data-category="posting"
                       >
                         <i class="fas fa-plus-circle me-2"></i>
                         Tambah Stok
                       </button>
-                      <button class="btn btn-danger" data-bs-toggle="modal" data-bs-target="#kurangiStokPostingModal">
+                      <button
+                        class="btn btn-danger"
+                        data-bs-toggle="modal"
+                        data-bs-target="#kurangiStokModal"
+                        data-category="posting"
+                      >
                         <i class="fas fa-minus-circle me-2"></i>
                         Kurangi Stok
                       </button>
@@ -535,7 +613,8 @@
                       <button
                         class="btn btn-primary me-2"
                         data-bs-toggle="modal"
-                        data-bs-target="#tambahStokBarangRusakModal"
+                        data-bs-target="#tambahStokModal"
+                        data-category="barang-rusak"
                       >
                         <i class="fas fa-plus-circle me-2"></i>
                         Tambah Stok
@@ -543,7 +622,8 @@
                       <button
                         class="btn btn-danger"
                         data-bs-toggle="modal"
-                        data-bs-target="#kurangiStokBarangRusakModal"
+                        data-bs-target="#kurangiStokModal"
+                        data-category="barang-rusak"
                       >
                         <i class="fas fa-minus-circle me-2"></i>
                         Kurangi Stok
@@ -583,12 +663,18 @@
                       <button
                         class="btn btn-primary me-2"
                         data-bs-toggle="modal"
-                        data-bs-target="#tambahStokBatuLepasModal"
+                        data-bs-target="#tambahStokModal"
+                        data-category="batu-lepas"
                       >
                         <i class="fas fa-plus-circle me-2"></i>
                         Tambah Stok
                       </button>
-                      <button class="btn btn-danger" data-bs-toggle="modal" data-bs-target="#kurangiStokBatuLepasModal">
+                      <button
+                        class="btn btn-danger"
+                        data-bs-toggle="modal"
+                        data-bs-target="#kurangiStokModal"
+                        data-category="batu-lepas"
+                      >
                         <i class="fas fa-minus-circle me-2"></i>
                         Kurangi Stok
                       </button>
@@ -620,22 +706,23 @@
       </main>
     </div>
 
-    <!-- Modals for BRANKAS -->
-    <div class="modal fade" id="tambahStokBrankasModal" tabindex="-1">
+    <!-- Universal Modal for Add Stock -->
+    <div class="modal fade" id="tambahStokModal" tabindex="-1">
       <div class="modal-dialog">
         <div class="modal-content">
           <div class="modal-header">
             <h5 class="modal-title">
               <i class="fas fa-plus-circle me-2"></i>
-              Tambah Stok Brankas
+              Tambah Stok
+              <span id="tambah-category-title"></span>
             </h5>
             <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
           </div>
           <div class="modal-body">
-            <form id="tambahStokBrankasForm">
+            <form id="tambahStokForm">
               <div class="mb-3">
-                <label for="jenis-barang-brankas-tambah" class="form-label">Jenis Barang</label>
-                <select class="form-select" id="jenis-barang-brankas-tambah" required>
+                <label for="jenis-barang-tambah" class="form-label">Jenis Barang</label>
+                <select class="form-select" id="jenis-barang-tambah" required>
                   <option value="">Pilih Jenis Barang</option>
                   <option value="KALUNG">KALUNG</option>
                   <option value="LIONTIN">LIONTIN</option>
@@ -647,16 +734,42 @@
                 </select>
               </div>
               <div class="mb-3">
-                <label for="jumlah-brankas-tambah" class="form-label">Jumlah</label>
-                <input type="number" class="form-control" id="jumlah-brankas-tambah" min="1" required />
+                <label for="warna-barcode-tambah" class="form-label">Warna Barcode</label>
+                <select class="form-select" id="warna-barcode-tambah" required>
+                  <option value="">Pilih Warna Barcode</option>
+                  <option value="PINK">
+                    <span class="color-badge color-pink"></span>
+                    PINK
+                  </option>
+                  <option value="KUNING">
+                    <span class="color-badge color-kuning"></span>
+                    KUNING
+                  </option>
+                  <option value="HIJAU">
+                    <span class="color-badge color-hijau"></span>
+                    HIJAU
+                  </option>
+                  <option value="BIRU">
+                    <span class="color-badge color-biru"></span>
+                    BIRU
+                  </option>
+                  <option value="PUTIH">
+                    <span class="color-badge color-putih"></span>
+                    PUTIH
+                  </option>
+                </select>
               </div>
               <div class="mb-3">
-                <label for="penambah-brankas" class="form-label">Penambah Stok</label>
-                <input type="text" class="form-control" id="penambah-brankas" required />
+                <label for="jumlah-tambah" class="form-label">Jumlah</label>
+                <input type="number" class="form-control" id="jumlah-tambah" min="1" required />
               </div>
               <div class="mb-3">
-                <label for="penerima-brankas" class="form-label">Penerima Stok</label>
-                <input type="text" class="form-control" id="penerima-brankas" required />
+                <label for="penambah-stok" class="form-label">Penambah Stok</label>
+                <input type="text" class="form-control" id="penambah-stok" required />
+              </div>
+              <div class="mb-3">
+                <label for="penerima-stok" class="form-label">Penerima Stok</label>
+                <input type="text" class="form-control" id="penerima-stok" required />
               </div>
             </form>
           </div>
@@ -665,7 +778,7 @@
               <i class="fas fa-times me-2"></i>
               Batal
             </button>
-            <button type="button" class="btn btn-primary" id="simpan-tambah-brankas">
+            <button type="button" class="btn btn-primary" id="simpan-tambah-stok">
               <i class="fas fa-save me-2"></i>
               Simpan
             </button>
@@ -674,21 +787,23 @@
       </div>
     </div>
 
-    <div class="modal fade" id="kurangiStokBrankasModal" tabindex="-1">
+    <!-- Universal Modal for Reduce Stock -->
+    <div class="modal fade" id="kurangiStokModal" tabindex="-1">
       <div class="modal-dialog">
         <div class="modal-content">
           <div class="modal-header">
             <h5 class="modal-title">
               <i class="fas fa-minus-circle me-2"></i>
-              Kurangi Stok Brankas
+              Kurangi Stok
+              <span id="kurang-category-title"></span>
             </h5>
             <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
           </div>
           <div class="modal-body">
-            <form id="kurangiStokBrankasForm">
+            <form id="kurangiStokForm">
               <div class="mb-3">
-                <label for="jenis-barang-brankas-kurang" class="form-label">Jenis Barang</label>
-                <select class="form-select" id="jenis-barang-brankas-kurang" required>
+                <label for="jenis-barang-kurang" class="form-label">Jenis Barang</label>
+                <select class="form-select" id="jenis-barang-kurang" required>
                   <option value="">Pilih Jenis Barang</option>
                   <option value="KALUNG">KALUNG</option>
                   <option value="LIONTIN">LIONTIN</option>
@@ -700,70 +815,27 @@
                 </select>
               </div>
               <div class="mb-3">
-                <label for="jumlah-brankas-kurang" class="form-label">Jumlah</label>
-                <input type="number" class="form-control" id="jumlah-brankas-kurang" min="1" required />
-              </div>
-              <div class="mb-3">
-                <label for="pengurang-brankas" class="form-label">Pengurang Stok</label>
-                <input type="text" class="form-control" id="pengurang-brankas" required />
-              </div>
-              <div class="mb-3">
-                <label for="keterangan-brankas" class="form-label">Keterangan</label>
-                <textarea class="form-control" id="keterangan-brankas" rows="3" required></textarea>
-              </div>
-            </form>
-          </div>
-          <div class="modal-footer">
-            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
-              <i class="fas fa-times me-2"></i>
-              Batal
-            </button>
-            <button type="button" class="btn btn-primary" id="simpan-kurang-brankas">
-              <i class="fas fa-save me-2"></i>
-              Simpan
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Modals for ADMIN -->
-    <div class="modal fade" id="tambahStokAdminModal" tabindex="-1">
-      <div class="modal-dialog">
-        <div class="modal-content">
-          <div class="modal-header">
-            <h5 class="modal-title">
-              <i class="fas fa-plus-circle me-2"></i>
-              Tambah Stok Admin
-            </h5>
-            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-          </div>
-          <div class="modal-body">
-            <form id="tambahStokAdminForm">
-              <div class="mb-3">
-                <label for="jenis-barang-admin-tambah" class="form-label">Jenis Barang</label>
-                <select class="form-select" id="jenis-barang-admin-tambah" required>
-                  <option value="">Pilih Jenis Barang</option>
-                  <option value="KALUNG">KALUNG</option>
-                  <option value="LIONTIN">LIONTIN</option>
-                  <option value="ANTING">ANTING</option>
-                  <option value="CINCIN">CINCIN</option>
-                  <option value="HALA">HALA</option>
-                  <option value="GELANG">GELANG</option>
-                  <option value="GIWANG">GIWANG</option>
+                <label for="warna-barcode-kurang" class="form-label">Warna Barcode</label>
+                <select class="form-select" id="warna-barcode-kurang" required>
+                  <option value="">Pilih Warna Barcode</option>
+                  <!-- Options will be populated based on available stock -->
                 </select>
               </div>
               <div class="mb-3">
-                <label for="jumlah-admin-tambah" class="form-label">Jumlah</label>
-                <input type="number" class="form-control" id="jumlah-admin-tambah" min="1" required />
+                <label for="jumlah-kurang" class="form-label">Jumlah</label>
+                <input type="number" class="form-control" id="jumlah-kurang" min="1" required />
+                <small class="form-text text-muted">
+                  Stok tersedia:
+                  <span id="stok-tersedia">0</span>
+                </small>
               </div>
               <div class="mb-3">
-                <label for="penambah-admin" class="form-label">Penambah Stok</label>
-                <input type="text" class="form-control" id="penambah-admin" required />
+                <label for="pengurang-stok" class="form-label">Pengurang Stok</label>
+                <input type="text" class="form-control" id="pengurang-stok" required />
               </div>
               <div class="mb-3">
-                <label for="penerima-admin" class="form-label">Penerima Stok</label>
-                <input type="text" class="form-control" id="penerima-admin" required />
+                <label for="keterangan-stok" class="form-label">Keterangan</label>
+                <textarea class="form-control" id="keterangan-stok" rows="3" required></textarea>
               </div>
             </form>
           </div>
@@ -772,381 +844,7 @@
               <i class="fas fa-times me-2"></i>
               Batal
             </button>
-            <button type="button" class="btn btn-primary" id="simpan-tambah-admin">
-              <i class="fas fa-save me-2"></i>
-              Simpan
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <div class="modal fade" id="kurangiStokAdminModal" tabindex="-1">
-      <div class="modal-dialog">
-        <div class="modal-content">
-          <div class="modal-header">
-            <h5 class="modal-title">
-              <i class="fas fa-minus-circle me-2"></i>
-              Kurangi Stok Admin
-            </h5>
-            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-          </div>
-          <div class="modal-body">
-            <form id="kurangiStokAdminForm">
-              <div class="mb-3">
-                <label for="jenis-barang-admin-kurang" class="form-label">Jenis Barang</label>
-                <select class="form-select" id="jenis-barang-admin-kurang" required>
-                  <option value="">Pilih Jenis Barang</option>
-                  <option value="KALUNG">KALUNG</option>
-                  <option value="LIONTIN">LIONTIN</option>
-                  <option value="ANTING">ANTING</option>
-                  <option value="CINCIN">CINCIN</option>
-                  <option value="HALA">HALA</option>
-                  <option value="GELANG">GELANG</option>
-                  <option value="GIWANG">GIWANG</option>
-                </select>
-              </div>
-              <div class="mb-3">
-                <label for="jumlah-admin-kurang" class="form-label">Jumlah</label>
-                <input type="number" class="form-control" id="jumlah-admin-kurang" min="1" required />
-              </div>
-              <div class="mb-3">
-                <label for="pengurang-admin" class="form-label">Pengurang Stok</label>
-                <input type="text" class="form-control" id="pengurang-admin" required />
-              </div>
-              <div class="mb-3">
-                <label for="keterangan-admin" class="form-label">Keterangan</label>
-                <textarea class="form-control" id="keterangan-admin" rows="3" required></textarea>
-              </div>
-            </form>
-          </div>
-          <div class="modal-footer">
-            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
-              <i class="fas fa-times me-2"></i>
-              Batal
-            </button>
-            <button type="button" class="btn btn-primary" id="simpan-kurang-admin">
-              <i class="fas fa-save me-2"></i>
-              Simpan
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Modals for BARANG RUSAK -->
-    <div class="modal fade" id="tambahStokBarangRusakModal" tabindex="-1">
-      <div class="modal-dialog">
-        <div class="modal-content">
-          <div class="modal-header">
-            <h5 class="modal-title">
-              <i class="fas fa-plus-circle me-2"></i>
-              Tambah Stok Barang Rusak
-            </h5>
-            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-          </div>
-          <div class="modal-body">
-            <form id="tambahStokBarangRusakForm">
-              <div class="mb-3">
-                <label for="jenis-barang-rusak-tambah" class="form-label">Jenis Barang</label>
-                <select class="form-select" id="jenis-barang-rusak-tambah" required>
-                  <option value="">Pilih Jenis Barang</option>
-                  <option value="KALUNG">KALUNG</option>
-                  <option value="LIONTIN">LIONTIN</option>
-                  <option value="ANTING">ANTING</option>
-                  <option value="CINCIN">CINCIN</option>
-                  <option value="HALA">HALA</option>
-                  <option value="GELANG">GELANG</option>
-                  <option value="GIWANG">GIWANG</option>
-                </select>
-              </div>
-              <div class="mb-3">
-                <label for="jumlah-rusak-tambah" class="form-label">Jumlah</label>
-                <input type="number" class="form-control" id="jumlah-rusak-tambah" min="1" required />
-              </div>
-              <div class="mb-3">
-                <label for="penambah-rusak" class="form-label">Penambah Stok</label>
-                <input type="text" class="form-control" id="penambah-rusak" required />
-              </div>
-              <div class="mb-3">
-                <label for="penerima-rusak" class="form-label">Penerima Stok</label>
-                <input type="text" class="form-control" id="penerima-rusak" required />
-              </div>
-            </form>
-          </div>
-          <div class="modal-footer">
-            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
-              <i class="fas fa-times me-2"></i>
-              Batal
-            </button>
-            <button type="button" class="btn btn-primary" id="simpan-tambah-rusak">
-              <i class="fas fa-save me-2"></i>
-              Simpan
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <div class="modal fade" id="kurangiStokBarangRusakModal" tabindex="-1">
-      <div class="modal-dialog">
-        <div class="modal-content">
-          <div class="modal-header">
-            <h5 class="modal-title">
-              <i class="fas fa-minus-circle me-2"></i>
-              Kurangi Stok Barang Rusak
-            </h5>
-            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-          </div>
-          <div class="modal-body">
-            <form id="kurangiStokBarangRusakForm">
-              <div class="mb-3">
-                <label for="jenis-barang-rusak-kurang" class="form-label">Jenis Barang</label>
-                <select class="form-select" id="jenis-barang-rusak-kurang" required>
-                  <option value="">Pilih Jenis Barang</option>
-                  <option value="KALUNG">KALUNG</option>
-                  <option value="LIONTIN">LIONTIN</option>
-                  <option value="ANTING">ANTING</option>
-                  <option value="CINCIN">CINCIN</option>
-                  <option value="HALA">HALA</option>
-                  <option value="GELANG">GELANG</option>
-                  <option value="GIWANG">GIWANG</option>
-                </select>
-              </div>
-              <div class="mb-3">
-                <label for="jumlah-rusak-kurang" class="form-label">Jumlah</label>
-                <input type="number" class="form-control" id="jumlah-rusak-kurang" min="1" required />
-              </div>
-              <div class="mb-3">
-                <label for="pengurang-rusak" class="form-label">Pengurang Stok</label>
-                <input type="text" class="form-control" id="pengurang-rusak" required />
-              </div>
-              <div class="mb-3">
-                <label for="keterangan-rusak" class="form-label">Keterangan</label>
-                <textarea class="form-control" id="keterangan-rusak" rows="3" required></textarea>
-              </div>
-            </form>
-          </div>
-          <div class="modal-footer">
-            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
-              <i class="fas fa-times me-2"></i>
-              Batal
-            </button>
-            <button type="button" class="btn btn-primary" id="simpan-kurang-rusak">
-              <i class="fas fa-save me-2"></i>
-              Simpan
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Modals for POSTING -->
-    <div class="modal fade" id="tambahStokPostingModal" tabindex="-1">
-      <div class="modal-dialog">
-        <div class="modal-content">
-          <div class="modal-header">
-            <h5 class="modal-title">
-              <i class="fas fa-plus-circle me-2"></i>
-              Tambah Stok Posting
-            </h5>
-            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-          </div>
-          <div class="modal-body">
-            <form id="tambahStokPostingForm">
-              <div class="mb-3">
-                <label for="jenis-barang-posting-tambah" class="form-label">Jenis Barang</label>
-                <select class="form-select" id="jenis-barang-posting-tambah" required>
-                  <option value="">Pilih Jenis Barang</option>
-                  <option value="KALUNG">KALUNG</option>
-                  <option value="LIONTIN">LIONTIN</option>
-                  <option value="ANTING">ANTING</option>
-                  <option value="CINCIN">CINCIN</option>
-                  <option value="HALA">HALA</option>
-                  <option value="GELANG">GELANG</option>
-                  <option value="GIWANG">GIWANG</option>
-                </select>
-              </div>
-              <div class="mb-3">
-                <label for="jumlah-posting-tambah" class="form-label">Jumlah</label>
-                <input type="number" class="form-control" id="jumlah-posting-tambah" min="1" required />
-              </div>
-              <div class="mb-3">
-                <label for="penambah-posting" class="form-label">Penambah Stok</label>
-                <input type="text" class="form-control" id="penambah-posting" required />
-              </div>
-              <div class="mb-3">
-                <label for="penerima-posting" class="form-label">Penerima Stok</label>
-                <input type="text" class="form-control" id="penerima-posting" required />
-              </div>
-            </form>
-          </div>
-          <div class="modal-footer">
-            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
-              <i class="fas fa-times me-2"></i>
-              Batal
-            </button>
-            <button type="button" class="btn btn-primary" id="simpan-tambah-posting">
-              <i class="fas fa-save me-2"></i>
-              Simpan
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <div class="modal fade" id="kurangiStokPostingModal" tabindex="-1">
-      <div class="modal-dialog">
-        <div class="modal-content">
-          <div class="modal-header">
-            <h5 class="modal-title">
-              <i class="fas fa-minus-circle me-2"></i>
-              Kurangi Stok Posting
-            </h5>
-            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-          </div>
-          <div class="modal-body">
-            <form id="kurangiStokPostingForm">
-              <div class="mb-3">
-                <label for="jenis-barang-posting-kurang" class="form-label">Jenis Barang</label>
-                <select class="form-select" id="jenis-barang-posting-kurang" required>
-                  <option value="">Pilih Jenis Barang</option>
-                  <option value="KALUNG">KALUNG</option>
-                  <option value="LIONTIN">LIONTIN</option>
-                  <option value="ANTING">ANTING</option>
-                  <option value="CINCIN">CINCIN</option>
-                  <option value="HALA">HALA</option>
-                  <option value="GELANG">GELANG</option>
-                  <option value="GIWANG">GIWANG</option>
-                </select>
-              </div>
-              <div class="mb-3">
-                <label for="jumlah-posting-kurang" class="form-label">Jumlah</label>
-                <input type="number" class="form-control" id="jumlah-posting-kurang" min="1" required />
-              </div>
-              <div class="mb-3">
-                <label for="pengurang-posting" class="form-label">Pengurang Stok</label>
-                <input type="text" class="form-control" id="pengurang-posting" required />
-              </div>
-              <div class="mb-3">
-                <label for="keterangan-posting" class="form-label">Keterangan</label>
-                <textarea class="form-control" id="keterangan-posting" rows="3" required></textarea>
-              </div>
-            </form>
-          </div>
-          <div class="modal-footer">
-            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
-              <i class="fas fa-times me-2"></i>
-              Batal
-            </button>
-            <button type="button" class="btn btn-primary" id="simpan-kurang-posting">
-              <i class="fas fa-save me-2"></i>
-              Simpan
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Modals for BATU LEPAS -->
-    <div class="modal fade" id="tambahStokBatuLepasModal" tabindex="-1">
-      <div class="modal-dialog">
-        <div class="modal-content">
-          <div class="modal-header">
-            <h5 class="modal-title">
-              <i class="fas fa-plus-circle me-2"></i>
-              Tambah Stok Batu Lepas
-            </h5>
-            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-          </div>
-          <div class="modal-body">
-            <form id="tambahStokBatuLepasForm">
-              <div class="mb-3">
-                <label for="jenis-barang-batu-tambah" class="form-label">Jenis Barang</label>
-                <select class="form-select" id="jenis-barang-batu-tambah" required>
-                  <option value="">Pilih Jenis Barang</option>
-                  <option value="KALUNG">KALUNG</option>
-                  <option value="LIONTIN">LIONTIN</option>
-                  <option value="ANTING">ANTING</option>
-                  <option value="CINCIN">CINCIN</option>
-                  <option value="HALA">HALA</option>
-                  <option value="GELANG">GELANG</option>
-                  <option value="GIWANG">GIWANG</option>
-                </select>
-              </div>
-              <div class="mb-3">
-                <label for="jumlah-batu-tambah" class="form-label">Jumlah</label>
-                <input type="number" class="form-control" id="jumlah-batu-tambah" min="1" required />
-              </div>
-              <div class="mb-3">
-                <label for="penambah-batu" class="form-label">Penambah Stok</label>
-                <input type="text" class="form-control" id="penambah-batu" required />
-              </div>
-              <div class="mb-3">
-                <label for="penerima-batu" class="form-label">Penerima Stok</label>
-                <input type="text" class="form-control" id="penerima-batu" required />
-              </div>
-            </form>
-          </div>
-          <div class="modal-footer">
-            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
-              <i class="fas fa-times me-2"></i>
-              Batal
-            </button>
-            <button type="button" class="btn btn-primary" id="simpan-tambah-batu">
-              <i class="fas fa-save me-2"></i>
-              Simpan
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <div class="modal fade" id="kurangiStokBatuLepasModal" tabindex="-1">
-      <div class="modal-dialog">
-        <div class="modal-content">
-          <div class="modal-header">
-            <h5 class="modal-title">
-              <i class="fas fa-minus-circle me-2"></i>
-              Kurangi Stok Batu Lepas
-            </h5>
-            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-          </div>
-          <div class="modal-body">
-            <form id="kurangiStokBatuLepasForm">
-              <div class="mb-3">
-                <label for="jenis-barang-batu-kurang" class="form-label">Jenis Barang</label>
-                <select class="form-select" id="jenis-barang-batu-kurang" required>
-                  <option value="">Pilih Jenis Barang</option>
-                  <option value="KALUNG">KALUNG</option>
-                  <option value="LIONTIN">LIONTIN</option>
-                  <option value="ANTING">ANTING</option>
-                  <option value="CINCIN">CINCIN</option>
-                  <option value="HALA">HALA</option>
-                  <option value="GELANG">GELANG</option>
-                  <option value="GIWANG">GIWANG</option>
-                </select>
-              </div>
-              <div class="mb-3">
-                <label for="jumlah-batu-kurang" class="form-label">Jumlah</label>
-                <input type="number" class="form-control" id="jumlah-batu-kurang" min="1" required />
-              </div>
-              <div class="mb-3">
-                <label for="pengurang-batu" class="form-label">Pengurang Stok</label>
-                <input type="text" class="form-control" id="pengurang-batu" required />
-              </div>
-              <div class="mb-3">
-                <label for="keterangan-batu" class="form-label">Keterangan</label>
-                <textarea class="form-control" id="keterangan-batu" rows="3" required></textarea>
-              </div>
-            </form>
-          </div>
-          <div class="modal-footer">
-            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
-              <i class="fas fa-times me-2"></i>
-              Batal
-            </button>
-            <button type="button" class="btn btn-primary" id="simpan-kurang-batu">
+            <button type="button" class="btn btn-primary" id="simpan-kurang-stok">
               <i class="fas fa-save me-2"></i>
               Simpan
             </button>
@@ -1174,6 +872,7 @@
                   <tr>
                     <th>Tanggal</th>
                     <th>Jenis</th>
+                    <th>Warna Barcode</th>
                     <th>Jumlah</th>
                     <th>Penambah/Pengurang</th>
                     <th>Penerima/Keterangan</th>
@@ -1195,8 +894,46 @@
       </div>
     </div>
 
+    <!-- Modal for Detail Color Stock - MODAL BARU -->
+    <div class="modal fade" id="detailColorModal" tabindex="-1">
+      <div class="modal-dialog">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title">
+              <i class="fas fa-palette me-2"></i>
+              Detail Stok Per Warna -
+              <span id="detail-color-title"></span>
+            </h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+          </div>
+          <div class="modal-body">
+            <div class="table-responsive">
+              <table class="table table-striped">
+                <thead class="table-light">
+                  <tr>
+                    <th>Warna Barcode</th>
+                    <th>Jumlah</th>
+                    <th>Terakhir Diperbarui</th>
+                  </tr>
+                </thead>
+                <tbody id="detail-color-table-body">
+                  <!-- Data will be populated by JavaScript -->
+                </tbody>
+              </table>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+              <i class="fas fa-times me-2"></i>
+              Tutup
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- Scripts -->
     <script type="module" src="js/main.js"></script>
-    <script type="module" src="js/manajemenStok.js"></script>
+    <script type="module" src="js/testMs.js"></script>
   </body>
 </html>

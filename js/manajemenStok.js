@@ -8,18 +8,16 @@ import {
 // Define stock categories and item types
 const categories = ['brankas', 'admin', 'barang-rusak', 'posting', 'batu-lepas'];
 const itemTypes = ['KALUNG', 'LIONTIN', 'ANTING', 'CINCIN', 'HALA', 'GELANG', 'GIWANG'];
+const colorTypes = ['PINK', 'KUNING', 'HIJAU', 'BIRU', 'PUTIH'];
 
-// Cache management variables - Improved caching system
+// Cache management variables
 let stockData = {};
 const CACHE_KEY = 'stockDataCache';
-const CACHE_TTL_STANDARD = 5 * 60 * 1000; // 5 minutes for standard data
-const CACHE_TTL_REALTIME = 30 * 1000; // 30 seconds for real-time updates
-const HISTORY_RETENTION_DAYS = 7;
+const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 const MAX_HISTORY_RECORDS = 10;
 
-// Cache management with Map for better performance
-const stockCache = new Map();
-const stockCacheMeta = new Map();
+// Current modal category
+let currentModalCategory = '';
 
 // Initialize cache from localStorage
 function initializeCache() {
@@ -27,26 +25,16 @@ function initializeCache() {
         const cachedData = localStorage.getItem(CACHE_KEY);
         if (cachedData) {
             const parsedData = JSON.parse(cachedData);
-            stockData = parsedData.data || {};
-            
-            // Load cache metadata
-            if (parsedData.meta) {
-                Object.entries(parsedData.meta).forEach(([key, timestamp]) => {
-                    stockCacheMeta.set(key, timestamp);
-                });
+            if (Date.now() - parsedData.timestamp < CACHE_TTL) {
+                stockData = parsedData.data || {};
+                return true;
             }
-            
-            // Load cache data into Map
-            Object.entries(stockData).forEach(([category, data]) => {
-                stockCache.set(category, data);
-            });
         }
     } catch (error) {
         console.error('Error initializing cache:', error);
         localStorage.removeItem(CACHE_KEY);
-        stockCache.clear();
-        stockCacheMeta.clear();
     }
+    return false;
 }
 
 // Update cache in localStorage
@@ -54,169 +42,16 @@ function updateCache() {
     try {
         const cacheData = {
             timestamp: Date.now(),
-            data: stockData,
-            meta: Object.fromEntries(stockCacheMeta)
+            data: stockData
         };
         localStorage.setItem(CACHE_KEY, JSON.stringify(cacheData));
+        
+        // Trigger UI update setelah cache update - PERBAIKAN
+        if (document.readyState === 'complete') {
+            updateSummaryTotals();
+        }
     } catch (error) {
         console.error('Error updating cache:', error);
-        // If localStorage is full, clear old cache
-        if (error.name === 'QuotaExceededError') {
-            localStorage.removeItem(CACHE_KEY);
-            console.log('Cache cleared due to storage quota exceeded');
-        }
-    }
-}
-
-// Check if cache is valid for a specific category
-function isCacheValid(category) {
-    const timestamp = stockCacheMeta.get(category);
-    if (!timestamp) return false;
-    
-    const now = Date.now();
-    const age = now - timestamp;
-    
-    // Use shorter TTL for categories that change frequently
-    const ttl = ['brankas', 'admin'].includes(category) ? CACHE_TTL_REALTIME : CACHE_TTL_STANDARD;
-    
-    return age < ttl;
-}
-
-// Update cache timestamp for specific category
-function updateCacheTimestamp(category) {
-    stockCacheMeta.set(category, Date.now());
-    updateCache();
-}
-
-// Check if any cache needs update
-function shouldUpdateCache() {
-    return categories.some(category => !isCacheValid(category));
-}
-
-// Function to clean and limit history
-function cleanAndLimitHistory(data) {
-    const cutoffDate = new Date();
-    cutoffDate.setDate(cutoffDate.getDate() - HISTORY_RETENTION_DAYS);
-    const cutoffTime = cutoffDate.getTime();
-    
-    Object.keys(data).forEach(category => {
-        Object.keys(data[category]).forEach(type => {
-            if (data[category][type].history && Array.isArray(data[category][type].history)) {
-                let filteredHistory = data[category][type].history.filter(entry => {
-                    const entryDate = new Date(entry.date).getTime();
-                    return entryDate >= cutoffTime;
-                });
-                
-                filteredHistory.sort((a, b) => new Date(b.date) - new Date(a.date));
-                
-                if (filteredHistory.length > MAX_HISTORY_RECORDS) {
-                    filteredHistory = filteredHistory.slice(0, MAX_HISTORY_RECORDS);
-                }
-                
-                data[category][type].history = filteredHistory;
-            }
-        });
-    });
-    
-    return data;
-}
-
-// Function to add history entry with automatic cleanup
-function addHistoryEntry(item, historyEntry) {
-    if (!item.history) {
-        item.history = [];
-    }
-    
-    item.history.unshift(historyEntry);
-    item.history.sort((a, b) => new Date(b.date) - new Date(a.date));
-    
-    const cutoffDate = new Date();
-    cutoffDate.setDate(cutoffDate.getDate() - HISTORY_RETENTION_DAYS);
-    const cutoffTime = cutoffDate.getTime();
-    
-    item.history = item.history.filter(entry => {
-        const entryDate = new Date(entry.date).getTime();
-        return entryDate >= cutoffTime;
-    });
-    
-    if (item.history.length > MAX_HISTORY_RECORDS) {
-        item.history = item.history.slice(0, MAX_HISTORY_RECORDS);
-    }
-    
-    return item.history;
-}
-
-// Improved fetch function with better cache management
-async function fetchStockData(forceRefresh = false) {
-    try {
-        // Check if we need to refresh any category
-        const needsRefresh = forceRefresh || shouldUpdateCache();
-        
-        if (!needsRefresh && Object.keys(stockData).length > 0) {
-            console.log('Using cached stock data');
-            return stockData;
-        }
-
-        console.log('Fetching fresh stock data from Firestore');
-        
-        // Fetch only categories that need refresh or all if forced
-        const categoriesToFetch = forceRefresh ? 
-            categories : 
-            categories.filter(category => !isCacheValid(category));
-        
-        if (categoriesToFetch.length === 0) {
-            return stockData;
-        }
-
-        // Fetch data for specific categories
-        const fetchPromises = categoriesToFetch.map(async (category) => {
-            const categoryRef = doc(firestore, 'stocks', category);
-            const categoryDoc = await getDoc(categoryRef);
-            
-            if (categoryDoc.exists()) {
-                const categoryData = categoryDoc.data();
-                stockData[category] = categoryData;
-                stockCache.set(category, categoryData);
-                updateCacheTimestamp(category);
-                return { category, data: categoryData };
-            } else {
-                // Initialize if doesn't exist
-                const initialData = {};
-                itemTypes.forEach(type => {
-                    initialData[type] = {
-                        quantity: 0,
-                        lastUpdated: null,
-                        history: []
-                    };
-                });
-                
-                await setDoc(categoryRef, initialData);
-                stockData[category] = initialData;
-                stockCache.set(category, initialData);
-                updateCacheTimestamp(category);
-                return { category, data: initialData };
-            }
-        });
-
-        await Promise.all(fetchPromises);
-        
-        // Clean and limit history entries
-        stockData = cleanAndLimitHistory(stockData);
-        
-        // Update cache
-        updateCache();
-        
-        return stockData;
-    } catch (error) {
-        console.error('Error fetching stock data:', error);
-        
-        // Fallback to cache if available
-        if (Object.keys(stockData).length > 0) {
-            console.log('Using cached data as fallback');
-            return stockData;
-        }
-        
-        throw error;
     }
 }
 
@@ -227,17 +62,18 @@ async function initializeFirestoreData() {
             const categoryData = {};
             
             itemTypes.forEach(type => {
-                categoryData[type] = {
-                    quantity: 0,
-                    lastUpdated: null,
-                    history: []
-                };
+                categoryData[type] = {};
+                colorTypes.forEach(color => {
+                    categoryData[type][color] = {
+                        quantity: 0,
+                        lastUpdated: null,
+                        history: []
+                    };
+                });
             });
             
             await setDoc(doc(firestore, 'stocks', category), categoryData);
             stockData[category] = categoryData;
-            stockCache.set(category, categoryData);
-            updateCacheTimestamp(category);
         });
         
         await Promise.all(initPromises);
@@ -247,28 +83,66 @@ async function initializeFirestoreData() {
     }
 }
 
-// Optimized save function - only update specific item
-async function saveData(category, type) {
+// Fetch stock data from Firestore or cache
+async function fetchStockData(forceRefresh = false) {
+    try {
+        if (!forceRefresh && initializeCache()) {
+            console.log('Using cached stock data');
+            return stockData;
+        }
+
+        console.log('Fetching fresh stock data from Firestore');
+        
+        const fetchPromises = categories.map(async (category) => {
+            const categoryRef = doc(firestore, 'stocks', category);
+            const categoryDoc = await getDoc(categoryRef);
+            
+            if (categoryDoc.exists()) {
+                stockData[category] = categoryDoc.data();
+            } else {
+                // Initialize if doesn't exist
+                const initialData = {};
+                itemTypes.forEach(type => {
+                    initialData[type] = {};
+                    colorTypes.forEach(color => {
+                        initialData[type][color] = {
+                            quantity: 0,
+                            lastUpdated: null,
+                            history: []
+                        };
+                    });
+                });
+                
+                await setDoc(categoryRef, initialData);
+                stockData[category] = initialData;
+            }
+        });
+
+        await Promise.all(fetchPromises);
+        updateCache();
+        return stockData;
+    } catch (error) {
+        console.error('Error fetching stock data:', error);
+        throw error;
+    }
+}
+
+// Save data to Firestore
+async function saveData(category, type, color) {
     try {
         const categoryRef = doc(firestore, 'stocks', category);
-        
-        // Update only the specific item type
         const updateData = {};
-        updateData[type] = stockData[category][type];
+        updateData[`${type}.${color}`] = stockData[category][type][color];
         
         await updateDoc(categoryRef, updateData);
-        
-        // Update cache timestamp for this category
-        updateCacheTimestamp(category);
-        
-        console.log(`Successfully saved ${type} in ${category}`);
+        updateCache();
+        console.log(`Successfully saved ${type}-${color} in ${category}`);
     } catch (error) {
         console.error('Error saving data to Firestore:', error);
-        
         // Try to create document if it doesn't exist
         try {
             await setDoc(categoryRef, stockData[category]);
-            updateCacheTimestamp(category);
+            updateCache();
         } catch (createError) {
             console.error('Error creating document:', createError);
             alert('Terjadi kesalahan saat menyimpan data. Silakan coba lagi.');
@@ -276,29 +150,45 @@ async function saveData(category, type) {
     }
 }
 
-// Function to format date
 function formatDate(date) {
     if (!date) return '-';
-    
     const d = new Date(date);
     return `${d.getDate()}/${d.getMonth() + 1}/${d.getFullYear()} ${d.getHours()}:${d.getMinutes().toString().padStart(2, '0')}`;
 }
 
-// Function to populate tables with improved performance
+// Get color badge HTML
+function getColorBadge(color) {
+    return `<span class="color-badge color-${color.toLowerCase()}"></span>${color}`;
+}
+
+// Add history entry with automatic cleanup
+function addHistoryEntry(item, historyEntry) {
+    if (!item.history) {
+        item.history = [];
+    }
+    
+    item.history.unshift(historyEntry);
+    item.history.sort((a, b) => new Date(b.date) - new Date(a.date));
+    
+    // Hapus riwayat yang lebih dari 10, bukan hanya batasi tampilan
+    if (item.history.length > 10) {
+        item.history = item.history.slice(0, 10);
+        console.log(`History trimmed to 10 records for better performance`);
+    }
+    
+    return item.history;
+}
+
+// Populate tables with stock data
 async function populateTables() {
     try {
-        // Fetch latest data (uses cache if valid)
         await fetchStockData();
-        
-        // Use document fragment for better performance
-        const fragments = {};
-        categories.forEach(category => {
-            fragments[category] = document.createDocumentFragment();
-        });
         
         categories.forEach(category => {
             const tableBody = document.getElementById(`${category}-table-body`);
             if (!tableBody) return;
+            
+            tableBody.innerHTML = '';
             
             if (!stockData[category]) {
                 console.warn(`No data found for category: ${category}`);
@@ -307,31 +197,85 @@ async function populateTables() {
             
             let index = 1;
             itemTypes.forEach(type => {
-                const item = stockData[category][type];
-                if (!item) return;
+                if (!stockData[category][type]) return;
+                
+                // Calculate total quantity for this item type
+                let totalQuantity = 0;
+                let lastUpdated = null;
+                let availableColors = 0;
+                
+                colorTypes.forEach(color => {
+                    if (stockData[category][type][color]) {
+                        totalQuantity += stockData[category][type][color].quantity;
+                        if (stockData[category][type][color].quantity > 0) {
+                            availableColors++;
+                        }
+                        if (stockData[category][type][color].lastUpdated) {
+                            const itemDate = new Date(stockData[category][type][color].lastUpdated);
+                            if (!lastUpdated || itemDate > lastUpdated) {
+                                lastUpdated = itemDate;
+                            }
+                        }
+                    }
+                });
                 
                 const row = document.createElement('tr');
                 row.innerHTML = `
                     <td>${index}</td>
-                    <td>${type}</td>
-                    <td>${item.quantity}</td>
-                    <td>${item.lastUpdated ? formatDate(item.lastUpdated) : '-'}</td>
+                    <td>
+                        <div class="d-flex justify-content-between align-items-center">
+                            <div>
+                                <span class="fw-bold text-dark">${type}</span>
+                                ${availableColors > 0 ? 
+                                    `<small class="text-muted d-block">${availableColors} warna tersedia</small>` : 
+                                    `<small class="text-danger d-block">Tidak ada stok</small>`
+                                }
+                            </div>
+                            ${totalQuantity > 0 ? 
+                                `<button class="btn btn-sm btn-outline-primary detail-color-btn" 
+                                        data-category="${category}" 
+                                        data-type="${type}"
+                                        title="Lihat detail per warna"
+                                        style="border-radius: 20px; font-size: 0.75rem; padding: 4px 12px;">
+                                    <i class="fas fa-palette me-1"></i>
+                                    <span class="d-none d-md-inline">Detail</span>
+                                </button>` :
+                                `<button class="btn btn-sm btn-outline-secondary detail-color-btn" 
+                                        data-category="${category}" 
+                                        data-type="${type}"
+                                        title="Lihat detail per warna"
+                                        disabled
+                                        style="border-radius: 20px; font-size: 0.75rem; padding: 4px 12px;">
+                                    <i class="fas fa-palette me-1"></i>
+                                    <span class="d-none d-md-inline">Detail</span>
+                                </button>`
+                            }
+                        </div>
+                    </td>
+                    <td>
+                        <span class="badge ${totalQuantity > 0 ? 'bg-success' : 'bg-secondary'} fs-6">
+                            ${totalQuantity}
+                        </span>
+                    </td>
+                    <td>
+                        <small class="text-muted">
+                            ${lastUpdated ? formatDate(lastUpdated) : '-'}
+                        </small>
+                    </td>
                     <td>
                         <button class="btn btn-sm btn-info view-history" 
                                 data-category="${category}" 
-                                data-type="${type}">
-                            <i class="fas fa-history"></i> Lihat
+                                data-type="${type}"
+                                style="border-radius: 20px;">
+                            <i class="fas fa-history me-1"></i>
+                            <span class="d-none d-lg-inline">Riwayat</span>
                         </button>
                     </td>
                 `;
                 
-                fragments[category].appendChild(row);
+                tableBody.appendChild(row);
                 index++;
             });
-            
-            // Clear and append all at once
-            tableBody.innerHTML = '';
-            tableBody.appendChild(fragments[category]);
         });
         
         // Add event listeners to history buttons
@@ -343,7 +287,42 @@ async function populateTables() {
             });
         });
         
-        // Update summary totals
+        // Add event listeners to detail color buttons - DIPERBAIKI dengan hover effect
+        document.querySelectorAll('.detail-color-btn').forEach(button => {
+            button.addEventListener('click', function() {
+                if (!this.disabled) {
+                    const category = this.getAttribute('data-category');
+                    const type = this.getAttribute('data-type');
+                    
+                    // Add loading state
+                    const originalHTML = this.innerHTML;
+                    this.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i><span class="d-none d-md-inline">Loading...</span>';
+                    this.disabled = true;
+                    
+                    // Show modal with slight delay for better UX
+                    setTimeout(() => {
+                        showDetailColorStock(category, type);
+                        // Restore button state
+                        this.innerHTML = originalHTML;
+                        this.disabled = false;
+                    }, 300);
+                }
+            });
+            
+            // Add hover effect
+            button.addEventListener('mouseenter', function() {
+                if (!this.disabled) {
+                    this.style.transform = 'translateY(-1px)';
+                    this.style.boxShadow = '0 2px 4px rgba(0,0,0,0.1)';
+                }
+            });
+            
+            button.addEventListener('mouseleave', function() {
+                this.style.transform = 'translateY(0)';
+                this.style.boxShadow = 'none';
+            });
+        });
+        
         updateSummaryTotals();
         
     } catch (error) {
@@ -352,13 +331,106 @@ async function populateTables() {
     }
 }
 
-// Function to update summary totals
+// Show detail color stock modal - FUNGSI BARU
+function showDetailColorStock(category, type) {
+    const detailTitle = document.getElementById('detail-color-title');
+    const detailTableBody = document.getElementById('detail-color-table-body');
+    
+    detailTitle.innerHTML = `
+        <span class="text-light">${type}</span> 
+        <i class="fas fa-arrow-right mx-2 text-light"></i> 
+        <span class="text-light">${category.toUpperCase()}</span>
+    `;
+    detailTableBody.innerHTML = '';
+    
+    if (!stockData[category] || !stockData[category][type]) {
+        const row = document.createElement('tr');
+        row.innerHTML = `
+            <td colspan="3" class="text-center py-4">
+                <i class="fas fa-exclamation-circle text-warning me-2"></i>
+                <span class="text-muted">Tidak ada data tersedia</span>
+            </td>
+        `;
+        detailTableBody.appendChild(row);
+        return;
+    }
+    
+    let hasStock = false;
+    let totalStock = 0;
+    
+    colorTypes.forEach(color => {
+        if (stockData[category][type][color]) {
+            const item = stockData[category][type][color];
+            totalStock += item.quantity;
+            
+            if (item.quantity > 0) {
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td>
+                        <div class="d-flex align-items-center">
+                            ${getColorBadge(color)}
+                        </div>
+                    </td>
+                    <td>
+                        <span class="badge bg-success fs-6">${item.quantity}</span>
+                    </td>
+                    <td>
+                        <small class="text-muted">${formatDate(item.lastUpdated)}</small>
+                    </td>
+                `;
+                row.style.animation = 'fadeInUp 0.3s ease-out';
+                detailTableBody.appendChild(row);
+                hasStock = true;
+            }
+        }
+    });
+    
+    if (!hasStock) {
+        const row = document.createElement('tr');
+        row.innerHTML = `
+            <td colspan="3" class="text-center py-4">
+                <div class="text-muted">
+                    <i class="fas fa-inbox fa-2x mb-2 d-block"></i>
+                    <span>Tidak ada stok tersedia untuk ${type}</span>
+                </div>
+            </td>
+        `;
+        detailTableBody.appendChild(row);
+    } else {
+        // Add summary row
+        const summaryRow = document.createElement('tr');
+        summaryRow.className = 'table-info';
+        summaryRow.innerHTML = `
+            <td class="fw-bold">
+                <i class="fas fa-calculator me-2"></i>Total
+            </td>
+            <td>
+                <span class="badge bg-primary fs-6">${totalStock}</span>
+            </td>
+            <td>
+                <small class="text-muted">${hasStock ? colorTypes.filter(color => 
+                    stockData[category][type][color] && stockData[category][type][color].quantity > 0
+                ).length : 0} warna</small>
+            </td>
+        `;
+        detailTableBody.appendChild(summaryRow);
+    }
+    
+    const detailColorModal = new bootstrap.Modal(document.getElementById('detailColorModal'));
+    detailColorModal.show();
+}
+
+// Update summary totals
 function updateSummaryTotals() {
     itemTypes.forEach(type => {
         let total = 0;
         categories.forEach(category => {
             if (stockData[category] && stockData[category][type]) {
-                total += stockData[category][type].quantity;
+                colorTypes.forEach(color => {
+                    if (stockData[category][type][color]) {
+                        total += stockData[category][type][color].quantity;
+                    }
+                });
             }
         });
         
@@ -369,7 +441,7 @@ function updateSummaryTotals() {
     });
 }
 
-// Function to show history in modal
+// Show history in modal
 function showHistory(category, type) {
     const historyTitle = document.getElementById('history-title');
     const historyTableBody = document.getElementById('history-table-body');
@@ -377,20 +449,35 @@ function showHistory(category, type) {
     historyTitle.textContent = `${type} (${category.toUpperCase()})`;
     historyTableBody.innerHTML = '';
     
-    const history = stockData[category][type].history;
+    // Collect all history from all colors
+    let allHistory = [];
     
-    if (!history || history.length === 0) {
+    colorTypes.forEach(color => {
+        if (stockData[category][type][color] && stockData[category][type][color].history) {
+            stockData[category][type][color].history.forEach(record => {
+                allHistory.push({
+                    ...record,
+                    color: color
+                });
+            });
+        }
+    });
+    
+    if (allHistory.length === 0) {
         const row = document.createElement('tr');
-        row.innerHTML = '<td colspan="5" class="text-center">Tidak ada riwayat</td>';
+        row.innerHTML = '<td colspan="6" class="text-center">Tidak ada riwayat</td>';
         historyTableBody.appendChild(row);
     } else {
-        const sortedHistory = [...history].sort((a, b) => new Date(b.date) - new Date(a.date));
+        // Sort by date descending and limit to 10 records
+        allHistory.sort((a, b) => new Date(b.date) - new Date(a.date));
+        const limitedHistory = allHistory.slice(0, 10); // Batasi hanya 10 riwayat
         
-        sortedHistory.forEach((record, index) => {
+        limitedHistory.forEach(record => {
             const row = document.createElement('tr');
             row.innerHTML = `
                 <td>${formatDate(record.date)}</td>
-                <td>${record.action}</td>
+                <td>${type}</td>
+                <td>${getColorBadge(record.color)}</td>
                 <td>${record.quantity}</td>
                 <td>${record.action === 'Tambah' ? record.adder : record.reducer}</td>
                 <td>${record.action === 'Tambah' ? record.receiver : record.notes}</td>
@@ -398,12 +485,16 @@ function showHistory(category, type) {
             historyTableBody.appendChild(row);
         });
         
-        if (history.length >= MAX_HISTORY_RECORDS) {
+        // Tampilkan info jika ada lebih dari 10 riwayat
+        if (allHistory.length > 10) {
             const infoRow = document.createElement('tr');
+            infoRow.className = 'table-info';
             infoRow.innerHTML = `
-                <td colspan="5" class="text-center text-muted small">
-                    <i class="fas fa-info-circle me-1"></i>
-                    Menampilkan ${MAX_HISTORY_RECORDS} riwayat terbaru
+                <td colspan="6" class="text-center">
+                    <small class="text-muted">
+                        <i class="fas fa-info-circle me-1"></i>
+                        Menampilkan 10 riwayat terbaru dari ${allHistory.length} total riwayat
+                    </small>
                 </td>
             `;
             historyTableBody.appendChild(infoRow);
@@ -414,24 +505,99 @@ function showHistory(category, type) {
     historyModal.show();
 }
 
-// Function to add stock
-async function addStock(category, type, quantity, adder, receiver) {
+// Show detail stock modal
+function showDetailStock(category) {
+    const detailTitle = document.getElementById('detail-category-title');
+    const detailTableBody = document.getElementById('detail-stock-table-body');
+    
+    detailTitle.textContent = category.toUpperCase();
+    detailTableBody.innerHTML = '';
+    
+    if (!stockData[category]) {
+        const row = document.createElement('tr');
+        row.innerHTML = '<td colspan="4" class="text-center">Tidak ada data</td>';
+        detailTableBody.appendChild(row);
+        return;
+    }
+    
+    itemTypes.forEach(type => {
+        if (!stockData[category][type]) return;
+        
+        colorTypes.forEach(color => {
+            if (stockData[category][type][color] && stockData[category][type][color].quantity > 0) {
+                const item = stockData[category][type][color];
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td>${type}</td>
+                    <td>${getColorBadge(color)}</td>
+                    <td>${item.quantity}</td>
+                    <td>${formatDate(item.lastUpdated)}</td>
+                `;
+                detailTableBody.appendChild(row);
+            }
+        });
+    });
+    
+    if (detailTableBody.children.length === 0) {
+        const row = document.createElement('tr');
+        row.innerHTML = '<td colspan="4" class="text-center">Tidak ada stok</td>';
+        detailTableBody.appendChild(row);
+    }
+}
+
+// Populate color options for reduce stock based on available stock
+function populateColorOptions(category, type) {
+    const colorSelect = document.getElementById('warna-barcode-kurang');
+    const stokTersediaSpan = document.getElementById('stok-tersedia');
+    
+    colorSelect.innerHTML = '<option value="">Pilih Warna Barcode</option>';
+    stokTersediaSpan.textContent = '0';
+    
+    if (!stockData[category] || !stockData[category][type]) return;
+    
+    colorTypes.forEach(color => {
+        if (stockData[category][type][color] && stockData[category][type][color].quantity > 0) {
+            const option = document.createElement('option');
+            option.value = color;
+            option.textContent = `${color} (${stockData[category][type][color].quantity})`;
+            colorSelect.appendChild(option);
+        }
+    });
+}
+
+// Update available stock display
+function updateAvailableStock(category, type, color) {
+    const stokTersediaSpan = document.getElementById('stok-tersedia');
+    
+    if (stockData[category] && stockData[category][type] && stockData[category][type][color]) {
+        stokTersediaSpan.textContent = stockData[category][type][color].quantity;
+    } else {
+        stokTersediaSpan.textContent = '0';
+    }
+}
+
+// Add stock function
+async function addStock(category, type, color, quantity, adder, receiver) {
     try {
-        // Ensure we have the latest data
         await fetchStockData();
         
-        if (!stockData[category] || !stockData[category][type]) {
-            alert('Kategori atau jenis barang tidak ditemukan.');
-            return;
+        if (!stockData[category]) stockData[category] = {};
+        if (!stockData[category][type]) stockData[category][type] = {};
+        if (!stockData[category][type][color]) {
+            stockData[category][type][color] = {
+                quantity: 0,
+                lastUpdated: null,
+                history: []
+            };
         }
         
-        const item = stockData[category][type];
+        const item = stockData[category][type][color];
         
         // Update quantity
         item.quantity += parseInt(quantity);
         item.lastUpdated = new Date().toISOString();
         
-        // Add to history using the new function
+        // Add to history
         const historyEntry = {
             date: item.lastUpdated,
             action: 'Tambah',
@@ -442,37 +608,55 @@ async function addStock(category, type, quantity, adder, receiver) {
         
         addHistoryEntry(item, historyEntry);
         
-        // Update cache
-        stockCache.set(category, stockData[category]);
-        
         // Save to Firestore
-        await saveData(category, type);
+        await saveData(category, type, color);
         
-        // Update UI
-        populateTables();
+        // Update UI LANGSUNG - PERBAIKAN
+        updateSummaryTotals();
+        await populateTables();
+        
+        // Show success message
+        Swal.fire({
+            icon: 'success',
+            title: 'Berhasil!',
+            text: `Stok ${type} ${color} berhasil ditambahkan`,
+            timer: 2000,
+            showConfirmButton: false
+        });
         
     } catch (error) {
         console.error('Error adding stock:', error);
-        alert('Terjadi kesalahan saat menambah stok. Silakan coba lagi.');
+        Swal.fire({
+            icon: 'error',
+            title: 'Error!',
+            text: 'Terjadi kesalahan saat menambah stok'
+        });
     }
 }
 
-// Function to reduce stock
-async function reduceStock(category, type, quantity, reducer, notes) {
+// Reduce stock function
+async function reduceStock(category, type, color, quantity, reducer, notes) {
     try {
-        // Ensure we have the latest data
         await fetchStockData();
         
-        if (!stockData[category] || !stockData[category][type]) {
-            alert('Kategori atau jenis barang tidak ditemukan.');
+        if (!stockData[category] || !stockData[category][type] || !stockData[category][type][color]) {
+            Swal.fire({
+                icon: 'error',
+                title: 'Error!',
+                text: 'Stok tidak ditemukan'
+            });
             return false;
         }
         
-        const item = stockData[category][type];
+        const item = stockData[category][type][color];
         
         // Check if there's enough stock
         if (item.quantity < quantity) {
-            alert(`Stok ${type} tidak mencukupi. Stok saat ini: ${item.quantity}`);
+            Swal.fire({
+                icon: 'error',
+                title: 'Stok Tidak Cukup!',
+                text: `Stok ${type} ${color} tidak mencukupi. Stok saat ini: ${item.quantity}`
+            });
             return false;
         }
         
@@ -480,7 +664,7 @@ async function reduceStock(category, type, quantity, reducer, notes) {
         item.quantity -= parseInt(quantity);
         item.lastUpdated = new Date().toISOString();
         
-        // Add to history using the new function
+        // Add to history
         const historyEntry = {
             date: item.lastUpdated,
             action: 'Kurang',
@@ -491,24 +675,140 @@ async function reduceStock(category, type, quantity, reducer, notes) {
         
         addHistoryEntry(item, historyEntry);
         
-        // Update cache
-        stockCache.set(category, stockData[category]);
-        
         // Save to Firestore
-        await saveData(category, type);
+        await saveData(category, type, color);
         
-        // Update UI
-        populateTables();
+        // Update UI LANGSUNG - PERBAIKAN
+        updateSummaryTotals();
+        await populateTables();
+        
+        // Show success message
+        Swal.fire({
+            icon: 'success',
+            title: 'Berhasil!',
+            text: `Stok ${type} ${color} berhasil dikurangi`,
+            timer: 2000,
+            showConfirmButton: false
+        });
+        
         return true;
         
     } catch (error) {
         console.error('Error reducing stock:', error);
-        alert('Terjadi kesalahan saat mengurangi stok. Silakan coba lagi.');
+        Swal.fire({
+            icon: 'error',
+            title: 'Error!',
+            text: 'Terjadi kesalahan saat mengurangi stok'
+        });
         return false;
     }
 }
 
-// Setup real-time listener with improved cache invalidation
+// Event listeners setup
+function setupEventListeners() {
+    // Add stock modal buttons
+    document.querySelectorAll('[data-bs-target="#tambahStokModal"]').forEach(button => {
+        button.addEventListener('click', function() {
+            currentModalCategory = this.getAttribute('data-category');
+            document.getElementById('tambah-category-title').textContent = currentModalCategory.toUpperCase();
+        });
+    });
+    
+    // Reduce stock modal buttons
+    document.querySelectorAll('[data-bs-target="#kurangiStokModal"]').forEach(button => {
+        button.addEventListener('click', function() {
+            currentModalCategory = this.getAttribute('data-category');
+            document.getElementById('kurang-category-title').textContent = currentModalCategory.toUpperCase();
+        });
+    });
+    
+    // Item type change for reduce stock
+    document.getElementById('jenis-barang-kurang')?.addEventListener('change', function() {
+        if (this.value && currentModalCategory) {
+            populateColorOptions(currentModalCategory, this.value);
+        }
+    });
+    
+    // Color change for reduce stock
+    document.getElementById('warna-barcode-kurang')?.addEventListener('change', function() {
+        const type = document.getElementById('jenis-barang-kurang').value;
+        if (this.value && type && currentModalCategory) {
+            updateAvailableStock(currentModalCategory, type, this.value);
+        }
+    });
+    
+    // Save add stock
+    document.getElementById('simpan-tambah-stok')?.addEventListener('click', async function() {
+        const type = document.getElementById('jenis-barang-tambah').value;
+        const color = document.getElementById('warna-barcode-tambah').value;
+        const quantity = document.getElementById('jumlah-tambah').value;
+        const adder = document.getElementById('penambah-stok').value;
+        const receiver = document.getElementById('penerima-stok').value;
+        
+        if (!type || !color || !quantity || !adder || !receiver) {
+            Swal.fire({
+                icon: 'warning',
+                title: 'Peringatan!',
+                text: 'Semua field harus diisi!'
+            });
+            return;
+        }
+        
+        // Disable button sementara
+        this.disabled = true;
+        this.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Menyimpan...';
+        
+        try {
+            await addStock(currentModalCategory, type, color, quantity, adder, receiver);
+            
+            // Reset form and close modal
+            document.getElementById('tambahStokForm').reset();
+            bootstrap.Modal.getInstance(document.getElementById('tambahStokModal')).hide();
+        } finally {
+            // Re-enable button
+            this.disabled = false;
+            this.innerHTML = '<i class="fas fa-save me-2"></i>Simpan';
+        }
+    });
+    
+    // Save reduce stock
+    document.getElementById('simpan-kurang-stok')?.addEventListener('click', async function() {
+        const type = document.getElementById('jenis-barang-kurang').value;
+        const color = document.getElementById('warna-barcode-kurang').value;
+        const quantity = document.getElementById('jumlah-kurang').value;
+        const reducer = document.getElementById('pengurang-stok').value;
+        const notes = document.getElementById('keterangan-stok').value;
+        
+        if (!type || !color || !quantity || !reducer || !notes) {
+            Swal.fire({
+                icon: 'warning',
+                title: 'Peringatan!',
+                text: 'Semua field harus diisi!'
+            });
+            return;
+        }
+        
+        // Disable button sementara
+        this.disabled = true;
+        this.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Menyimpan...';
+        
+        try {
+            const success = await reduceStock(currentModalCategory, type, color, quantity, reducer, notes);
+            
+            if (success) {
+                // Reset form and close modal
+                document.getElementById('kurangiStokForm').reset();
+                bootstrap.Modal.getInstance(document.getElementById('kurangiStokModal')).hide();
+            }
+        } finally {
+            // Re-enable button
+            this.disabled = false;
+            this.innerHTML = '<i class="fas fa-save me-2"></i>Simpan';
+        }
+    });
+}
+
+// Setup real-time listener
 function setupRealtimeListener() {
     const stocksRef = collection(firestore, 'stocks');
     
@@ -520,22 +820,19 @@ function setupRealtimeListener() {
                 const categoryId = change.doc.id;
                 const categoryData = change.doc.data();
                 
-                // Only update if we have this category in our cache
                 if (stockData[categoryId]) {
                     stockData[categoryId] = categoryData;
-                    stockCache.set(categoryId, categoryData);
-                    updateCacheTimestamp(categoryId);
                     hasChanges = true;
                 }
             }
         });
         
-        // If we detected changes, update the UI
         if (hasChanges) {
             console.log('Real-time update detected, refreshing UI');
+            // Update UI LANGSUNG - PERBAIKAN
             updateSummaryTotals();
+            updateCache();
             
-            // Only update tables if we're on the stock management page
             const tableContainer = document.querySelector('.table-container');
             if (tableContainer) {
                 populateTables();
@@ -545,7 +842,6 @@ function setupRealtimeListener() {
         console.error('Error in real-time listener:', error);
     });
     
-    // Store the unsubscribe function to clean up when needed
     window.addEventListener('beforeunload', () => {
         unsubscribe();
     });
@@ -557,262 +853,34 @@ async function forceRefreshData() {
         console.log('Force refreshing stock data...');
         
         // Clear cache
-        stockCache.clear();
-        stockCacheMeta.clear();
         localStorage.removeItem(CACHE_KEY);
+        stockData = {};
         
         // Fetch fresh data
         await fetchStockData(true);
         
-        // Update UI
+        // Update UI LANGSUNG - PERBAIKAN
+        updateSummaryTotals();
         await populateTables();
         
-        alert('Data stok berhasil diperbarui dari server.');
+        Swal.fire({
+            icon: 'success',
+            title: 'Berhasil!',
+            text: 'Data stok berhasil diperbarui dari server',
+            timer: 2000,
+            showConfirmButton: false
+        });
     } catch (error) {
         console.error('Error force refreshing data:', error);
-        alert('Terjadi kesalahan saat memperbarui data. Silakan coba lagi.');
-    }
-}
-
-// Event listeners for add stock forms
-document.getElementById('simpan-tambah-brankas')?.addEventListener('click', function() {
-    const type = document.getElementById('jenis-barang-brankas-tambah').value;
-    const quantity = document.getElementById('jumlah-brankas-tambah').value;
-    const adder = document.getElementById('penambah-brankas').value;
-    const receiver = document.getElementById('penerima-brankas').value;
-    
-    if (!type || !quantity || !adder || !receiver) {
-        alert('Semua field harus diisi!');
-        return;
-    }
-    
-    addStock('brankas', type, quantity, adder, receiver);
-    
-    // Reset form and close modal
-    document.getElementById('tambahStokBrankasForm').reset();
-    bootstrap.Modal.getInstance(document.getElementById('tambahStokBrankasModal')).hide();
-});
-
-document.getElementById('simpan-tambah-admin')?.addEventListener('click', function() {
-    const type = document.getElementById('jenis-barang-admin-tambah').value;
-    const quantity = document.getElementById('jumlah-admin-tambah').value;
-    const adder = document.getElementById('penambah-admin').value;
-    const receiver = document.getElementById('penerima-admin').value;
-    
-    if (!type || !quantity || !adder || !receiver) {
-        alert('Semua field harus diisi!');
-        return;
-    }
-    
-    addStock('admin', type, quantity, adder, receiver);
-    
-    // Reset form and close modal
-    document.getElementById('tambahStokAdminForm').reset();
-    bootstrap.Modal.getInstance(document.getElementById('tambahStokAdminModal')).hide();
-});
-
-document.getElementById('simpan-tambah-rusak')?.addEventListener('click', function() {
-    const type = document.getElementById('jenis-barang-rusak-tambah').value;
-    const quantity = document.getElementById('jumlah-rusak-tambah').value;
-    const adder = document.getElementById('penambah-rusak').value;
-    const receiver = document.getElementById('penerima-rusak').value;
-    
-    if (!type || !quantity || !adder || !receiver) {
-        alert('Semua field harus diisi!');
-        return;
-    }
-    
-    addStock('barang-rusak', type, quantity, adder, receiver);
-    
-    // Reset form and close modal
-    document.getElementById('tambahStokBarangRusakForm').reset();
-    bootstrap.Modal.getInstance(document.getElementById('tambahStokBarangRusakModal')).hide();
-});
-
-document.getElementById('simpan-tambah-posting')?.addEventListener('click', function() {
-    const type = document.getElementById('jenis-barang-posting-tambah').value;
-    const quantity = document.getElementById('jumlah-posting-tambah').value;
-    const adder = document.getElementById('penambah-posting').value;
-    const receiver = document.getElementById('penerima-posting').value;
-    
-    if (!type || !quantity || !adder || !receiver) {
-        alert('Semua field harus diisi!');
-        return;
-    }
-    
-    addStock('posting', type, quantity, adder, receiver);
-    
-    // Reset form and close modal
-    document.getElementById('tambahStokPostingForm').reset();
-    bootstrap.Modal.getInstance(document.getElementById('tambahStokPostingModal')).hide();
-});
-
-// Event listener untuk tambah stok batu lepas
-document.getElementById('simpan-tambah-batu')?.addEventListener('click', function() {
-    const type = document.getElementById('jenis-barang-batu-tambah').value;
-    const quantity = document.getElementById('jumlah-batu-tambah').value;
-    const adder = document.getElementById('penambah-batu').value;
-    const receiver = document.getElementById('penerima-batu').value;
-    
-    if (!type || !quantity || !adder || !receiver) {
-        alert('Semua field harus diisi!');
-        return;
-    }
-    
-    addStock('batu-lepas', type, quantity, adder, receiver);
-    
-    // Reset form and close modal
-    document.getElementById('tambahStokBatuLepasForm').reset();
-    bootstrap.Modal.getInstance(document.getElementById('tambahStokBatuLepasModal')).hide();
-});
-
-// Event listeners for reduce stock forms
-document.getElementById('simpan-kurang-brankas')?.addEventListener('click', function() {
-    const type = document.getElementById('jenis-barang-brankas-kurang').value;
-    const quantity = document.getElementById('jumlah-brankas-kurang').value;
-    const reducer = document.getElementById('pengurang-brankas').value;
-    const notes = document.getElementById('keterangan-brankas').value;
-    
-    if (!type || !quantity || !reducer || !notes) {
-        alert('Semua field harus diisi!');
-        return;
-    }
-    
-    reduceStock('brankas', type, quantity, reducer, notes).then(success => {
-        if (success) {
-            // Reset form and close modal
-            document.getElementById('kurangiStokBrankasForm').reset();
-            bootstrap.Modal.getInstance(document.getElementById('kurangiStokBrankasModal')).hide();
-        }
-    });
-});
-
-document.getElementById('simpan-kurang-admin')?.addEventListener('click', function() {
-    const type = document.getElementById('jenis-barang-admin-kurang').value;
-    const quantity = document.getElementById('jumlah-admin-kurang').value;
-    const reducer = document.getElementById('pengurang-admin').value;
-    const notes = document.getElementById('keterangan-admin').value;
-    
-    if (!type || !quantity || !reducer || !notes) {
-        alert('Semua field harus diisi!');
-        return;
-    }
-    
-    reduceStock('admin', type, quantity, reducer, notes).then(success => {
-        if (success) {
-            // Reset form and close modal
-            document.getElementById('kurangiStokAdminForm').reset();
-            bootstrap.Modal.getInstance(document.getElementById('kurangiStokAdminModal')).hide();
-        }
-    });
-});
-
-document.getElementById('simpan-kurang-rusak')?.addEventListener('click', function() {
-    const type = document.getElementById('jenis-barang-rusak-kurang').value;
-    const quantity = document.getElementById('jumlah-rusak-kurang').value;
-    const reducer = document.getElementById('pengurang-rusak').value;
-    const notes = document.getElementById('keterangan-rusak').value;
-    
-    if (!type || !quantity || !reducer || !notes) {
-        alert('Semua field harus diisi!');
-        return;
-    }
-    
-    reduceStock('barang-rusak', type, quantity, reducer, notes).then(success => {
-        if (success) {
-            // Reset form and close modal
-            document.getElementById('kurangiStokBarangRusakForm').reset();
-            bootstrap.Modal.getInstance(document.getElementById('kurangiStokBarangRusakModal')).hide();
-        }
-    });
-});
-
-document.getElementById('simpan-kurang-posting')?.addEventListener('click', function() {
-    const type = document.getElementById('jenis-barang-posting-kurang').value;
-    const quantity = document.getElementById('jumlah-posting-kurang').value;
-    const reducer = document.getElementById('pengurang-posting').value;
-    const notes = document.getElementById('keterangan-posting').value;
-    
-    if (!type || !quantity || !reducer || !notes) {
-        alert('Semua field harus diisi!');
-        return;
-    }
-    
-    reduceStock('posting', type, quantity, reducer, notes).then(success => {
-        if (success) {
-            // Reset form and close modal
-            document.getElementById('kurangiStokPostingForm').reset();
-            bootstrap.Modal.getInstance(document.getElementById('kurangiStokPostingModal')).hide();
-        }
-    });
-});
-
-// Add event listener for Batu Lepas reduce stock
-document.getElementById('simpan-kurang-batu')?.addEventListener('click', function() {
-    const type = document.getElementById('jenis-barang-batu-kurang').value;
-    const quantity = document.getElementById('jumlah-batu-kurang').value;
-    const reducer = document.getElementById('pengurang-batu').value;
-    const notes = document.getElementById('keterangan-batu').value;
-    
-    if (!type || !quantity || !reducer || !notes) {
-        alert('Semua field harus diisi!');
-        return;
-    }
-    
-    reduceStock('batu-lepas', type, quantity, reducer, notes).then(success => {
-        if (success) {
-            // Reset form and close modal
-            document.getElementById('kurangiStokBatuLepasForm').reset();
-            bootstrap.Modal.getInstance(document.getElementById('kurangiStokBatuLepasModal')).hide();
-        }
-    });
-});
-
-// Function to handle logout
-function handleLogout() {
-    // Clear session or perform logout actions
-    window.location.href = 'index.html';
-}
-
-// Handle "Lainnya" option for batu lepas
-document.getElementById('jenis-batu-tambah')?.addEventListener('change', function() {
-    const lainnyaContainer = document.getElementById('jenis-batu-lainnya-container');
-    if (this.value === 'LAINNYA') {
-        lainnyaContainer.style.display = 'block';
-    } else {
-        lainnyaContainer.style.display = 'none';
-    }
-});
-
-// Populate batu lepas dropdown for reduce stock
-async function populateBatuLepasDropdown() {
-    const dropdown = document.getElementById('jenis-batu-kurang');
-    if (!dropdown) return;
-    
-    // Clear existing options except the first one
-    while (dropdown.options.length > 1) {
-        dropdown.remove(1);
-    }
-    
-    // Ensure we have the latest data
-    await fetchStockData();
-    
-    if (stockData['batu-lepas']) {
-        // Get all stone types with quantity > 0
-        const stoneTypes = Object.keys(stockData['batu-lepas'])
-            .filter(type => stockData['batu-lepas'][type].quantity > 0);
-        
-        // Add options to dropdown
-        stoneTypes.forEach(type => {
-            const option = document.createElement('option');
-            option.value = type;
-            option.textContent = `${type} (${stockData['batu-lepas'][type].quantity})`;
-            dropdown.appendChild(option);
+        Swal.fire({
+            icon: 'error',
+            title: 'Error!',
+            text: 'Terjadi kesalahan saat memperbarui data'
         });
     }
 }
 
-// Schedule daily cleanup of old history with improved logic
+// Schedule daily cleanup of old history
 function scheduleHistoryCleanup() {
     const lastCleanup = localStorage.getItem('lastHistoryCleanup');
     const today = new Date().toDateString();
@@ -820,59 +888,65 @@ function scheduleHistoryCleanup() {
     if (lastCleanup !== today) {
         console.log('Running scheduled history cleanup');
         
-        if (Object.keys(stockData).length > 0) {
-            cleanAndLimitHistory(stockData);
-            
-            // Update Firestore with cleaned data (batch update for efficiency)
-            updateFirestoreWithCleanedData();
-            
-            // Mark as completed for today
-            localStorage.setItem('lastHistoryCleanup', today);
-            
-            console.log(`History cleanup completed. Limited to ${MAX_HISTORY_RECORDS} records per item.`);
+        // Add safer check for stockData
+        if (stockData && typeof stockData === 'object' && Object.keys(stockData).length > 0) {
+            try {
+                cleanHistoryData();
+                localStorage.setItem('lastHistoryCleanup', today);
+                console.log(`History cleanup completed. Limited to ${MAX_HISTORY_RECORDS} records per item.`);
+            } catch (error) {
+                console.error('Error during history cleanup:', error);
+                // Don't let cleanup errors break the app
+            }
         }
     }
 }
 
-// Update Firestore with cleaned data - improved batch processing
-async function updateFirestoreWithCleanedData() {
-    try {
-        if (Object.keys(stockData).length === 0) return;
+// Clean history data
+function cleanHistoryData() {
+    Object.keys(stockData).forEach(category => {
+        if (!stockData[category]) return;
         
-        // Update each category with better error handling
-        const updatePromises = Object.keys(stockData).map(async (category) => {
-            try {
-                const categoryRef = doc(firestore, 'stocks', category);
-                await updateDoc(categoryRef, stockData[category]);
-                updateCacheTimestamp(category);
-            } catch (error) {
-                console.error(`Error updating category ${category}:`, error);
-            }
+        Object.keys(stockData[category]).forEach(type => {
+            if (!stockData[category][type]) return;
+            
+            Object.keys(stockData[category][type]).forEach(color => {
+                const item = stockData[category][type][color];
+                
+                if (!item || typeof item !== 'object') return;
+                
+                if (!item.history) {
+                    item.history = [];
+                    return;
+                }
+                
+                if (Array.isArray(item.history)) {
+                    item.history.sort((a, b) => new Date(b.date) - new Date(a.date));
+                    
+                    // Hapus permanen riwayat yang lebih dari 10
+                    if (item.history.length > 10) {
+                        const deletedCount = item.history.length - 10;
+                        item.history = item.history.slice(0, 10);
+                        console.log(`Deleted ${deletedCount} old history records for ${category}-${type}-${color}`);
+                    }
+                } else {
+                    item.history = [];
+                }
+            });
         });
-        
-        await Promise.all(updatePromises);
-        console.log('Cleaned and limited history entries in Firestore');
-        
-    } catch (error) {
-        console.error('Error updating Firestore with cleaned data:', error);
-    }
+    });
+    
+    updateCache();
 }
 
-// Clear cache function
-function clearStockCache() {
-    stockCache.clear();
-    stockCacheMeta.clear();
-    localStorage.removeItem(CACHE_KEY);
-    stockData = {};
-    console.log('Stock cache cleared');
+// Handle logout
+function handleLogout() {
+    window.location.href = 'index.html';
 }
 
 // Initialize when page loads
 document.addEventListener('DOMContentLoaded', async function() {
     try {
-        // Initialize cache from localStorage
-        initializeCache();
-        
         // Show loading indicator
         const loadingIndicator = document.createElement('div');
         loadingIndicator.id = 'stockLoadingIndicator';
@@ -884,19 +958,24 @@ document.addEventListener('DOMContentLoaded', async function() {
             <p class="mt-2">Memuat data stok...</p>
         `;
         
-        const mainContainer = document.querySelector('.container-fluid') || document.body;
-        mainContainer.insertBefore(loadingIndicator, mainContainer.firstChild);
+        const mainContainer = document.querySelector('.content-wrapper');
+        if (mainContainer) {
+            mainContainer.insertBefore(loadingIndicator, mainContainer.firstChild);
+        }
         
-        // Populate tables with data (from cache or Firestore)
+        // Initialize data
+        await fetchStockData();
+        
+        // Populate tables
         await populateTables();
         
-        // Populate batu lepas dropdown
-        await populateBatuLepasDropdown();
+        // Setup event listeners
+        setupEventListeners();
         
-        // Setup real-time listener for collaborative editing
+        // Setup real-time listener
         setupRealtimeListener();
         
-        // Schedule cleanup of old history
+        // Schedule cleanup
         scheduleHistoryCleanup();
         
         // Remove loading indicator
@@ -905,7 +984,7 @@ document.addEventListener('DOMContentLoaded', async function() {
             indicator.remove();
         }
         
-        // Add event listener for refresh button if it exists
+        // Add refresh button functionality
         const refreshBtn = document.getElementById('refresh-stock-data');
         if (refreshBtn) {
             refreshBtn.addEventListener('click', async () => {
@@ -919,62 +998,9 @@ document.addEventListener('DOMContentLoaded', async function() {
                     refreshBtn.disabled = false;
                 }
             });
-        } else {
-            // Create refresh button if it doesn't exist
-            const headerActions = document.querySelector('.card-header .d-flex');
-            if (headerActions) {
-                const refreshButton = document.createElement('button');
-                refreshButton.id = 'refresh-stock-data';
-                refreshButton.className = 'btn btn-outline-secondary ms-2';
-                refreshButton.innerHTML = '<i class="fas fa-sync-alt me-2"></i>Refresh Data';
-                refreshButton.addEventListener('click', async () => {
-                    refreshButton.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Memperbarui...';
-                    refreshButton.disabled = true;
-                    
-                    try {
-                        await forceRefreshData();
-                    } finally {
-                        refreshButton.innerHTML = '<i class="fas fa-sync-alt me-2"></i>Refresh Data';
-                        refreshButton.disabled = false;
-                    }
-                });
-                headerActions.appendChild(refreshButton);
-            }
         }
         
-        // Add cache indicator
-        const cacheIndicator = document.createElement('small');
-        cacheIndicator.id = 'stockCacheIndicator';
-        cacheIndicator.className = 'text-muted ms-2';
-        cacheIndicator.style.display = 'none';
-        
-        const headerTitle = document.querySelector('.card-header h5');
-        if (headerTitle) {
-            headerTitle.appendChild(cacheIndicator);
-        }
-        
-        // Show cache status if using cached data
-        const hasValidCache = categories.some(category => isCacheValid(category));
-        if (hasValidCache) {
-            const oldestCacheTime = Math.min(...categories
-                .filter(category => stockCacheMeta.has(category))
-                .map(category => stockCacheMeta.get(category))
-            );
-            
-            if (oldestCacheTime) {
-                const cacheTime = new Date(oldestCacheTime);
-                const formattedTime = cacheTime.toLocaleTimeString('id-ID', {
-                    hour: '2-digit',
-                    minute: '2-digit'
-                });
-                cacheIndicator.textContent = `(Cache: ${formattedTime})`;
-                cacheIndicator.style.display = 'inline';
-            }
-        }
-        
-        // Add info about history limits to the UI
-        console.log(`Stock management initialized. History limited to ${MAX_HISTORY_RECORDS} records per item.`);
-        console.log(`Cache TTL: ${CACHE_TTL_STANDARD/1000}s standard, ${CACHE_TTL_REALTIME/1000}s realtime`);
+        console.log('Stock management initialized successfully');
         
     } catch (error) {
         console.error('Error initializing stock management:', error);
@@ -986,51 +1012,38 @@ document.addEventListener('DOMContentLoaded', async function() {
         }
         
         // Show error message
-        const errorDiv = document.createElement('div');
-        errorDiv.className = 'alert alert-danger';
-        errorDiv.innerHTML = `
-            <i class="fas fa-exclamation-triangle me-2"></i>
-            Terjadi kesalahan saat memuat data stok. 
-            <button class="btn btn-sm btn-outline-danger ms-2" onclick="location.reload()">
-                <i class="fas fa-redo me-1"></i>Coba Lagi
-            </button>
-        `;
-        
-        const mainContainer = document.querySelector('.container-fluid') || document.body;
-        mainContainer.insertBefore(errorDiv, mainContainer.firstChild);
+        Swal.fire({
+            icon: 'error',
+            title: 'Error!',
+            text: 'Terjadi kesalahan saat memuat data stok',
+            confirmButtonText: 'Coba Lagi',
+            allowOutsideClick: false
+        }).then((result) => {
+            if (result.isConfirmed) {
+                location.reload();
+            }
+        });
     }
 });
 
 // Cleanup on page unload
 window.addEventListener('beforeunload', () => {
-    // Save current cache state
     updateCache();
 });
 
 // Periodic cache cleanup (every 30 minutes)
 setInterval(() => {
-    // Remove expired cache entries
-    const now = Date.now();
-    const expiredCategories = [];
-    
-    stockCacheMeta.forEach((timestamp, category) => {
-        const age = now - timestamp;
-        const ttl = ['brankas', 'admin'].includes(category) ? CACHE_TTL_REALTIME : CACHE_TTL_STANDARD;
-        
-        if (age > ttl * 2) { // Remove if twice the TTL
-            expiredCategories.push(category);
+    const cachedData = localStorage.getItem(CACHE_KEY);
+    if (cachedData) {
+        try {
+            const parsedData = JSON.parse(cachedData);
+            if (Date.now() - parsedData.timestamp > CACHE_TTL * 2) {
+                localStorage.removeItem(CACHE_KEY);
+                console.log('Expired cache cleaned up');
+            }
+        } catch (error) {
+            localStorage.removeItem(CACHE_KEY);
         }
-    });
-    
-    expiredCategories.forEach(category => {
-        stockCache.delete(category);
-        stockCacheMeta.delete(category);
-        delete stockData[category];
-    });
-    
-    if (expiredCategories.length > 0) {
-        console.log(`Cleaned up expired cache for categories: ${expiredCategories.join(', ')}`);
-        updateCache();
     }
 }, 30 * 60 * 1000); // 30 minutes
 
@@ -1040,9 +1053,10 @@ export {
     addStock, 
     reduceStock, 
     populateTables,
-    cleanAndLimitHistory,
-    addHistoryEntry,
     forceRefreshData,
-    clearStockCache
+    showDetailColorStock,
+    showHistory
 };
 
+// Make handleLogout available globally
+window.handleLogout = handleLogout;
