@@ -1,8 +1,7 @@
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.4.0/firebase-app.js';
 import { getFirestore } from 'https://www.gstatic.com/firebasejs/10.4.0/firebase-firestore.js';
-import { getStorage } from 'https://www.gstatic.com/firebasejs/10.4.0/firebase-storage.js';
 
-// Your web app's Firebase configuration
+// Firebase configuration
 const firebaseConfig = {
   apiKey: "AIzaSyA7JvWu5eDgSYjUyfAH1DuN3b3CTwVz-ps",
   authDomain: "aksesoris-app-7be90.firebaseapp.com",
@@ -15,11 +14,12 @@ const firebaseConfig = {
 // Initialize Firebase
 const app = initializeApp(firebaseConfig);
 const firestore = getFirestore(app);
-const storage = getStorage(app);
 
 console.log('Firebase initialized successfully');
 
+// Make firestore available globally
+window.firestore = firestore;
+
 // Export Firebase instances
 export default app;
-export { firestore, storage };
-
+export { firestore };
