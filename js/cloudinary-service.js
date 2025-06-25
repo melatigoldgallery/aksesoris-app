@@ -215,9 +215,11 @@ export async function uploadAllTemporaryFiles() {
  * Mendapatkan URL untuk file di Cloudinary
  * @param {string} publicId - Public ID file di Cloudinary
  * @param {Object} options - Opsi transformasi
+ * @param {string} resourceType - Tipe resource ('image', 'video', 'raw')
  * @returns {string} - URL file
  */
-export function getCloudinaryUrl(publicId, options = {}) {
+
+export function getCloudinaryUrl(publicId, options = {}, resourceType = 'image') {
   if (!publicId) return null;
   
   let transformations = "";
@@ -233,9 +235,9 @@ export function getCloudinaryUrl(publicId, options = {}) {
     transformations = transformations.slice(0, -1);
   }
   
-  // Format URL
+  // Format URL dengan resource type yang benar
   const transformationPath = transformations ? `${transformations}/` : "";
-  return `https://res.cloudinary.com/${CLOUDINARY_CLOUD_NAME}/image/upload/${transformationPath}${publicId}`;
+  return `https://res.cloudinary.com/${CLOUDINARY_CLOUD_NAME}/${resourceType}/upload/${transformationPath}${publicId}`;
 }
 
 /**

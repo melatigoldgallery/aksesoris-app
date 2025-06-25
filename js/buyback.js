@@ -91,9 +91,6 @@ function addNewRow() {
           <option value="2">K2</option>
           <option value="3">K3</option>
         </select>
-        <button type="button" class="btn btn-outline-info condition-visual-btn" data-condition="1">
-          <i class="fas fa-eye"></i>
-        </button>
       </div>
     </td>
     <td>
@@ -246,24 +243,15 @@ function roundBuybackPrice(price) {
 // Calculate percentage
 function calculatePersentase(kondisiBarang, persentaseBeli) {
   if (persentaseBeli >= 95) {
-    const persentaseMap = { 1: 98, 2: 97, 3: 96 };
+    const persentaseMap = { 1: 97, 2: 96, 3: 95 };
     return persentaseMap[kondisiBarang];
   } else if (persentaseBeli >= 90) {
     const persentaseMap = { 1: 97, 2: 95, 3: 94 };
     return persentaseMap[kondisiBarang];
   } else if (persentaseBeli >= 85) {
-    const persentaseMap = { 1: 95, 2: 93, 3: 92 };
+    const persentaseMap = { 1: 90, 2: 85, 3: 80 };
     return persentaseMap[kondisiBarang];
-  } else if (persentaseBeli >= 80) {
-    const persentaseMap = { 1: 93, 2: 90, 3: 88 };
-    return persentaseMap[kondisiBarang];
-  } else if (persentaseBeli >= 75) {
-    const persentaseMap = { 1: 90, 2: 87, 3: 80 };
-    return persentaseMap[kondisiBarang];
-  } else {
-    const persentaseMap = { 1: 90, 2: 83, 3: 77 };
-    return persentaseMap[kondisiBarang];
-  }
+  } 
 }
 
 // Show results in modal
@@ -277,7 +265,7 @@ function showResults(results) {
   `;
 
   results.forEach((result, index) => {
-    const conditionText = result.kondisiBarang === "1" ? "Mengkilap, Mulus, Model Bagus" : result.kondisiBarang === "2" ? "Sedikit Kusam, Sedikit Baret" : "Kusam / Banyak Baret / Batu Lepas";
+    const conditionText = result.kondisiBarang === "1" ? "Mengkilap / Mulus / Model Bagus" : result.kondisiBarang === "2" ? "Sedikit Kusam / Sedikit Baret" : "Kusam / Banyak Baret / Batu Lepas";
     let specialNotice = "";
     
     if (result.isHigherPurchasePrice) {
@@ -365,7 +353,7 @@ function printModal() {
       <style>
         @page { size: 75mm auto; margin: 7mm; }
         body { 
-          font-family: Arial, sans-serif;
+          font-family: consolas;
           width: 70mm;
           font-size: 9pt;
           line-height: 1.2;
@@ -394,7 +382,7 @@ function printModal() {
         }
         .result-item p {
           margin: 1mm 0;
-          font-size: 8pt;
+          font-size: 10pt;
         }
         .alert {
           margin-top: 2mm;
@@ -503,7 +491,7 @@ async function loadConditionMedia(condition) {
               height: 300, 
               crop: 'fill',
               quality: 'auto'
-            }) : photoData.url;
+            }, 'image') : photoData.url; // Tambahkan 'image' sebagai resource type
           
           displayMedia(mediaItem, displayUrl, "photo");
           
@@ -511,7 +499,7 @@ async function loadConditionMedia(condition) {
           mediaGallery.push({
             type: 'photo',
             url: photoData.publicId ? 
-              getCloudinaryUrl(photoData.publicId, { quality: 'auto' }) : 
+              getCloudinaryUrl(photoData.publicId, { quality: 'auto' }, 'image') : 
               photoData.url,
             title: `Foto ${i + 1}`,
             index: i
@@ -529,7 +517,7 @@ async function loadConditionMedia(condition) {
     if (videoItem) {
       if (videoData && videoData.url) {
         const displayUrl = videoData.publicId ? 
-          getCloudinaryUrl(videoData.publicId, { quality: 'auto' }) : 
+          getCloudinaryUrl(videoData.publicId, { quality: 'auto' }, 'video') : // Gunakan 'video' sebagai resource type
           videoData.url;
         
         displayMedia(videoItem, displayUrl, "video");
@@ -556,6 +544,7 @@ async function loadConditionMedia(condition) {
     document.getElementById("conditionVisualContent").style.display = "block";
   }
 }
+
 
 // Check and upload pending files
 async function checkAndUploadPendingFiles() {
@@ -751,6 +740,7 @@ async function handleFileUpload(input, index, type) {
     const mediaData = {
       url: uploadResult.url,
       publicId: uploadResult.publicId,
+      resourceType: uploadResult.resourceType || (type === 'photo' ? 'image' : 'video'), // Simpan resource type
       uploadedAt: Date.now(),
       isTemporary: uploadResult.isTemporary || false
     };
@@ -765,21 +755,24 @@ async function handleFileUpload(input, index, type) {
     }
 
     // Display the media with optimization
+    const resourceType = type === 'photo' ? 'image' : 'video';
     const optimizedUrl = uploadResult.isTemporary ? 
       uploadResult.url : 
       getCloudinaryUrl(uploadResult.publicId, { 
-        width: 300, 
-        height: 300, 
-        crop: 'fill',
+        width: type === 'photo' ? 300 : undefined, 
+        height: type === 'photo' ? 300 : undefined, 
+        crop: type === 'photo' ? 'fill' : undefined,
         quality: 'auto'
-      });
+      }, resourceType);
     
     displayMedia(mediaItem, optimizedUrl, type);
 
     // Add to gallery
     const galleryItem = {
       type: type,
-      url: uploadResult.isTemporary ? uploadResult.url : getCloudinaryUrl(uploadResult.publicId, { quality: 'auto' }),
+      url: uploadResult.isTemporary ? 
+        uploadResult.url : 
+        getCloudinaryUrl(uploadResult.publicId, { quality: 'auto' }, resourceType),
       title: type === 'photo' ? `Foto ${parseInt(index) + 1}` : 'Video',
       index: parseInt(index)
     };
