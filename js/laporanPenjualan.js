@@ -676,13 +676,14 @@ const laporanPenjualanHandler = {
   },
 
   // Prepare data for DataTable
+  // Prepare data for DataTable
   prepareTableData() {
     const salesType = document.getElementById("salesType").value;
     const configKey = "manual";
     const config = tableConfigs[configKey];
     if (!config) return [];
 
-    const summaryMap = new Map();
+    const tableData = [];
 
     this.filteredSalesData.forEach((transaction) => {
       // Enhanced date formatting with better timestamp handling
@@ -707,60 +708,100 @@ const laporanPenjualanHandler = {
 
       if (!transaction.items) return;
 
-      transaction.items.forEach((item) => {
-        const key = item.kodeText || item.barcode || "-";
-        const name = item.nama || "-";
-        const kadar = item.kadar || "-";
-        const berat = parseFloat(item.berat) || 0;
-        const jumlah = parseInt(item.jumlah) || 1;
+      // PERBAIKAN: Cek apakah ini penjualan manual atau bukan
+      const isManualSale =
+        transaction.jenisPenjualan === "manual" ||
+        transaction.isGantiLock ||
+        transaction.jenisPenjualan === "gantiLock";
 
-        // PERBAIKAN: Selalu gunakan harga asli, bukan harga setelah dipotong DP
-        let harga = parseInt(item.totalHarga) || 0;
+      if (isManualSale) {
+        // Untuk penjualan manual: tampilkan detail setiap item dalam setiap transaksi
+        transaction.items.forEach((item) => {
+          const key = item.kodeText || item.barcode || "-";
+          const name = item.nama || "-";
+          const kadar = item.kadar || "-";
+          const berat = parseFloat(item.berat) || 0;
+          const jumlah = parseInt(item.jumlah) || 1;
 
-        // Hapus logika pemotongan DP - selalu tampilkan harga asli
-        if (transaction.metodeBayar === "free") {
-          harga = 0;
-        }
-        // Tidak ada lagi pemotongan untuk DP - harga tetap asli
+          let harga = parseInt(item.totalHarga) || 0;
+          if (transaction.metodeBayar === "free") {
+            harga = 0;
+          }
 
-        if (summaryMap.has(key)) {
-          const existing = summaryMap.get(key);
-          existing.jumlah += jumlah;
-          existing.berat += berat;
-          existing.harga += harga;
-        } else {
-          summaryMap.set(key, {
-            tanggal: date,
-            jenis: jenisPenjualan,
-            kode: key,
-            nama: name,
+          const beratDisplay = berat > 0 ? `${berat.toFixed(2)} gr` : "-";
+
+          // Tambahkan setiap item sebagai baris terpisah
+          tableData.push([
+            date,
+            jenisPenjualan,
+            key,
+            name,
             jumlah,
-            berat,
+            beratDisplay,
             kadar,
-            harga,
+            `Rp ${harga.toLocaleString("id-ID")}`,
             status,
-            keterangan: item.keterangan || keterangan,
-            jenisPenjualan: transaction.jenisPenjualan,
-          });
-        }
-      });
+            item.keterangan || keterangan,
+          ]);
+        });
+      } else {
+        // Untuk penjualan aksesoris/kotak: gunakan summary seperti sebelumnya
+        const summaryMap = new Map();
+
+        transaction.items.forEach((item) => {
+          const key = item.kodeText || item.barcode || "-";
+          const name = item.nama || "-";
+          const kadar = item.kadar || "-";
+          const berat = parseFloat(item.berat) || 0;
+          const jumlah = parseInt(item.jumlah) || 1;
+
+          let harga = parseInt(item.totalHarga) || 0;
+          if (transaction.metodeBayar === "free") {
+            harga = 0;
+          }
+
+          if (summaryMap.has(key)) {
+            const existing = summaryMap.get(key);
+            existing.jumlah += jumlah;
+            existing.berat += berat;
+            existing.harga += harga;
+          } else {
+            summaryMap.set(key, {
+              tanggal: date,
+              jenis: jenisPenjualan,
+              kode: key,
+              nama: name,
+              jumlah,
+              berat,
+              kadar,
+              harga,
+              status,
+              keterangan: item.keterangan || keterangan,
+              jenisPenjualan: transaction.jenisPenjualan,
+            });
+          }
+        });
+
+        // Tambahkan summary data ke tableData
+        Array.from(summaryMap.values()).forEach((item) => {
+          const beratDisplay = item.jenisPenjualan === "kotak" ? "-" : `${item.berat.toFixed(2)} gr`;
+          tableData.push([
+            item.tanggal,
+            item.jenis,
+            item.kode,
+            item.nama,
+            item.jumlah,
+            beratDisplay,
+            item.kadar,
+            `Rp ${item.harga.toLocaleString("id-ID")}`,
+            item.status,
+            item.keterangan,
+          ]);
+        });
+      }
     });
 
-    return Array.from(summaryMap.values()).map((item) => {
-      const beratDisplay = item.jenisPenjualan === "kotak" ? "-" : `${item.berat.toFixed(2)} gr`;
-      return [
-        item.tanggal,
-        item.jenis,
-        item.kode,
-        item.nama,
-        item.jumlah,
-        beratDisplay,
-        item.kadar,
-        `Rp ${item.harga.toLocaleString("id-ID")}`,
-        item.status,
-        item.keterangan,
-      ];
-    });
+    return tableData;
   },
 
   getStatusBadge(transaction) {
