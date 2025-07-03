@@ -676,7 +676,6 @@ const laporanPenjualanHandler = {
   },
 
   // Prepare data for DataTable
-  // Prepare data for DataTable
   prepareTableData() {
     const salesType = document.getElementById("salesType").value;
     const configKey = "manual";
@@ -684,6 +683,9 @@ const laporanPenjualanHandler = {
     if (!config) return [];
 
     const tableData = [];
+
+    // PERBAIKAN: Buat summary map global untuk menggabungkan item dengan kode sama
+    const globalSummaryMap = new Map();
 
     this.filteredSalesData.forEach((transaction) => {
       // Enhanced date formatting with better timestamp handling
@@ -745,9 +747,7 @@ const laporanPenjualanHandler = {
           ]);
         });
       } else {
-        // Untuk penjualan aksesoris/kotak: gunakan summary seperti sebelumnya
-        const summaryMap = new Map();
-
+        // PERBAIKAN: Untuk penjualan aksesoris/kotak: gunakan global summary untuk menggabungkan semua item dengan kode sama
         transaction.items.forEach((item) => {
           const key = item.kodeText || item.barcode || "-";
           const name = item.nama || "-";
@@ -760,13 +760,18 @@ const laporanPenjualanHandler = {
             harga = 0;
           }
 
-          if (summaryMap.has(key)) {
-            const existing = summaryMap.get(key);
+          // Gunakan kode sebagai key untuk menggabungkan item yang sama
+          if (globalSummaryMap.has(key)) {
+            const existing = globalSummaryMap.get(key);
             existing.jumlah += jumlah;
             existing.berat += berat;
             existing.harga += harga;
+            // Update tanggal ke yang terbaru jika ada
+            if (date !== "-") {
+              existing.tanggal = date;
+            }
           } else {
-            summaryMap.set(key, {
+            globalSummaryMap.set(key, {
               tanggal: date,
               jenis: jenisPenjualan,
               kode: key,
@@ -781,24 +786,24 @@ const laporanPenjualanHandler = {
             });
           }
         });
-
-        // Tambahkan summary data ke tableData
-        Array.from(summaryMap.values()).forEach((item) => {
-          const beratDisplay = item.jenisPenjualan === "kotak" ? "-" : `${item.berat.toFixed(2)} gr`;
-          tableData.push([
-            item.tanggal,
-            item.jenis,
-            item.kode,
-            item.nama,
-            item.jumlah,
-            beratDisplay,
-            item.kadar,
-            `Rp ${item.harga.toLocaleString("id-ID")}`,
-            item.status,
-            item.keterangan,
-          ]);
-        });
       }
+    });
+
+    // PERBAIKAN: Tambahkan summary data dari global map ke tableData
+    Array.from(globalSummaryMap.values()).forEach((item) => {
+      const beratDisplay = item.jenisPenjualan === "kotak" ? "-" : `${item.berat.toFixed(2)} gr`;
+      tableData.push([
+        item.tanggal,
+        item.jenis,
+        item.kode,
+        item.nama,
+        item.jumlah,
+        beratDisplay,
+        item.kadar,
+        `Rp ${item.harga.toLocaleString("id-ID")}`,
+        item.status,
+        item.keterangan,
+      ]);
     });
 
     return tableData;
