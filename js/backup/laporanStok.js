@@ -7,8 +7,6 @@ import {
   orderBy,
   Timestamp,
   onSnapshot,
-  addDoc,
-  deleteDoc
 } from "https://www.gstatic.com/firebasejs/10.4.0/firebase-firestore.js";
 import { firestore } from "./configFirebase.js";
 
@@ -47,7 +45,6 @@ class OptimizedStockReport {
     this.setDefaultDates();
     this.initDataTable();
     this.prepareEmptyTable();
-    this.initSnapshotScheduler();
     
     // Cleanup cache periodically
     setInterval(() => this.cleanupCache(), 30 * 60 * 1000);
@@ -304,280 +301,6 @@ class OptimizedStockReport {
       }
     }
   }
-
-  // Snapshot Manager - Ringkas dan Efektif
-initSnapshotScheduler() {
-  console.log("📅 Initializing Snapshot Scheduler");
-  
-  // Check missing yesterday snapshot on startup
-  this.checkYesterdaySnapshot();
-  
-  // Schedule daily at 00:00
-  this.scheduleDaily();
-}
-
-// Check and create yesterday's snapshot if missing
-async checkYesterdaySnapshot() {
-  try {
-    const yesterday = new Date();
-    yesterday.setDate(yesterday.getDate() - 1);
-    const dateKey = this.formatDate(yesterday);
-    
-    const exists = await this.snapshotExists(dateKey);
-    if (!exists) {
-      console.log("⚠️ Creating missing yesterday snapshot");
-      await this.createSnapshot(yesterday);
-    }
-  } catch (error) {
-    console.error("Error checking yesterday snapshot:", error);
-  }
-}
-
-// Schedule daily snapshot creation
-scheduleDaily() {
-  const now = new Date();
-  const tomorrow = new Date(now);
-  tomorrow.setDate(tomorrow.getDate() + 1);
-  tomorrow.setHours(0, 0, 0, 0);
-  
-  const msUntilMidnight = tomorrow.getTime() - now.getTime();
-  
-  setTimeout(() => {
-    this.createSnapshot();
-    setInterval(() => this.createSnapshot(), 24 * 60 * 60 * 1000);
-  }, msUntilMidnight);
-}
-
-// Check if snapshot exists
-async snapshotExists(dateKey) {
-  try {
-    const q = query(
-      collection(firestore, "dailyStockSnapshot"),
-      where("date", "==", dateKey)
-    );
-    const snapshot = await getDocs(q);
-    return !snapshot.empty;
-  } catch (error) {
-    return false;
-  }
-}
-
-// Create snapshot for yesterday
-async createSnapshot(targetDate = null) {
-  if (!targetDate) {
-    targetDate = new Date();
-    targetDate.setDate(targetDate.getDate() - 1);
-  }
-  
-  const dateKey = this.formatDate(targetDate);
-  
-  try {
-    console.log(`📸 Creating snapshot: ${dateKey}`);
-    
-    // Calculate stock for target date
-    const endOfDay = new Date(targetDate);
-    endOfDay.setHours(23, 59, 59, 999);
-    
-    // Get base and calculate stock
-    const baseSnapshot = await this.getSnapshotAsBase(targetDate);
-    const stockMap = await this.calculateStockFromBase(baseSnapshot, endOfDay);
-    
-    // Load master data if needed
-    if (!this.stockData?.length) {
-      await this.loadStockMasterData(true);
-    }
-    
-    // Create snapshot data
-    const stockData = [];
-    
-    // From master data
-    this.stockData.forEach(item => {
-      const stok = stockMap.get(item.kode) || 0;
-      // SIMPAN SEMUA ITEM, TERMASUK YANG STOK 0
-      stockData.push({
-        kode: item.kode,
-        nama: item.nama || "",
-        kategori: item.kategori || "",
-        stokAkhir: stok
-      });
-    });
-    
-    // From transactions only (yang tidak ada di master)
-    stockMap.forEach((stok, kode) => {
-      if (!stockData.find(item => item.kode === kode)) {
-        stockData.push({
-          kode: kode,
-          nama: "",
-          kategori: "",
-          stokAkhir: stok
-        });
-      }
-    });
-    
-    // VALIDASI SEBELUM SIMPAN
-    if (stockData.length === 0) {
-      console.error(`❌ No stock data to save for ${dateKey}`);
-      return;
-    }
-    
-    console.log(`📊 Snapshot data prepared: ${stockData.length} items`);
-    
-    // Hapus snapshot lama jika ada
-    const existingQuery = query(
-      collection(firestore, "dailyStockSnapshot"),
-      where("date", "==", dateKey)
-    );
-    const existingSnapshot = await getDocs(existingQuery);
-    
-    if (!existingSnapshot.empty) {
-      console.log(`🗑️ Deleting existing snapshot for ${dateKey}`);
-      const deletePromises = existingSnapshot.docs.map(doc => deleteDoc(doc.ref));
-      await Promise.all(deletePromises);
-    }
-    
-    // Save new snapshot
-    const snapshotDoc = {
-      date: dateKey,
-      timestamp: Timestamp.now(),
-      totalItems: stockData.length,
-      stockData: stockData,
-      createdBy: "auto",
-      version: "2.1"
-    };
-    
-    await addDoc(collection(firestore, "dailyStockSnapshot"), snapshotDoc);
-    
-    // Clear cache
-    this.clearCacheForDate(targetDate);
-    
-    console.log(`✅ Snapshot created: ${dateKey} (${stockData.length} items)`);
-    
-    // VALIDASI HASIL
-    const itemsWithStock = stockData.filter(item => item.stokAkhir > 0).length;
-    console.log(`📈 Items with stock > 0: ${itemsWithStock}/${stockData.length}`);
-    
-  } catch (error) {
-    console.error(`❌ Snapshot error ${dateKey}:`, error);
-  }
-}
-
-// Tambahkan method untuk debug snapshot
-async debugSnapshot(dateString) {
-  try {
-    const date = this.parseDate(dateString);
-    const dateKey = this.formatDate(date);
-    
-    console.log(`🔍 DEBUG SNAPSHOT: ${dateKey}`);
-    
-    // Check if exists
-    const exists = await this.snapshotExists(dateKey);
-    console.log(`Exists: ${exists}`);
-    
-    if (exists) {
-      const snapshot = await this.getDailySnapshot(date);
-      console.log(`Snapshot size: ${snapshot?.size || 0}`);
-      
-      if (snapshot && snapshot.size > 0) {
-        console.log("Sample data:", Array.from(snapshot.entries()).slice(0, 3));
-      }
-    }
-    
-    // Check base calculation
-    const baseSnapshot = await this.getSnapshotAsBase(date);
-    console.log(`Base snapshot size: ${baseSnapshot?.size || 0}`);
-    
-    const endOfDay = new Date(date);
-    endOfDay.setHours(23, 59, 59, 999);
-    const stockMap = await this.calculateStockFromBase(baseSnapshot, endOfDay);
-    console.log(`Calculated stock size: ${stockMap?.size || 0}`);
-    
-  } catch (error) {
-    console.error("Debug error:", error);
-  }
-}
-
-// Tambahkan method untuk manual snapshot (untuk testing)
-async createManualSnapshot(dateString) {
-  try {
-    const targetDate = this.parseDate(dateString);
-    if (!targetDate) throw new Error("Invalid date");
-    
-    await this.createSnapshot(targetDate);
-    this.showSuccess(`Snapshot berhasil dibuat untuk ${dateString}`);
-    return true;
-  } catch (error) {
-    this.showError("Gagal membuat snapshot: " + error.message);
-    return false;
-  }
-}
-
-// Perbaikan getDailySnapshot untuk kontinuitas
-async getDailySnapshot(date) {
-  const dateKey = this.formatDate(date);
-  const cacheKey = `daily_snapshot_${dateKey.replace(/\//g, "-")}`;
-  
-  if (this.isCacheValid(cacheKey)) {
-    return this.cache.get(cacheKey);
-  }
-
-  try {
-    console.log(`🔍 Looking for daily snapshot: ${dateKey}`);
-
-    const q = query(
-      collection(firestore, "dailyStockSnapshot"), 
-      where("date", "==", dateKey)
-    );
-    const querySnapshot = await getDocs(q);
-
-    if (querySnapshot.empty) {
-      console.log(`❌ Daily snapshot not found for: ${dateKey}`);
-      this.setCache(cacheKey, null);
-      return null;
-    }
-
-    const doc = querySnapshot.docs[0];
-    const data = doc.data();
-
-    // VALIDASI SNAPSHOT KOSONG
-    if (!data.stockData || !Array.isArray(data.stockData) || data.stockData.length === 0) {
-      console.warn(`⚠️ Empty snapshot found for: ${dateKey} - DELETING AND RECREATING`);
-      
-      // Hapus snapshot kosong
-      await deleteDoc(doc.ref);
-      
-      // Buat ulang snapshot
-      await this.createSnapshot(date);
-      
-      // Coba load lagi
-      return this.getDailySnapshot(date);
-    }
-
-    console.log(`✅ Valid snapshot found: ${dateKey}`, {
-      docId: doc.id,
-      totalItems: data.totalItems || 0,
-      stockDataLength: data.stockData?.length || 0,
-    });
-
-    const snapshotMap = new Map();
-    data.stockData.forEach(item => {
-      if (item.kode) {
-        snapshotMap.set(item.kode, {
-          stokAwal: item.stokAkhir || 0,
-          nama: item.nama || "",
-          kategori: item.kategori || ""
-        });
-      }
-    });
-
-    this.setCache(cacheKey, snapshotMap);
-    return snapshotMap;
-    
-  } catch (error) {
-    console.error("Error loading daily snapshot:", error);
-    this.setCache(cacheKey, null);
-    return null;
-  }
-}
 
   // Load all kode aksesoris
   async loadAllKodeAksesoris() {
@@ -1155,7 +878,7 @@ async getDailySnapshot(date) {
           text: '<i class="fas fa-file-pdf me-2"></i>PDF',
           className: "btn btn-danger btn-sm me-1",
           exportOptions: { columns: ":visible" },
-          title: `Laporan Stok Kotak & Aksesoris Melati Bawah \n(${selectedDate})`,
+          title: `Laporan Stok Kotak & Aksesoris Melati Bawah\n(${selectedDate})`,
           customize: function (doc) {
             doc.defaultStyle.fontSize = 8;
             doc.styles.tableHeader.fontSize = 9;
@@ -1533,3 +1256,5 @@ export { optimizedStockReport as default };
 window.optimizedStockReport = optimizedStockReport;
 
 console.log("📦 Optimized Stock Report Module loaded successfully");
+
+
