@@ -244,99 +244,10 @@
           </div>
 
           <div class="content-wrapper">
-            <!-- Status Card -->
-            <div class="row mb-4">
-              <div class="col-12">
-                <div class="card">
-                  <div class="card-header bg-info text-white">
-                    <h5 class="mb-0">
-                      <i class="fas fa-info-circle me-2"></i>
-                      Status Database
-                    </h5>
-                  </div>
-                  <div class="card-body">
-                    <div class="row" id="databaseStatus">
-                      <div class="col-md-3 mb-3">
-                        <div class="text-center">
-                          <div class="h4 text-primary" id="statusPenjualan">-</div>
-                          <small class="text-muted">Penjualan Aksesoris</small>
-                        </div>
-                      </div>
-                      <div class="col-md-3 mb-3">
-                        <div class="text-center">
-                          <div class="h4 text-success" id="statusStockAdditions">-</div>
-                          <small class="text-muted">Stock Additions</small>
-                        </div>
-                      </div>
-                      <div class="col-md-3 mb-3">
-                        <div class="text-center">
-                          <div class="h4 text-warning" id="statusStokTransaksi">-</div>
-                          <small class="text-muted">Stok Transaksi</small>
-                        </div>
-                      </div>
-                      <div class="col-md-3 mb-3">
-                        <div class="text-center">
-                          <div class="h4 text-info" id="statusStokAksesoris">-</div>
-                          <small class="text-muted">Stok Aksesoris</small>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
+
 
             <!-- Maintenance Actions -->
             <div class="row">
-              <!-- Archive Data -->
-              <div class="col-md-6 mb-4">
-                <div class="card h-100">
-                  <div class="card-header bg-primary text-white">
-                    <h5 class="mb-0">
-                      <i class="fas fa-archive me-2"></i>
-                      Arsipkan Data
-                    </h5>
-                  </div>
-                  <div class="card-body">
-                    <p class="card-text">
-                      Pindahkan data bulan lalu ke koleksi arsip untuk mengoptimalkan performa database.
-                    </p>
-                    <div class="mb-3">
-                      <label for="archiveMonth" class="form-label">Pilih Bulan untuk Diarsipkan:</label>
-                      <input type="month" class="form-control" id="archiveMonth" />
-                    </div>
-                    <button class="btn btn-primary w-100" id="btnArchiveData">
-                      <i class="fas fa-archive me-2"></i>
-                      Arsipkan Data Bulan Lalu
-                    </button>
-                  </div>
-                </div>
-              </div>
-
-              <!-- Snapshot Stok -->
-              <div class="col-md-6 mb-4">
-                <div class="card h-100">
-                  <div class="card-header bg-success text-white">
-                    <h5 class="mb-0">
-                      <i class="fas fa-camera me-2"></i>
-                      Snapshot Stok
-                    </h5>
-                  </div>
-                  <div class="card-body">
-                    <p class="card-text">
-                      Buat snapshot stok aksesoris untuk backup dan analisis historis.
-                    </p>
-                    <div class="mb-3">
-                      <label for="snapshotMonth" class="form-label">Bulan Snapshot:</label>
-                      <input type="month" class="form-control" id="snapshotMonth" />
-                    </div>
-                    <button class="btn btn-success w-100" id="btnCreateSnapshot">
-                      <i class="fas fa-camera me-2"></i>
-                      Buat Snapshot Stok
-                    </button>
-                  </div>
-                </div>
-              </div>
 
               <!-- Export Data -->
               <div class="col-md-6 mb-4">
@@ -349,8 +260,12 @@
                   </div>
                   <div class="card-body">
                     <p class="card-text">
-                      Export semua data ke file Excel untuk backup eksternal.
+                      Export data berdasarkan bulan untuk backup eksternal.
                     </p>
+                    <div class="mb-3">
+                      <label for="exportMonth" class="form-label">Pilih Bulan untuk Export:</label>
+                      <input type="month" class="form-control" id="exportMonth" />
+                    </div>
                     <div class="d-grid gap-2">
                       <button class="btn btn-warning" id="btnExportPenjualan">
                         <i class="fas fa-download me-2"></i>
@@ -369,7 +284,7 @@
                         Export Stok Aksesoris
                       </button>
                       <button class="btn btn-outline-warning" id="btnExportAll">
-                        <i class="fas fa-download me-2">                        </i>
+                        <i class="fas fa-download me-2"></i>
                         Export Semua Data
                       </button>
                     </div>
@@ -388,7 +303,7 @@
                   </div>
                   <div class="card-body">
                     <p class="card-text">
-                      <strong>Peringatan:</strong> Hapus data lama setelah berhasil diarsipkan dan diexport.
+                      <strong>Peringatan:</strong> Hapus data lama setelah berhasil diexport. Pastikan file backup sudah tersimpan dengan aman.
                     </p>
                     <div class="mb-3">
                       <label for="deleteMonth" class="form-label">Pilih Bulan untuk Dihapus:</label>
@@ -399,7 +314,7 @@
                       Hapus Data Lama
                     </button>
                     <small class="text-muted mt-2 d-block">
-                      Tombol akan aktif setelah arsip dan export berhasil
+                      Tombol akan aktif setelah export berhasil untuk bulan yang dipilih
                     </small>
                   </div>
                 </div>

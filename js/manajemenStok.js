@@ -465,7 +465,7 @@ function showHistory(category, type) {
     
     if (allHistory.length === 0) {
         const row = document.createElement('tr');
-        row.innerHTML = '<td colspan="6" class="text-center">Tidak ada riwayat</td>';
+        row.innerHTML = '<td colspan="7" class="text-center">Tidak ada riwayat</td>';
         historyTableBody.appendChild(row);
     } else {
         // Sort by date descending and limit to 10 records
@@ -474,11 +474,18 @@ function showHistory(category, type) {
         
         limitedHistory.forEach(record => {
             const row = document.createElement('tr');
+            
+            // Determine operation badge
+            const operationBadge = record.action === 'Tambah' 
+                ? '<span class="badge bg-success"><i class="fas fa-plus me-1"></i>Tambah</span>'
+                : '<span class="badge bg-danger"><i class="fas fa-minus me-1"></i>Kurang</span>';
+            
             row.innerHTML = `
                 <td>${formatDate(record.date)}</td>
                 <td>${type}</td>
                 <td>${getColorBadge(record.color)}</td>
-                <td>${record.quantity}</td>
+                <td>${operationBadge}</td>
+                <td><span class="badge bg-secondary">${record.quantity}</span></td>
                 <td>${record.action === 'Tambah' ? record.adder : record.reducer}</td>
                 <td>${record.action === 'Tambah' ? record.receiver : record.notes}</td>
             `;
@@ -490,7 +497,7 @@ function showHistory(category, type) {
             const infoRow = document.createElement('tr');
             infoRow.className = 'table-info';
             infoRow.innerHTML = `
-                <td colspan="6" class="text-center">
+                <td colspan="7" class="text-center">
                     <small class="text-muted">
                         <i class="fas fa-info-circle me-1"></i>
                         Menampilkan 10 riwayat terbaru dari ${allHistory.length} total riwayat
