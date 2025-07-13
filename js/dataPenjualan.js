@@ -1612,41 +1612,41 @@ class OptimizedDataPenjualanApp {
     if (salesType === "manual") salesType = "manual";
 
     let receiptHTML = `
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <title>Struk Kasir</title>
-        <style>
-          body { font-family: consolas; font-size: 12px; margin: 0; padding: 0; width: 80mm;}
-          .receipt { margin: 0 auto; padding: 5mm; }
-          .receipt h3, .receipt h4 { text-align: center; margin: 2mm 0; }
-          .receipt hr { border-top: 1px dashed #000; }
-          .receipt table { width: 100%; border-collapse: collapse; }
-          .receipt th, .receipt td { text-align: left; padding: 1mm 2mm; }
-          .tanggal {margin-left: 10px}
-          .text-center { text-align: center; }
-          .text-right { text-align: right; }
-          .keterangan { font-style: italic; font-size: 14px; margin-top: 2mm; border-top: 1px dotted #000; padding-top: 2mm; }
-          .payment-info { margin-top: 2mm; border-top: 1px dotted #000; padding-top: 2mm; }
-        </style>
-      </head>
-      <body>
-        <div class="receipt d-flex justify-content-center">
-          <h3>MELATI 3</h3>
-          <h4>JL. DIPONEGORO NO. 116</h4>
-          <h4>NOTA PENJUALAN ${salesType.toUpperCase()}</h4>
-          <hr>
-          <p class="tanggal">Tanggal: ${tanggal}<br>Sales: ${transaction.sales || "-"}</p>
-          <hr>
-          <table>
-            <tr>
-              <th>Kode</th>
-              <th>Nama</th>
-              <th>Kadar</th>
-              <th>Gr</th>
-              <th>Harga</th>
-            </tr>
-    `;
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <title>Struk Kasir</title>
+      <style>
+        body { font-family: consolas; font-size: 12px; margin: 0; padding: 0; width: 80mm;}
+        .receipt { margin: 0 auto; padding: 5mm; }
+        .receipt h3, .receipt h4 { text-align: center; margin: 2mm 0; }
+        .receipt hr { border-top: 1px dashed #000; }
+        .receipt table { width: 100%; border-collapse: collapse; }
+        .receipt th, .receipt td { text-align: left; padding: 1mm 2mm; }
+        .tanggal {margin-left: 10px}
+        .text-center { text-align: center; }
+        .text-right { text-align: right; }
+        .keterangan { font-style: italic; font-size: 14px; margin-top: 2mm; border-top: 1px dotted #000; padding-top: 2mm; }
+        .payment-info { margin-top: 2mm; border-top: 1px dotted #000; padding-top: 2mm; }
+      </style>
+    </head>
+    <body>
+      <div class="receipt d-flex justify-content-center">
+        <h3>MELATI 3</h3>
+        <h4>JL. DIPONEGORO NO. 116</h4>
+        <h4>NOTA PENJUALAN ${salesType.toUpperCase()}</h4>
+        <hr>
+        <p class="tanggal">Tanggal: ${tanggal}<br>Sales: ${transaction.sales || "-"}</p>
+        <hr>
+        <table>
+          <tr>
+            <th>Kode</th>
+            <th>Nama</th>
+            <th>Kadar</th>
+            <th>Gr</th>
+            <th>Harga</th>
+          </tr>
+  `;
 
     let hasKeterangan = false;
     let keteranganText = "";
@@ -1654,14 +1654,14 @@ class OptimizedDataPenjualanApp {
     transaction.items?.forEach((item) => {
       const itemHarga = parseInt(item.totalHarga || 0);
       receiptHTML += `
-        <tr>
-          <td>${item.kodeText || "-"}</td>
-          <td>${item.nama || "-"}</td>
-          <td>${item.kadar || "-"}</td>
-          <td>${item.berat || "-"}</td>
-          <td class="text-right">${utils.formatRupiah(itemHarga)}</td>
-        </tr>
-      `;
+      <tr>
+        <td>${item.kodeText || "-"}</td>
+        <td>${item.nama || "-"}</td>
+        <td>${item.kadar || "-"}</td>
+        <td>${item.berat || "-"}</td>
+        <td class="text-right">${utils.formatRupiah(itemHarga)}</td>
+      </tr>
+    `;
 
       if (item.keterangan && item.keterangan.trim() !== "") {
         hasKeterangan = true;
@@ -1671,59 +1671,87 @@ class OptimizedDataPenjualanApp {
 
     const totalHarga = parseInt(transaction.totalHarga || 0);
     receiptHTML += `
-            <tr>
-              <td colspan="4" class="text-right"><strong>Total:</strong></td>
-              <td class="text-right"><strong>${utils.formatRupiah(totalHarga)}</strong></td>
-            </tr>
-          </table>
-    `;
+          <tr>
+            <td colspan="4" class="text-right"><strong>Total:</strong></td>
+            <td class="text-right"><strong>${utils.formatRupiah(totalHarga)}</strong></td>
+          </tr>
+        </table>
+  `;
 
-    // Add DP information if applicable
+    // PERBAIKAN: Add DP information dengan logika yang benar
     if (transaction.metodeBayar === "dp" || transaction.statusPembayaran === "DP") {
       const dpAmount = parseInt(transaction.nominalDP || 0);
-      const remainingAmount = parseInt(transaction.sisaPembayaran || 0);
 
       receiptHTML += `
-        <div class="payment-info">
-          <table>
-            <tr>
-              <td>Total Harga:</td>
-              <td class="text-right">${utils.formatRupiah(totalHarga)}</td>
-            </tr>
-            <tr>
-              <td>DP:</td>
-              <td class="text-right">${utils.formatRupiah(dpAmount)}</td>
-            </tr>
-            <tr>
-              <td><strong>SISA:</strong></td>
-              <td class="text-right"><strong>${utils.formatRupiah(remainingAmount)}</strong></td>
-            </tr>
-          </table>
-        </div>
+      <div class="payment-info">
+        <table>
+          <tr>
+            <td>Total Harga:</td>
+            <td class="text-right">${utils.formatRupiah(totalHarga)}</td>
+          </tr>
+          <tr>
+            <td>DP:</td>
+            <td class="text-right">${utils.formatRupiah(dpAmount)}</td>
+          </tr>
+    `;
+
+      // PERBAIKAN: Logika untuk menampilkan SISA atau KEMBALIAN
+      if (dpAmount >= totalHarga) {
+        // Jika DP >= total, tampilkan kembalian (jika ada)
+        if (dpAmount > totalHarga) {
+          const kembalian = dpAmount - totalHarga;
+          receiptHTML += `
+          <tr>
+            <td><strong>KEMBALIAN:</strong></td>
+            <td class="text-right"><strong>${utils.formatRupiah(kembalian)}</strong></td>
+          </tr>
+        `;
+        } else {
+          // Jika DP = total, tampilkan LUNAS
+          receiptHTML += `
+          <tr>
+            <td colspan="2" class="text-center"><strong>LUNAS</strong></td>
+          </tr>
+        `;
+        }
+      } else {
+        // Jika DP < total, tampilkan sisa pembayaran
+        const remainingAmount = parseInt(transaction.sisaPembayaran || 0);
+        receiptHTML += `
+        <tr>
+          <td><strong>SISA:</strong></td>
+          <td class="text-right"><strong>${utils.formatRupiah(remainingAmount)}</strong></td>
+        </tr>
       `;
+      }
+
+      receiptHTML += `
+        </table>
+      </div>
+    `;
     }
 
     if (hasKeterangan && transaction.jenisPenjualan === "manual") {
       receiptHTML += `
-        <div class="keterangan">
-          <strong>Keterangan:</strong> ${keteranganText.trim()}
-        </div>
-      `;
+      <div class="keterangan">
+        <strong>Keterangan:</strong> ${keteranganText.trim()}
+      </div>
+    `;
     }
 
     receiptHTML += `
-          <hr>
-          <p class="text-center">Terima Kasih<br>Atas Kunjungan Anda</p>
-        </div>
-        <script>
-          window.onload = function() {
-            window.print();
-            setTimeout(function() { window.close(); }, 500);
-          };
-        </script>
-      </body>
-      </html>
-    `;
+        <hr>
+        <p class="text-center">Terima Kasih<br>Atas Kunjungan Anda</p>
+      </div>
+      <script>
+        window.onload = function() {
+          window.print();
+          setTimeout(function() { window.close(); }, 500);
+        };
+      </script>
+    </body>
+    </html>
+  `;
 
     return receiptHTML;
   }
