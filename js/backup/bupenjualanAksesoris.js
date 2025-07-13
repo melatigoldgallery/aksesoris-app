@@ -2285,6 +2285,25 @@ setInterval(() => {
   });
 }, 10 * 60 * 1000); // Every 10 minutes
 
+// Error boundary for unhandled errors
+window.addEventListener("error", (event) => {
+  console.error("💥 Unhandled error:", event.error);
+
+  // Don't show alert for minor errors
+  if (
+    event.error &&
+    event.error.message &&
+    !event.error.message.includes("Non-Error promise rejection") &&
+    !event.error.message.includes("ResizeObserver")
+  ) {
+    utils.showAlert(
+      "Terjadi kesalahan tidak terduga. Silakan refresh halaman jika masalah berlanjut.",
+      "Error",
+      "error"
+    );
+  }
+});
+
 window.addEventListener("unhandledrejection", (event) => {
   console.error("🚫 Unhandled promise rejection:", event.reason);
   event.preventDefault();
