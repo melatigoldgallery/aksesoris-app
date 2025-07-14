@@ -458,6 +458,7 @@ const laporanPenjualanHandler = {
         language: {
           url: "//cdn.datatables.net/plug-ins/1.10.25/i18n/Indonesian.json",
         },
+        // PERBAIKAN: footerCallback dengan logika DP yang benar
         footerCallback: function (row, data, start, end, display) {
           let totalPcs = 0;
           let totalBerat = 0;
@@ -472,22 +473,35 @@ const laporanPenjualanHandler = {
               const jumlah = parseInt(item.jumlah) || 1;
               let harga = parseInt(item.totalHarga) || 0;
 
-              // Hitung harga untuk total berdasarkan metode pembayaran
-              if (transaction.metodeBayar === "dp" && transaction.statusPembayaran === "DP") {
-                const prop = harga / transaction.totalHarga;
-                harga = Math.round(prop * transaction.sisaPembayaran);
-              } else if (transaction.metodeBayar === "free") {
-                harga = 0;
-              }
-
+              // Selalu hitung PCS dan berat
               totalPcs += jumlah;
-              totalHarga += harga;
 
               const berat = parseFloat(item.berat) || 0;
               if (berat > 0 && transaction.jenisPenjualan !== "kotak") {
                 totalBerat += berat;
                 hasValidBerat = true;
               }
+
+              // PERBAIKAN: Logika perhitungan harga berdasarkan metode pembayaran
+              if (transaction.metodeBayar === "dp") {
+                const nominalDP = parseFloat(transaction.nominalDP) || 0;
+                const totalHargaTransaksi = parseFloat(transaction.totalHarga) || 0;
+
+                if (nominalDP >= totalHargaTransaksi) {
+                  // Jika DP >= total harga, tidak dihitung (harga = 0)
+                  harga = 0;
+                } else {
+                  // Jika DP < total harga, hitung proporsi sisa pembayaran
+                  const sisaPembayaran = totalHargaTransaksi - nominalDP;
+                  const proporsi = harga / totalHargaTransaksi;
+                  harga = Math.round(proporsi * sisaPembayaran);
+                }
+              } else if (transaction.metodeBayar === "free") {
+                harga = 0;
+              }
+              // Untuk metode tunai, harga tetap normal
+
+              totalHarga += harga;
             });
           });
 
