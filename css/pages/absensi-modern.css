@@ -206,32 +206,6 @@ body {
   .app-container.sidebar-collapsed .main-content {
     margin-left: 0;
   }
-   /* PERBAIKAN: Pastikan konten mobile ditampilkan */
-   .dashboard-mobile-content {
-    display: block !important;
-  }
-  
-  /* PERBAIKAN: Pastikan konten desktop disembunyikan */
-  .dashboard-desktop-content {
-    display: none !important;
-  }
-  
- /* Perbaikan: Menggunakan selector atribut untuk menu Buyback dan Antrian */
-.sidebar-menu .nav-item a[href="buyback.html"], /* Buyback */
-.sidebar-menu .nav-item a[data-bs-target="#antrianSubmenu"] /* Antrian */ {
-  display: none;
-}
-  
-  /* Sembunyikan link absensi bagian kehadiran, laporan kehadiran dan supervisor */
-  #absensiSubmenu .nav-item:nth-child(1),
-  #absensiSubmenu .nav-item:nth-child(3),
-  #absensiSubmenu .nav-item:nth-child(5) {
-    display: none;
-  }
-    /* Styling untuk tampilan penjelasan aplikasi di mobile */
-.app-intro-container {
-  padding: 1.5rem;
-}
 
     #exportExcelBtn, 
     #exportPdfBtn, 

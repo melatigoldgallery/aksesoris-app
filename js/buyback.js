@@ -204,6 +204,10 @@ function calculateBuybackPrice(items) {
     if (item.hargaBeli <= item.hargaHariIni) {
       const persentaseBeli = (item.hargaBeli / item.hargaHariIni) * 100;
       buybackPercentage = calculatePersentase(parseInt(item.kondisiBarang), persentaseBeli);
+
+      // Pastikan buybackPercentage valid number
+      if (isNaN(buybackPercentage)) buybackPercentage = 0;
+
       buybackPrice = (item.hargaHariIni * buybackPercentage) / 100;
       buybackPrice = roundBuybackPrice(buybackPrice);
 
@@ -214,14 +218,19 @@ function calculateBuybackPrice(items) {
       buybackPrice = item.hargaHariIni;
     }
 
-    const priceDifference = buybackPrice - item.hargaBeli;
-    const percentageDifference = ((priceDifference / item.hargaBeli) * 100).toFixed(2);
+    let percentageDifference;
+    if (isNaN(buybackPrice) || isNaN(item.hargaBeli)) {
+      percentageDifference = '0.00';
+    } else {
+      const priceDifference = buybackPrice - item.hargaBeli;
+      percentageDifference = ((priceDifference / item.hargaBeli) * 100).toFixed(2);
+    }
 
     results.push({
       ...item,
-      buybackPercentage: parseFloat(buybackPercentage.toFixed(2)),
+      buybackPercentage: parseFloat((buybackPercentage || 0).toFixed(2)),
       buybackPrice,
-      priceDifference,
+      priceDifference: buybackPrice - item.hargaBeli,
       percentageDifference,
       isHigherPurchasePrice: item.hargaBeli > item.hargaHariIni,
     });
@@ -251,7 +260,11 @@ function calculatePersentase(kondisiBarang, persentaseBeli) {
   } else if (persentaseBeli >= 85) {
     const persentaseMap = { 1: 90, 2: 85, 3: 80 };
     return persentaseMap[kondisiBarang];
-  } 
+  } else {
+    // Tambahkan nilai default jika < 85
+    const persentaseMap = { 1: 80, 2: 75, 3: 70 };
+    return persentaseMap[kondisiBarang] || 0;
+  }
 }
 
 // Show results in modal
@@ -281,7 +294,7 @@ function showResults(results) {
     const namaBarang = result.namaBarang || "Perhiasan";
     content += `
     <div class="result-item">
-      <h6 class="fw-bold mb-3">Item #${index + 1}: ${namaBarang}</h6>
+      <h4 class="fw-bold mb-3">Item #${index + 1}: ${namaBarang}</h4>
       ${specialNotice}
       <div class="row mb-2">
         <div class="col-md-12">

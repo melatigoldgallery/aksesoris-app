@@ -50,7 +50,7 @@
       .media-item:hover {
         border-color: #007bff;
         transform: translateY(-2px);
-        box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
       }
       .media-item.has-content {
         border-color: #28a745;
@@ -87,7 +87,7 @@
         text-align: center;
         padding: 20px;
       }
-      
+
       /* Image Viewer Modal Styles */
       .image-viewer-modal .modal-dialog {
         max-width: 70vw;
@@ -116,7 +116,7 @@
         position: absolute;
         top: 50%;
         transform: translateY(-50%);
-        background: rgba(0,0,0,0.7);
+        background: rgba(0, 0, 0, 0.7);
         color: white;
         border: none;
         width: 50px;
@@ -128,7 +128,7 @@
         z-index: 10;
       }
       .nav-arrow:hover {
-        background: rgba(0,0,0,0.9);
+        background: rgba(0, 0, 0, 0.9);
         transform: translateY(-50%) scale(1.1);
       }
       .nav-arrow.prev {
@@ -142,7 +142,7 @@
         bottom: 20px;
         left: 50%;
         transform: translateX(-50%);
-        background: rgba(0,0,0,0.7);
+        background: rgba(0, 0, 0, 0.7);
         color: white;
         padding: 5px 15px;
         border-radius: 20px;
@@ -153,14 +153,14 @@
         top: 20px;
         left: 50%;
         transform: translateX(-50%);
-        background: rgba(0,0,0,0.7);
+        background: rgba(0, 0, 0, 0.7);
         color: white;
         padding: 5px 15px;
         border-radius: 20px;
         font-size: 16px;
         font-weight: bold;
       }
-      
+
       /* Offline indicator */
       .offline-indicator {
         position: fixed;
@@ -177,7 +177,7 @@
       .offline-indicator.show {
         display: block;
       }
-      
+
       /* Upload progress */
       .upload-progress {
         position: absolute;
@@ -195,6 +195,95 @@
         width: 0%;
         transition: width 0.3s ease;
       }
+      
+      @media (max-width: 575.98px) {
+
+  .card-header {
+    flex-direction: row;
+    align-items: center;
+    padding: 10px 10px;
+  }
+  .card-header h2 {
+    font-size: 1rem;
+    margin-bottom: 0 !important;
+  }
+  #btnTambahPenerimaan {
+    padding: 3px 6px !important;
+    font-size: 10px !important;
+    border-radius: 50%;
+    width: 26px;
+    height: 26px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  #btnTambahPenerimaan .fa-plus {
+    margin-right: 0 !important;
+  }
+
+  html, body {
+    font-size: 13px !important;
+  }
+  .main-content,
+  .page-content,
+  .content-wrapper,
+  .card,
+  .card-body {
+    font-size: 13px !important;
+  }
+  .card-header h2,
+  .card-header h5,
+  .card-header h6 {
+    font-size: 1rem !important;
+  }
+  .btn,
+  .btn-sm,
+  .btn-xs {
+    font-size: 12px !important;
+  }
+  .table th,
+  .table td {
+    font-size: 11px !important;
+    padding: 6px 4px;
+  }
+  .breadcrumb {
+    font-size: 11px !important;
+  }
+  .media-title,
+  .media-counter {
+    font-size: 11px !important;
+    padding: 2px 6px;
+  }
+  .condition-visual-btn {
+    font-size: 10px !important;
+    padding: 2px 6px;
+  }
+  .buyback-notes h5,
+  .buyback-notes ul,
+  .buyback-notes li {
+    font-size: 12px !important;
+  }
+  .modal-title {
+    font-size: 1rem !important;
+  }
+  .form-control,
+  .form-select,
+  .form-control-sm,
+  .form-select-sm {
+    font-size: 12px !important;
+    padding: 4px 8px !important;
+  }
+  .sidebar .brand-name {
+    font-size: 1rem !important;
+  }
+  .sidebar-menu .menu-text {
+    font-size: 12px !important;
+  }
+  .offline-indicator {
+    font-size: 11px !important;
+    padding: 5px 10px;
+  }
+}
     </style>
   </head>
   <body>
@@ -343,8 +432,11 @@
                   Detail Barang
                 </h2>
                 <button type="button" class="btn btn-sm btn-primary" id="btnTambahPenerimaan">
-                  <i class="fas fa-plus me-1"></i>
-                  Tambah
+                  <span class="d-none d-sm-inline">
+                    <i class="fas fa-plus me-1"></i>
+                    Tambah
+                  </span>
+                  <span class="d-inline d-sm-none"><i class="fas fa-plus"></i></span>
                 </button>
               </div>
               <div class="card-body">
@@ -356,7 +448,7 @@
                           <th style="width: 3%">No</th>
                           <th style="width: 9%">Kadar</th>
                           <th style="width: 24%">Nama Barang</th>
-                          <th style="width: 12%">Kode Barang</th>
+                          <th style="width: 12%">Kode Kondisi Barang</th>
                           <th style="width: 15%">Harga Per Gram Saat Beli</th>
                           <th style="width: 15%">Harga Per Gram Hari Ini</th>
                           <th style="width: 7%">Aksi</th>
@@ -381,7 +473,8 @@
                               type="text"
                               name="namaBarang"
                               class="form-control form-control-sm"
-                              placeholder="Nama Barang"                               required
+                              placeholder="Nama Barang"
+                              required
                             />
                           </td>
                           <td>
@@ -592,7 +685,13 @@
                     <button type="button" class="btn btn-primary btn-xs upload-btn">
                       <i class="fas fa-upload"></i>
                     </button>
-                    <button type="button" class="btn btn-danger btn-xs remove-media-btn" data-index="0" data-type="photo" style="display: none">
+                    <button
+                      type="button"
+                      class="btn btn-danger btn-xs remove-media-btn"
+                      data-index="0"
+                      data-type="photo"
+                      style="display: none"
+                    >
                       <i class="fas fa-trash"></i>
                     </button>
                   </div>
@@ -611,7 +710,13 @@
                     <button type="button" class="btn btn-primary btn-xs upload-btn">
                       <i class="fas fa-upload"></i>
                     </button>
-                    <button type="button" class="btn btn-danger btn-xs remove-media-btn" data-index="1" data-type="photo" style="display: none">
+                    <button
+                      type="button"
+                      class="btn btn-danger btn-xs remove-media-btn"
+                      data-index="1"
+                      data-type="photo"
+                      style="display: none"
+                    >
                       <i class="fas fa-trash"></i>
                     </button>
                   </div>
@@ -630,7 +735,13 @@
                     <button type="button" class="btn btn-primary btn-xs upload-btn">
                       <i class="fas fa-upload"></i>
                     </button>
-                    <button type="button" class="btn btn-danger btn-xs remove-media-btn" data-index="2" data-type="photo" style="display: none">
+                    <button
+                      type="button"
+                      class="btn btn-danger btn-xs remove-media-btn"
+                      data-index="2"
+                      data-type="photo"
+                      style="display: none"
+                    >
                       <i class="fas fa-trash"></i>
                     </button>
                   </div>
@@ -649,7 +760,13 @@
                     <button type="button" class="btn btn-primary btn-xs upload-btn">
                       <i class="fas fa-upload"></i>
                     </button>
-                    <button type="button" class="btn btn-danger btn-xs remove-media-btn" data-index="3" data-type="photo" style="display: none">
+                    <button
+                      type="button"
+                      class="btn btn-danger btn-xs remove-media-btn"
+                      data-index="3"
+                      data-type="photo"
+                      style="display: none"
+                    >
                       <i class="fas fa-trash"></i>
                     </button>
                   </div>
@@ -668,7 +785,13 @@
                     <button type="button" class="btn btn-primary btn-xs upload-btn">
                       <i class="fas fa-upload"></i>
                     </button>
-                    <button type="button" class="btn btn-danger btn-xs remove-media-btn" data-index="4" data-type="photo" style="display: none">
+                    <button
+                      type="button"
+                      class="btn btn-danger btn-xs remove-media-btn"
+                      data-index="4"
+                      data-type="photo"
+                      style="display: none"
+                    >
                       <i class="fas fa-trash"></i>
                     </button>
                   </div>
@@ -687,7 +810,13 @@
                     <button type="button" class="btn btn-primary btn-xs upload-btn">
                       <i class="fas fa-upload"></i>
                     </button>
-                    <button type="button" class="btn btn-danger btn-xs remove-media-btn" data-index="5" data-type="photo" style="display: none">
+                    <button
+                      type="button"
+                      class="btn btn-danger btn-xs remove-media-btn"
+                      data-index="5"
+                      data-type="photo"
+                      style="display: none"
+                    >
                       <i class="fas fa-trash"></i>
                     </button>
                   </div>
@@ -707,7 +836,13 @@
                     <button type="button" class="btn btn-primary btn-xs upload-btn">
                       <i class="fas fa-upload"></i>
                     </button>
-                    <button type="button" class="btn btn-danger btn-xs remove-media-btn" data-index="0" data-type="video" style="display: none">
+                    <button
+                      type="button"
+                      class="btn btn-danger btn-xs remove-media-btn"
+                      data-index="0"
+                      data-type="video"
+                      style="display: none"
+                    >
                       <i class="fas fa-trash"></i>
                     </button>
                   </div>
@@ -729,7 +864,13 @@
     </div>
 
     <!-- Image Viewer Modal -->
-    <div class="modal fade image-viewer-modal border-radius" id="imageViewerModal" tabindex="-1" aria-labelledby="imageViewerModalLabel" aria-hidden="true">
+    <div
+      class="modal fade image-viewer-modal border-radius"
+      id="imageViewerModal"
+      tabindex="-1"
+      aria-labelledby="imageViewerModalLabel"
+      aria-hidden="true"
+    >
       <div class="modal-dialog modal-fullscreen">
         <div class="modal-content bg-dark">
           <div class="modal-header border-0">
@@ -742,7 +883,7 @@
           <div class="modal-body">
             <div class="image-viewer-content">
               <div class="media-title" id="mediaTitle">Foto 1</div>
-              
+
               <!-- Navigation Arrows -->
               <button class="nav-arrow prev" id="prevBtn">
                 <i class="fas fa-chevron-left"></i>
@@ -750,21 +891,21 @@
               <button class="nav-arrow next" id="nextBtn">
                 <i class="fas fa-chevron-right"></i>
               </button>
-              
+
               <!-- Media Display -->
-              <img class="viewer-image" id="viewerImage" src="" alt="Media" style="display: none;" />
-              <video class="viewer-video" id="viewerVideo" controls style="display: none;">
-                <source src="" type="video/mp4">
+              <img class="viewer-image" id="viewerImage" src="" alt="Media" style="display: none" />
+              <video class="viewer-video" id="viewerVideo" controls style="display: none">
+                <source src="" type="video/mp4" />
                 Your browser does not support the video tag.
               </video>
-              
+
               <!-- Loading Spinner -->
               <div class="text-center" id="viewerLoading">
                 <div class="spinner-border text-light" role="status">
                   <span class="visually-hidden">Loading...</span>
                 </div>
               </div>
-              
+
               <!-- Media Counter -->
               <div class="media-counter" id="mediaCounter">1 / 7</div>
             </div>
@@ -779,5 +920,3 @@
     <script type="module" src="js/buyback.js"></script>
   </body>
 </html>
-
-
