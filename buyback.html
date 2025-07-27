@@ -195,95 +195,137 @@
         width: 0%;
         transition: width 0.3s ease;
       }
-      
+
+      #tablePenerimaan th:nth-child(2),
+      #tablePenerimaan td:nth-child(2) {
+        width: 10% !important;
+      }
+
       @media (max-width: 575.98px) {
+        .card-header {
+          flex-direction: row;
+          align-items: center;
+          padding: 10px 10px;
+        }
+        .card-header h2 {
+          font-size: 1rem;
+          margin-bottom: 0 !important;
+        }
+        #btnTambahPenerimaan {
+          padding: 3px 6px !important;
+          font-size: 10px !important;
+          border-radius: 50%;
+          width: 26px;
+          height: 26px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+        }
+        #btnTambahPenerimaan .fa-plus {
+          margin-right: 0 !important;
+        }
 
-  .card-header {
-    flex-direction: row;
-    align-items: center;
-    padding: 10px 10px;
-  }
-  .card-header h2 {
-    font-size: 1rem;
-    margin-bottom: 0 !important;
-  }
-  #btnTambahPenerimaan {
-    padding: 3px 6px !important;
-    font-size: 10px !important;
-    border-radius: 50%;
-    width: 26px;
-    height: 26px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-  }
-  #btnTambahPenerimaan .fa-plus {
-    margin-right: 0 !important;
-  }
-
-  html, body {
-    font-size: 13px !important;
-  }
-  .main-content,
-  .page-content,
-  .content-wrapper,
-  .card,
-  .card-body {
-    font-size: 13px !important;
-  }
-  .card-header h2,
-  .card-header h5,
-  .card-header h6 {
-    font-size: 1rem !important;
-  }
-  .btn,
-  .btn-sm,
-  .btn-xs {
-    font-size: 12px !important;
-  }
-  .table th,
-  .table td {
-    font-size: 11px !important;
-    padding: 6px 4px;
-  }
-  .breadcrumb {
-    font-size: 11px !important;
-  }
-  .media-title,
-  .media-counter {
-    font-size: 11px !important;
-    padding: 2px 6px;
-  }
-  .condition-visual-btn {
-    font-size: 10px !important;
-    padding: 2px 6px;
-  }
-  .buyback-notes h5,
-  .buyback-notes ul,
-  .buyback-notes li {
-    font-size: 12px !important;
-  }
-  .modal-title {
-    font-size: 1rem !important;
-  }
-  .form-control,
-  .form-select,
-  .form-control-sm,
-  .form-select-sm {
-    font-size: 12px !important;
-    padding: 4px 8px !important;
-  }
-  .sidebar .brand-name {
-    font-size: 1rem !important;
-  }
-  .sidebar-menu .menu-text {
-    font-size: 12px !important;
-  }
-  .offline-indicator {
-    font-size: 11px !important;
-    padding: 5px 10px;
-  }
-}
+        html,
+        body {
+          font-size: 13px !important;
+        }
+        .main-content,
+        .page-content,
+        .content-wrapper,
+        .card,
+        .card-body {
+          font-size: 13px !important;
+        }
+        .card-header h2,
+        .card-header h5,
+        .card-header h6 {
+          font-size: 1rem !important;
+        }
+        .btn,
+        .btn-sm,
+        .btn-xs {
+          font-size: 12px !important;
+        }
+        .table th,
+        .table td {
+          font-size: 11px !important;
+          padding: 6px 4px;
+        }
+        .breadcrumb {
+          font-size: 11px !important;
+        }
+        .media-title,
+        .media-counter {
+          font-size: 11px !important;
+          padding: 2px 6px;
+        }
+        .condition-visual-btn {
+          font-size: 10px !important;
+          padding: 2px 6px;
+        }
+        .buyback-notes h5,
+        .buyback-notes ul,
+        .buyback-notes li {
+          font-size: 12px !important;
+        }
+        .modal-title {
+          font-size: 1rem !important;
+        }
+        .form-control,
+        .form-select,
+        .form-control-sm,
+        .form-select-sm {
+          font-size: 12px !important;
+          padding: 4px 8px !important;
+        }
+        .sidebar .brand-name {
+          font-size: 1rem !important;
+        }
+        .sidebar-menu .menu-text {
+          font-size: 12px !important;
+        }
+        .offline-indicator {
+          font-size: 11px !important;
+          padding: 5px 10px;
+        }
+        #tablePenerimaan {
+          min-width: 800px !important;
+        }
+        .table-responsive {
+          overflow-x: auto !important;
+        }
+        #tablePenerimaan th,
+        #tablePenerimaan td {
+          white-space: nowrap !important;
+        }
+        #tablePenerimaan th:nth-child(1),
+        #tablePenerimaan td:nth-child(1),
+        #tablePenerimaan th:nth-child(7),
+        #tablePenerimaan td:nth-child(7) {
+          width: 2% !important;
+        }
+        #tablePenerimaan th:nth-child(2),
+        #tablePenerimaan td:nth-child(2) {
+          width: 8% !important;
+        }
+        #tablePenerimaan th:nth-child(3),
+        #tablePenerimaan td:nth-child(3) {
+          width: 25% !important;
+        }
+        #tablePenerimaan th:nth-child(4),
+        #tablePenerimaan td:nth-child(4) {
+          width: 15% !important;
+        }
+        #tablePenerimaan th:nth-child(5),
+        #tablePenerimaan td:nth-child(5),
+        #tablePenerimaan th:nth-child(6),
+        #tablePenerimaan td:nth-child(6) {
+          width: 15% !important;
+        }
+        .hapus-baris{
+          padding: 5px 8px;
+        }
+      }
     </style>
   </head>
   <body>
@@ -445,13 +487,13 @@
                     <table class="table" id="tablePenerimaan">
                       <thead>
                         <tr>
-                          <th style="width: 3%">No</th>
-                          <th style="width: 9%">Kadar</th>
-                          <th style="width: 24%">Nama Barang</th>
-                          <th style="width: 12%">Kode Kondisi Barang</th>
-                          <th style="width: 15%">Harga Per Gram Saat Beli</th>
-                          <th style="width: 15%">Harga Per Gram Hari Ini</th>
-                          <th style="width: 7%">Aksi</th>
+                          <th>No</th>
+                          <th>Kadar</th>
+                          <th>Nama Barang</th>
+                          <th>Kode Kondisi Barang</th>
+                          <th>Harga Per Gram Saat Beli</th>
+                          <th>Harga Per Gram Hari Ini</th>
+                          <th>Aksi</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -489,6 +531,7 @@
                                 <option value="1">K1</option>
                                 <option value="2">K2</option>
                                 <option value="3">K3</option>
+                                <option value="4">K4</option>
                               </select>
                             </div>
                           </td>
@@ -548,16 +591,12 @@
                       <strong>pastikan barang tidak ada cacat</strong>
                       (ada penyok, putus, atau bekas patri).
                     </li>
-                    <li>
-                      * Untuk pembelian beberapa barang dengan kondisi berbeda, harga per gram disesuaikan dengan
-                      kondisi barang dominan (yang lebih banyak) untuk menyeragamkan harga buyback.
-                    </li>
                   </ul>
                   <h5 class="fw-bold mt-3">Kode Kategori Kondisi Barang:</h5>
                   <ul class="condition-list fs-6 mx-3">
                     <li>
                       <strong>K1 = Kondisi Sangat Baik</strong>
-                      (Mengkilap, Mulus, Model Bagus)
+                      (Mengkilap / Mulus / Model Bagus)
                       <button
                         type="button"
                         class="btn btn-sm btn-outline-primary ms-2 condition-visual-btn"
@@ -569,7 +608,7 @@
                     </li>
                     <li>
                       <strong>K2 = Kondisi Sedang</strong>
-                      (Sedikit Kusam, Sedikit Baret)
+                      (Sedikit Kusam / Sedikit Baret)
                       <button
                         type="button"
                         class="btn btn-sm btn-outline-primary ms-2 condition-visual-btn"
@@ -581,7 +620,19 @@
                     </li>
                     <li>
                       <strong>K3 = Kondisi Kurang</strong>
-                      (Kusam / Banyak Baret / Batu Lepas)
+                      (Kusam / Banyak Baret)
+                      <button
+                        type="button"
+                        class="btn btn-sm btn-outline-primary ms-2 condition-visual-btn"
+                        data-condition="3"
+                      >
+                        <i class="fas fa-images me-1"></i>
+                        Lihat Visual
+                      </button>
+                    </li>
+                    <li>
+                      <strong>K4 = Kondisi Cacat</strong>
+                      (Batu Banyak Lepas > 3 / Rantai Kaku / Butterfly Hilang / Lock Rusak)
                       <button
                         type="button"
                         class="btn btn-sm btn-outline-primary ms-2 condition-visual-btn"

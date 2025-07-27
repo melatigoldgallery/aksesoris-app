@@ -90,6 +90,7 @@ function addNewRow() {
           <option value="1">K1</option>
           <option value="2">K2</option>
           <option value="3">K3</option>
+          <option value="4">K4</option>
         </select>
       </div>
     </td>
@@ -251,41 +252,30 @@ function roundBuybackPrice(price) {
 
 // Calculate percentage
 function calculatePersentase(kondisiBarang, persentaseBeli) {
-  if (persentaseBeli >= 95) {
-    const persentaseMap = { 1: 97, 2: 96, 3: 95 };
-    return persentaseMap[kondisiBarang];
-  } else if (persentaseBeli >= 90) {
-    const persentaseMap = { 1: 97, 2: 95, 3: 94 };
-    return persentaseMap[kondisiBarang];
-  } else if (persentaseBeli >= 85) {
-    const persentaseMap = { 1: 90, 2: 85, 3: 80 };
-    return persentaseMap[kondisiBarang];
-  } else {
-    // Tambahkan nilai default jika < 85
-    const persentaseMap = { 1: 80, 2: 75, 3: 70 };
+    const persentaseMap = { 1: 97, 2: 92, 3: 85, 4: 70 };
     return persentaseMap[kondisiBarang] || 0;
-  }
+  
 }
 
 // Show results in modal
 function showResults(results) {
   const modalBody = document.getElementById("modalMessage");
   let content = `
-    <div class="alert alert-info mb-4">
+    <div class="alert alert-info mb-4 d-none">
       <i class="fas fa-info-circle me-2"></i>
       Berikut adalah hasil perhitungan buyback perhiasan.
     </div>
   `;
 
   results.forEach((result, index) => {
-    const conditionText = result.kondisiBarang === "1" ? "Mengkilap / Mulus / Model Bagus" : result.kondisiBarang === "2" ? "Sedikit Kusam / Sedikit Baret" : "Kusam / Banyak Baret / Batu Lepas";
+    const conditionText = result.kondisiBarang === "1" ? "Mengkilap / Mulus / Model Bagus" : result.kondisiBarang === "2" ? "Sedikit Kusam / Sedikit Baret" : result.kondisiBarang === "3" ? "Kusam / Banyak Baret" : "(Batu Banyak Lepas > 3 / Rantai Kaku / Butterfly Hilang / Lock Rusak)";
     let specialNotice = "";
     
     if (result.isHigherPurchasePrice) {
       specialNotice = `
         <div class="alert alert-warning mb-3">
           <i class="fas fa-exclamation-triangle me-2"></i>
-          <strong>Perhatian:</strong> Harga beli lebih tinggi dari harga hari ini. 
+          <strong>Perhatian:</strong> Harga per gram saat beli lebih tinggi dari harga per gram hari ini. 
           Harga penerimaan menggunakan 100% dari harga hari ini.
         </div>
       `;
@@ -294,7 +284,7 @@ function showResults(results) {
     const namaBarang = result.namaBarang || "Perhiasan";
     content += `
     <div class="result-item">
-      <h4 class="fw-bold mb-3">Item #${index + 1}: ${namaBarang}</h4>
+      <h4 class="fw-bold mb-3">Item ${index + 1}: ${namaBarang}</h4>
       ${specialNotice}
       <div class="row mb-2">
         <div class="col-md-12">
@@ -305,10 +295,14 @@ function showResults(results) {
       <div class="alert ${result.priceDifference >= 0 ? "alert-success" : "alert-danger"} mb-0">
         <div class="row">
           <div class="col-md-12">
-            <p class="mb-0 fs-6 fw-bold">Harga Buyback Sebelum Potongan 15%: \n Rp ${formatNumber(result.buybackPrice)}</p>
+            <p class="mb-0 fs-6 fw-bold">Harga Buyback Per Gram Sebelum Potongan 10% / 15%: \n <strong>Rp ${formatNumber(result.buybackPrice)}</strong></p>
           </div>
         </div>
       </div>
+          <div class="alert alert-warning mb-4">
+      <i class="fas fa-info-circle me-2"></i>
+      Harga buyback per gram bisa berubah sesuai dengan kondisi barang dan harga per gram hari ini 
+    </div>
     </div>
   `;
   });
