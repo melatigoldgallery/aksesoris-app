@@ -1392,12 +1392,11 @@ const penjualanHandler = {
         transactionData.jumlahBayar = jumlahBayar;
         transactionData.kembalian = kembalian;
 
-        // PERBAIKAN: Status pembayaran yang lebih akurat
-        if (nominalDP >= total) {
-          transactionData.statusPembayaran = "Lunas"; // DP sudah menutupi total
-        } else {
-          transactionData.statusPembayaran = "DP"; // Masih ada sisa
-        }
+        // PERBAIKAN: Status pembayaran selalu "DP" dengan nominal
+        transactionData.statusPembayaran = `DP ${utils.formatRupiah(nominalDP)}`;
+
+        // TAMBAHAN: Flag untuk menandai apakah DP sudah menutupi total
+        transactionData.isDPComplete = nominalDP >= total;
       } else if (paymentMethod === "free") {
         transactionData.statusPembayaran = "Free";
       } else {
@@ -1756,21 +1755,21 @@ const penjualanHandler = {
 
   // Print receipt
   // Print receipt - PERBAIKAN LOGIKA DP > TOTAL
-printReceipt() {
-  if (!currentTransactionData) {
-    utils.showAlert("Tidak ada data transaksi untuk dicetak!");
-    return;
-  }
+  printReceipt() {
+    if (!currentTransactionData) {
+      utils.showAlert("Tidak ada data transaksi untuk dicetak!");
+      return;
+    }
 
-  const transaction = currentTransactionData;
-  const printWindow = window.open("", "_blank");
+    const transaction = currentTransactionData;
+    const printWindow = window.open("", "_blank");
 
-  if (!printWindow) {
-    utils.showAlert("Popup diblokir oleh browser. Mohon izinkan popup untuk mencetak.", "Error", "error");
-    return;
-  }
+    if (!printWindow) {
+      utils.showAlert("Popup diblokir oleh browser. Mohon izinkan popup untuk mencetak.", "Error", "error");
+      return;
+    }
 
-  let receiptHTML = `
+    let receiptHTML = `
         <!DOCTYPE html>
         <html>
         <head>
@@ -1843,12 +1842,12 @@ printReceipt() {
               </tr>
       `;
 
-  let hasKeterangan = false;
-  let keteranganText = "";
+    let hasKeterangan = false;
+    let keteranganText = "";
 
-  transaction.items.forEach((item) => {
-    const itemHarga = parseInt(item.totalHarga) || 0;
-    receiptHTML += `
+    transaction.items.forEach((item) => {
+      const itemHarga = parseInt(item.totalHarga) || 0;
+      receiptHTML += `
           <tr>
             <td>${item.kodeText || "-"}</td>
             <td>${item.nama || "-"}</td>
@@ -1858,14 +1857,14 @@ printReceipt() {
           </tr>
         `;
 
-    if (item.keterangan && item.keterangan.trim() !== "") {
-      hasKeterangan = true;
-      keteranganText += item.keterangan + " ";
-    }
-  });
+      if (item.keterangan && item.keterangan.trim() !== "") {
+        hasKeterangan = true;
+        keteranganText += item.keterangan + " ";
+      }
+    });
 
-  const totalHarga = parseInt(transaction.totalHarga.replace(/\./g, "")) || 0;
-  receiptHTML += `
+    const totalHarga = parseInt(transaction.totalHarga.replace(/\./g, "")) || 0;
+    receiptHTML += `
               <tr>
                 <td colspan="4" class="text-right"><strong>Total:</strong></td>
                 <td class="text-right"><strong>${utils.formatRupiah(totalHarga)}</strong></td>
@@ -1873,11 +1872,11 @@ printReceipt() {
             </table>
       `;
 
-  // PERBAIKAN: Add DP information dengan logika yang benar
-  if (transaction.metodeBayar === "dp") {
-    const dpAmount = parseInt(transaction.nominalDP.replace(/\./g, "")) || 0;
-    
-    receiptHTML += `
+    // PERBAIKAN: Add DP information dengan logika yang benar
+    if (transaction.metodeBayar === "dp") {
+      const dpAmount = parseInt(transaction.nominalDP.replace(/\./g, "")) || 0;
+
+      receiptHTML += `
             <div class="payment-info">
               <table>
                 <tr>
@@ -1890,52 +1889,52 @@ printReceipt() {
                 </tr>
     `;
 
-    // PERBAIKAN: Logika untuk menampilkan SISA atau KEMBALIAN
-    if (dpAmount >= totalHarga) {
-      // Jika DP >= total, tampilkan kembalian (jika ada)
-      if (dpAmount > totalHarga) {
-        const kembalian = dpAmount - totalHarga;
-        receiptHTML += `
+      // PERBAIKAN: Logika untuk menampilkan SISA atau KEMBALIAN
+      if (dpAmount >= totalHarga) {
+        // Jika DP >= total, tampilkan kembalian (jika ada)
+        if (dpAmount > totalHarga) {
+          const kembalian = dpAmount - totalHarga;
+          receiptHTML += `
                 <tr>
                   <td><strong>KEMBALIAN:</strong></td>
                   <td class="text-right"><strong>${utils.formatRupiah(kembalian)}</strong></td>
                 </tr>
         `;
-      } else {
-        // Jika DP = total, tampilkan LUNAS
-        receiptHTML += `
+        } else {
+          // Jika DP = total, tampilkan LUNAS
+          receiptHTML += `
                 <tr>
                   <td colspan="2" class="text-center"><strong>LUNAS</strong></td>
                 </tr>
         `;
-      }
-    } else {
-      // Jika DP < total, tampilkan sisa pembayaran
-      const remainingAmount = parseInt(transaction.sisaPembayaran.replace(/\./g, "")) || 0;
-      receiptHTML += `
+        }
+      } else {
+        // Jika DP < total, tampilkan sisa pembayaran
+        const remainingAmount = parseInt(transaction.sisaPembayaran.replace(/\./g, "")) || 0;
+        receiptHTML += `
                 <tr>
                   <td><strong>SISA:</strong></td>
                   <td class="text-right"><strong>${utils.formatRupiah(remainingAmount)}</strong></td>
                 </tr>
       `;
-    }
+      }
 
-    receiptHTML += `
+      receiptHTML += `
               </table>
             </div>
         `;
-  }
+    }
 
-  // Add keterangan if exists and is manual sale
-  if (hasKeterangan && transaction.salesType === "manual") {
-    receiptHTML += `
+    // Add keterangan if exists and is manual sale
+    if (hasKeterangan && transaction.salesType === "manual") {
+      receiptHTML += `
             <div class="keterangan">
               <strong>Keterangan:</strong> ${keteranganText.trim()}
             </div>
         `;
-  }
+    }
 
-  receiptHTML += `
+    receiptHTML += `
             <hr>
             <p class="text-center">Terima Kasih<br>Atas Kunjungan Anda</p>
           </div>
@@ -1949,10 +1948,9 @@ printReceipt() {
         </html>
       `;
 
-  printWindow.document.write(receiptHTML);
-  printWindow.document.close();
-},
-
+    printWindow.document.write(receiptHTML);
+    printWindow.document.close();
+  },
 
   // Print invoice
   printInvoice() {
