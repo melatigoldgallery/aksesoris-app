@@ -261,9 +261,8 @@ function calculatePersentase(kondisiBarang, persentaseBeli) {
 function showResults(results) {
   const modalBody = document.getElementById("modalMessage");
   let content = `
-    <div class="alert alert-info mb-4 d-none">
+    <div class="alert alert-info mb-1 d-none">
       <i class="fas fa-info-circle me-2"></i>
-      Berikut adalah hasil perhitungan buyback perhiasan.
     </div>
   `;
 
@@ -301,7 +300,7 @@ function showResults(results) {
       </div>
           <div class="alert alert-warning mb-4">
       <i class="fas fa-info-circle me-2"></i>
-      Harga buyback per gram bisa berubah sesuai dengan kondisi barang dan harga per gram hari ini 
+      Harga buyback per gram bisa berubah sesuai dengan kondisi barang
     </div>
     </div>
   `;
@@ -382,8 +381,8 @@ function printModal() {
           border-bottom: 1px dashed #000;
           padding-bottom: 2mm;
         }
-        .result-item h5 {
-          font-size: 9pt;
+        .result-item h4 {
+          font-size: 10pt;
           margin: 1mm 0;
           font-weight: bold;
         }
@@ -457,6 +456,7 @@ function showConditionVisual(condition) {
     1: "Kondisi Sangat Baik (K1)",
     2: "Kondisi Sedang (K2)",
     3: "Kondisi Kurang (K3)",
+    4: "Kondisi Tidak Sempurna (K4)"
   };
 
   document.getElementById("conditionTitle").textContent = conditionNames[condition];
