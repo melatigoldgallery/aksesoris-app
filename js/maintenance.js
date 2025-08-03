@@ -196,7 +196,6 @@ class MaintenanceSystem {
    * Initialize DOM elements
    */
   initializeElements() {
-
     // Input elements
     this.exportMonthInput = document.getElementById("exportMonth");
     this.deleteMonthInput = document.getElementById("deleteMonth");
@@ -252,8 +251,7 @@ class MaintenanceSystem {
     this.filterDateInput.value = today;
   }
 
-
-// Handle export month change
+  // Handle export month change
   onExportMonthChange() {
     this.updateDeleteButtonState();
   }
@@ -624,8 +622,6 @@ class MaintenanceSystem {
         document.body.style.paddingRight = "";
       }
 
-
-
       // Reset state
       this.isLoading = false;
       this.currentOperation = null;
@@ -676,7 +672,6 @@ class MaintenanceSystem {
    */
   async exportCollectionToExcel(collectionName, monthStr) {
     try {
-
       const cacheKey = `export_${collectionName}_${monthStr}`;
       let data = this.cache.get(cacheKey);
 
@@ -730,6 +725,9 @@ class MaintenanceSystem {
   /**
    * Transform data for Excel export
    */
+  /**
+   * Transform data for Excel export
+   */
   async transformDataForExcel(data, collectionName) {
     const transformedData = [];
 
@@ -738,14 +736,17 @@ class MaintenanceSystem {
 
       switch (collectionName) {
         case "penjualanAksesoris":
+          // Safely extract items[0] for single-item sales
+          const firstItem = Array.isArray(item.items) && item.items.length > 0 ? item.items[0] : {};
+
           row = {
             Tanggal: item.timestamp ? new Date(item.timestamp.seconds * 1000).toLocaleDateString("id-ID") : "",
             Waktu: item.timestamp ? new Date(item.timestamp.seconds * 1000).toLocaleTimeString("id-ID") : "",
-            Kode: item.kodeText || "",
-            "Nama Barang": item.nama || "",
+            Kode: firstItem.kodeText || item.kodeText || "",
+            "Nama Barang": firstItem.nama || item.nama || "",
             Sales: item.sales || "",
             "Total Harga": item.totalHarga || 0,
-            "Jumlah Items": item.items ? item.items.length : 0,
+            "Jumlah Items": Array.isArray(item.items) ? item.items.length : 0,
           };
           break;
 
@@ -885,9 +886,7 @@ class MaintenanceSystem {
 
           totalDeleted += docs.length;
         }
-
       }
-
 
       // Clear cache
       this.cache.clear();
