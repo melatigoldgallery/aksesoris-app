@@ -1,44 +1,54 @@
 // Import modules
-import { 
-  uploadFile, 
-  checkTemporaryFiles, 
+import {
+  uploadFile,
+  checkTemporaryFiles,
   uploadAllTemporaryFiles,
   getCloudinaryUrl,
-  removeTemporaryFile 
-} from './cloudinary-service.js';
+  removeTemporaryFile,
+} from "./cloudinary-service.js";
 
-import { 
-  doc, 
-  setDoc, 
-  getDoc, 
-  updateDoc, 
+import {
+  doc,
+  setDoc,
+  getDoc,
+  updateDoc,
   deleteField,
-  serverTimestamp 
-} from 'https://www.gstatic.com/firebasejs/10.4.0/firebase-firestore.js';
+  serverTimestamp,
+  collection,
+} from "https://www.gstatic.com/firebasejs/10.4.0/firebase-firestore.js";
+
+import { firestore } from "./configFirebase.js"; // Pindahkan import ke sini
 
 // Global variables
-let firestore;
 let currentCondition = "1";
 let isEditMode = false;
 let pendingChanges = {};
 let mediaGallery = [];
 let currentMediaIndex = 0;
+let persentaseMap = { 1: 97, 2: 92, 3: 85, 4: 70 };
 
 // Initialize page
-document.addEventListener("DOMContentLoaded", () => {
-  setTimeout(() => {
-    firestore = window.firestore;
-    
+document.addEventListener("DOMContentLoaded", async () => {
+  try {
+    // Remove setTimeout and check firestore directly
     if (!firestore) {
-      console.error("Firestore not initialized");
-      showAlert("Firestore tidak terinisialisasi dengan benar", "danger");
-      return;
+      throw new Error("Firestore not initialized");
     }
-    
-    setupBuybackForm();
+
+    // Load persentase settings from Firestore
+    await loadPersentaseSettings();
+
+    // Initialize all required functions
+    await setupBuybackForm();
     initializeFirebaseFunctions();
     setupImageViewer();
-  }, 1000);
+    setupSettingsButton();
+
+    console.log("Buyback page initialized successfully");
+  } catch (error) {
+    console.error("Initialization error:", error);
+    showAlert("Terjadi kesalahan saat inisialisasi: " + error.message, "danger");
+  }
 });
 
 // Setup buyback form
@@ -116,7 +126,7 @@ function addNewRow() {
 function setupDeleteButtons() {
   const deleteButtons = document.querySelectorAll(".hapus-baris");
   const rows = document.querySelectorAll("#tablePenerimaan tbody tr");
-  
+
   if (rows.length > 1) {
     deleteButtons.forEach((btn) => {
       btn.disabled = false;
@@ -130,15 +140,15 @@ function setupDeleteButtons() {
 
 // Setup condition visual buttons
 function setupConditionVisualButtons() {
-  document.querySelectorAll('.condition-visual-btn').forEach(button => {
-    button.removeEventListener('click', handleConditionVisualClick);
-    button.addEventListener('click', handleConditionVisualClick);
+  document.querySelectorAll(".condition-visual-btn").forEach((button) => {
+    button.removeEventListener("click", handleConditionVisualClick);
+    button.addEventListener("click", handleConditionVisualClick);
   });
 }
 
 // Handle condition visual click
 function handleConditionVisualClick() {
-  const condition = this.getAttribute('data-condition') || '1';
+  const condition = this.getAttribute("data-condition") || "1";
   showConditionVisual(condition);
 }
 
@@ -221,7 +231,7 @@ function calculateBuybackPrice(items) {
 
     let percentageDifference;
     if (isNaN(buybackPrice) || isNaN(item.hargaBeli)) {
-      percentageDifference = '0.00';
+      percentageDifference = "0.00";
     } else {
       const priceDifference = buybackPrice - item.hargaBeli;
       percentageDifference = ((priceDifference / item.hargaBeli) * 100).toFixed(2);
@@ -252,12 +262,11 @@ function roundBuybackPrice(price) {
 
 // Calculate percentage
 function calculatePersentase(kondisiBarang, persentaseBeli) {
-    const persentaseMap = { 1: 97, 2: 92, 3: 85, 4: 70 };
-    return persentaseMap[kondisiBarang] || 0;
-  
+  return persentaseMap[kondisiBarang] || 0;
 }
 
 // Show results in modal
+// Modifikasi fungsi showResults untuk menampilkan persentase potongan yang dinamis
 function showResults(results) {
   const modalBody = document.getElementById("modalMessage");
   let content = `
@@ -267,9 +276,33 @@ function showResults(results) {
   `;
 
   results.forEach((result, index) => {
-    const conditionText = result.kondisiBarang === "1" ? "Mengkilap / Mulus / Model Bagus" : result.kondisiBarang === "2" ? "Sedikit Kusam / Sedikit Baret" : result.kondisiBarang === "3" ? "Kusam / Banyak Baret" : "(Batu Banyak Lepas > 3 / Rantai Kaku / Butterfly Hilang / Lock Rusak)";
+    const conditionText =
+      result.kondisiBarang === "1"
+        ? "Mengkilap / Mulus / Model Bagus"
+        : result.kondisiBarang === "2"
+        ? "Sedikit Kusam / Sedikit Baret"
+        : result.kondisiBarang === "3"
+        ? "Kusam / Banyak Baret"
+        : "Ada Reject / Butterfly Hilang / Lock Rusak)";
+
+    // Tentukan persentase potongan berdasarkan kondisi
+    const getDiscountPercentage = (kondisi) => {
+      switch (kondisi) {
+        case "1":
+        case "2":
+        case "3":
+          return "10% / 15%";
+        case "4":
+          return "15% / 20%";
+        default:
+          return "10% / 15%";
+      }
+    };
+
+    const discountPercentage = getDiscountPercentage(result.kondisiBarang);
+
     let specialNotice = "";
-    
+
     if (result.isHigherPurchasePrice) {
       specialNotice = `
         <div class="alert alert-warning mb-3">
@@ -280,10 +313,20 @@ function showResults(results) {
       `;
     }
 
+    // Tambahkan notifikasi khusus untuk kondisi K4 dengan class "no-print"
+    if (result.kondisiBarang === "4") {
+      specialNotice += `
+        <div class="alert alert-info mb-3 no-print">
+          <i class="fas fa-info-circle me-2"></i>
+          <strong>Informasi:</strong> Untuk kondisi K4 (Tidak Sempurna), potongan yang diterapkan adalah 15% / 20%.
+        </div>
+      `;
+    }
+
     const namaBarang = result.namaBarang || "Perhiasan";
     content += `
     <div class="result-item">
-      <h4 class="fw-bold mb-3">Item ${index + 1}: ${namaBarang}</h4>
+      <h4 class="mb-3"><strong>Item ${index + 1}:</strong> ${namaBarang}</h4>
       ${specialNotice}
       <div class="row mb-2">
         <div class="col-md-12">
@@ -294,14 +337,16 @@ function showResults(results) {
       <div class="alert ${result.priceDifference >= 0 ? "alert-success" : "alert-danger"} mb-0">
         <div class="row">
           <div class="col-md-12">
-            <p class="mb-0 fs-6 fw-bold">Harga Buyback Per Gram Sebelum Potongan 10% / 15%: \n <strong>Rp ${formatNumber(result.buybackPrice)}</strong></p>
+            <p class="mb-0 fs-6 fw-bold">Harga Buyback Per Gram Sebelum Potongan ${discountPercentage}: \n <strong>Rp ${formatNumber(
+      result.buybackPrice
+    )}</strong></p>
           </div>
         </div>
       </div>
-          <div class="alert alert-warning mb-4">
-      <i class="fas fa-info-circle me-2"></i>
-      Harga buyback per gram bisa berubah sesuai dengan kondisi barang
-    </div>
+      <div class="alert alert-warning my-2">
+        <i class="fas fa-info-circle me-2"></i>
+        Note: Harga buyback per gram bisa berubah sesuai dengan kondisi barang
+      </div>
     </div>
   `;
   });
@@ -309,13 +354,13 @@ function showResults(results) {
   const now = new Date();
   content += `
   <div class="text-end text-muted mt-3">
-    <small>Dihitung pada: ${now.toLocaleDateString("id-ID", {
+    Dihitung pada: ${now.toLocaleDateString("id-ID", {
       day: "numeric",
       month: "long",
       year: "numeric",
       hour: "2-digit",
       minute: "2-digit",
-    })}</small>
+    })}
   </div>
 `;
 
@@ -365,6 +410,7 @@ function printModal() {
           line-height: 1.2;
           margin: 0;
           padding: 2mm;
+          margin-left: 4mm;
         }
         .header {
           text-align: center;
@@ -413,6 +459,10 @@ function printModal() {
         .fas {
           display: none;
         }
+        /* CSS untuk menyembunyikan elemen dengan class no-print saat print */
+        .no-print {
+          display: none !important;
+        }
       </style>
     </head>
     <body>
@@ -439,6 +489,107 @@ function printModal() {
   };
 }
 
+// ==================== SETTINGS FUNCTIONS ====================
+
+// Load persentase settings from Firestore
+async function loadPersentaseSettings() {
+  try {
+    const settingsDocRef = doc(firestore, "setting_buyback", "default");
+    const settingsDoc = await getDoc(settingsDocRef);
+
+    if (settingsDoc.exists()) {
+      const data = settingsDoc.data();
+      persentaseMap = {
+        1: data.K1,
+        2: data.K2,
+        3: data.K3,
+        4: data.K4,
+      };
+    }
+  } catch (error) {
+    console.error("Error loading persentase settings:", error);
+  }
+}
+
+// Setup settings button and modals
+function setupSettingsButton() {
+  const btnSetting = document.getElementById("btnSetting");
+  const settingsPasswordModal = new bootstrap.Modal(document.getElementById("settingsPasswordModal"));
+  const buybackSettingsModal = new bootstrap.Modal(document.getElementById("buybackSettingsModal"));
+  const verifyPasswordBtn = document.getElementById("verifyPasswordBtn");
+  const saveSettingsBtn = document.getElementById("saveSettingsBtn");
+
+  // Show password modal when settings button is clicked
+  btnSetting.addEventListener("click", () => {
+    document.getElementById("settingsPassword").value = "";
+    settingsPasswordModal.show();
+  });
+
+  // Verify password
+  verifyPasswordBtn.addEventListener("click", () => {
+    const password = document.getElementById("settingsPassword").value;
+    if (password === "smlt116") {
+      settingsPasswordModal.hide();
+      showBuybackSettings();
+      buybackSettingsModal.show();
+    } else {
+      alert("Password salah!");
+    }
+  });
+
+  // Save settings
+  saveSettingsBtn.addEventListener("click", savePersentaseSettings);
+}
+
+// Show buyback settings
+function showBuybackSettings() {
+  document.getElementById("persentaseK1").value = persentaseMap["1"];
+  document.getElementById("persentaseK2").value = persentaseMap["2"];
+  document.getElementById("persentaseK3").value = persentaseMap["3"];
+  document.getElementById("persentaseK4").value = persentaseMap["4"];
+}
+
+// Save persentase settings
+async function savePersentaseSettings() {
+  const k1 = parseFloat(document.getElementById("persentaseK1").value);
+  const k2 = parseFloat(document.getElementById("persentaseK2").value);
+  const k3 = parseFloat(document.getElementById("persentaseK3").value);
+  const k4 = parseFloat(document.getElementById("persentaseK4").value);
+
+  // Validate input
+  if ([k1, k2, k3, k4].some((val) => isNaN(val) || val < 0 || val > 100)) {
+    alert("Semua nilai harus berupa angka antara 0-100!");
+    return;
+  }
+
+  try {
+    // Update Firestore
+    const settingsDocRef = doc(firestore, "setting_buyback", "default");
+    await setDoc(settingsDocRef, {
+      K1: k1,
+      K2: k2,
+      K3: k3,
+      K4: k4,
+    });
+
+    // Update local persentaseMap
+    persentaseMap = {
+      1: k1,
+      2: k2,
+      3: k3,
+      4: k4,
+    };
+
+    const modal = bootstrap.Modal.getInstance(document.getElementById("buybackSettingsModal"));
+    modal.hide();
+
+    showAlert("Pengaturan berhasil disimpan", "success");
+  } catch (error) {
+    console.error("Error saving persentase settings:", error);
+    showAlert("Gagal menyimpan pengaturan: " + error.message, "danger");
+  }
+}
+
 // ==================== CONDITION VISUAL FUNCTIONS ====================
 
 // Initialize Firebase functions
@@ -456,7 +607,7 @@ function showConditionVisual(condition) {
     1: "Kondisi Sangat Baik (K1)",
     2: "Kondisi Sedang (K2)",
     3: "Kondisi Kurang (K3)",
-    4: "Kondisi Tidak Sempurna (K4)"
+    4: "Kondisi Tidak Sempurna (K4)",
   };
 
   document.getElementById("conditionTitle").textContent = conditionNames[condition];
@@ -492,24 +643,29 @@ async function loadConditionMedia(condition) {
 
       if (mediaItem) {
         if (photoData && photoData.url) {
-          const displayUrl = photoData.publicId ? 
-            getCloudinaryUrl(photoData.publicId, { 
-              width: 300, 
-              height: 300, 
-              crop: 'fill',
-              quality: 'auto'
-            }, 'image') : photoData.url; // Tambahkan 'image' sebagai resource type
-          
+          const displayUrl = photoData.publicId
+            ? getCloudinaryUrl(
+                photoData.publicId,
+                {
+                  width: 300,
+                  height: 300,
+                  crop: "fill",
+                  quality: "auto",
+                },
+                "image"
+              )
+            : photoData.url; // Tambahkan 'image' sebagai resource type
+
           displayMedia(mediaItem, displayUrl, "photo");
-          
+
           // Add to gallery
           mediaGallery.push({
-            type: 'photo',
-            url: photoData.publicId ? 
-              getCloudinaryUrl(photoData.publicId, { quality: 'auto' }, 'image') : 
-              photoData.url,
+            type: "photo",
+            url: photoData.publicId
+              ? getCloudinaryUrl(photoData.publicId, { quality: "auto" }, "image")
+              : photoData.url,
             title: `Foto ${i + 1}`,
-            index: i
+            index: i,
           });
         } else {
           resetMediaItem(mediaItem, "photo", i + 1);
@@ -523,18 +679,18 @@ async function loadConditionMedia(condition) {
 
     if (videoItem) {
       if (videoData && videoData.url) {
-        const displayUrl = videoData.publicId ? 
-          getCloudinaryUrl(videoData.publicId, { quality: 'auto' }, 'video') : // Gunakan 'video' sebagai resource type
-          videoData.url;
-        
+        const displayUrl = videoData.publicId
+          ? getCloudinaryUrl(videoData.publicId, { quality: "auto" }, "video") // Gunakan 'video' sebagai resource type
+          : videoData.url;
+
         displayMedia(videoItem, displayUrl, "video");
-        
+
         // Add to gallery
         mediaGallery.push({
-          type: 'video',
+          type: "video",
           url: displayUrl,
-          title: 'Video',
-          index: 0
+          title: "Video",
+          index: 0,
         });
       } else {
         resetMediaItem(videoItem, "video", "Video");
@@ -543,7 +699,6 @@ async function loadConditionMedia(condition) {
 
     document.getElementById("loadingSpinner").style.display = "none";
     document.getElementById("conditionVisualContent").style.display = "block";
-
   } catch (error) {
     console.error("Error loading media:", error);
     showAlert("Gagal memuat media: " + error.message, "danger");
@@ -551,7 +706,6 @@ async function loadConditionMedia(condition) {
     document.getElementById("conditionVisualContent").style.display = "block";
   }
 }
-
 
 // Check and upload pending files
 async function checkAndUploadPendingFiles() {
@@ -569,22 +723,22 @@ async function checkAndUploadPendingFiles() {
 
 // Setup offline monitoring
 function setupOfflineMonitoring() {
-  const offlineIndicator = document.getElementById('offlineIndicator');
-  
-  window.addEventListener('online', async () => {
-    offlineIndicator.classList.remove('show');
+  const offlineIndicator = document.getElementById("offlineIndicator");
+
+  window.addEventListener("online", async () => {
+    offlineIndicator.classList.remove("show");
     showAlert("Koneksi kembali online. Mengupload file tertunda...", "info");
     await checkAndUploadPendingFiles();
   });
 
-  window.addEventListener('offline', () => {
-    offlineIndicator.classList.add('show');
+  window.addEventListener("offline", () => {
+    offlineIndicator.classList.add("show");
     showAlert("Koneksi offline. File akan disimpan sementara.", "warning");
   });
 
   // Check initial status
   if (!navigator.onLine) {
-    offlineIndicator.classList.add('show');
+    offlineIndicator.classList.add("show");
   }
 }
 
@@ -600,7 +754,7 @@ function displayMedia(mediaItem, url, type) {
     img.src = url;
     img.className = "media-preview";
     img.alt = "Kondisi barang";
-    img.addEventListener('click', () => openImageViewer(url, type));
+    img.addEventListener("click", () => openImageViewer(url, type));
     placeholder.appendChild(img);
   } else if (type === "video") {
     const video = document.createElement("video");
@@ -608,7 +762,7 @@ function displayMedia(mediaItem, url, type) {
     video.className = "media-preview";
     video.controls = true;
     video.muted = true;
-    video.addEventListener('click', () => openImageViewer(url, type));
+    video.addEventListener("click", () => openImageViewer(url, type));
     placeholder.appendChild(video);
   }
 
@@ -669,26 +823,26 @@ function toggleEditMode() {
 
 // Setup file upload listeners
 function setupFileUploadListeners() {
-  document.querySelectorAll('.upload-btn').forEach(btn => {
-    btn.addEventListener('click', function() {
-      const mediaItem = this.closest('.media-item');
-      const fileInput = mediaItem.querySelector('.file-upload');
+  document.querySelectorAll(".upload-btn").forEach((btn) => {
+    btn.addEventListener("click", function () {
+      const mediaItem = this.closest(".media-item");
+      const fileInput = mediaItem.querySelector(".file-upload");
       fileInput.click();
     });
   });
 
-  document.querySelectorAll('.file-upload').forEach(input => {
-    input.addEventListener('change', function() {
-      const index = this.getAttribute('data-index');
-      const type = this.getAttribute('data-type');
+  document.querySelectorAll(".file-upload").forEach((input) => {
+    input.addEventListener("change", function () {
+      const index = this.getAttribute("data-index");
+      const type = this.getAttribute("data-type");
       handleFileUpload(this, index, type);
     });
   });
 
-  document.querySelectorAll('.remove-media-btn').forEach(btn => {
-    btn.addEventListener('click', function() {
-      const index = this.getAttribute('data-index');
-      const type = this.getAttribute('data-type');
+  document.querySelectorAll(".remove-media-btn").forEach((btn) => {
+    btn.addEventListener("click", function () {
+      const index = this.getAttribute("data-index");
+      const type = this.getAttribute("data-type");
       removeMedia(index, type);
     });
   });
@@ -724,7 +878,7 @@ async function handleFileUpload(input, index, type) {
 
   try {
     const folder = `buyback/conditions/K${currentCondition}`;
-    
+
     // Simulate progress for better UX
     let progress = 0;
     const progressInterval = setInterval(() => {
@@ -734,7 +888,7 @@ async function handleFileUpload(input, index, type) {
     }, 200);
 
     const uploadResult = await uploadFile(file, folder);
-    
+
     // Complete progress
     clearInterval(progressInterval);
     progressBar.style.width = "100%";
@@ -747,9 +901,9 @@ async function handleFileUpload(input, index, type) {
     const mediaData = {
       url: uploadResult.url,
       publicId: uploadResult.publicId,
-      resourceType: uploadResult.resourceType || (type === 'photo' ? 'image' : 'video'), // Simpan resource type
+      resourceType: uploadResult.resourceType || (type === "photo" ? "image" : "video"), // Simpan resource type
       uploadedAt: Date.now(),
-      isTemporary: uploadResult.isTemporary || false
+      isTemporary: uploadResult.isTemporary || false,
     };
 
     if (type === "photo") {
@@ -762,46 +916,47 @@ async function handleFileUpload(input, index, type) {
     }
 
     // Display the media with optimization
-    const resourceType = type === 'photo' ? 'image' : 'video';
-    const optimizedUrl = uploadResult.isTemporary ? 
-      uploadResult.url : 
-      getCloudinaryUrl(uploadResult.publicId, { 
-        width: type === 'photo' ? 300 : undefined, 
-        height: type === 'photo' ? 300 : undefined, 
-        crop: type === 'photo' ? 'fill' : undefined,
-        quality: 'auto'
-      }, resourceType);
-    
+    const resourceType = type === "photo" ? "image" : "video";
+    const optimizedUrl = uploadResult.isTemporary
+      ? uploadResult.url
+      : getCloudinaryUrl(
+          uploadResult.publicId,
+          {
+            width: type === "photo" ? 300 : undefined,
+            height: type === "photo" ? 300 : undefined,
+            crop: type === "photo" ? "fill" : undefined,
+            quality: "auto",
+          },
+          resourceType
+        );
+
     displayMedia(mediaItem, optimizedUrl, type);
 
     // Add to gallery
     const galleryItem = {
       type: type,
-      url: uploadResult.isTemporary ? 
-        uploadResult.url : 
-        getCloudinaryUrl(uploadResult.publicId, { quality: 'auto' }, resourceType),
-      title: type === 'photo' ? `Foto ${parseInt(index) + 1}` : 'Video',
-      index: parseInt(index)
+      url: uploadResult.isTemporary
+        ? uploadResult.url
+        : getCloudinaryUrl(uploadResult.publicId, { quality: "auto" }, resourceType),
+      title: type === "photo" ? `Foto ${parseInt(index) + 1}` : "Video",
+      index: parseInt(index),
     };
 
     // Update gallery
-    const existingIndex = mediaGallery.findIndex(item => 
-      item.type === type && item.index === parseInt(index)
-    );
-    
+    const existingIndex = mediaGallery.findIndex((item) => item.type === type && item.index === parseInt(index));
+
     if (existingIndex >= 0) {
       mediaGallery[existingIndex] = galleryItem;
     } else {
       mediaGallery.push(galleryItem);
     }
 
-    const message = uploadResult.isTemporary ? 
-      'File disimpan sementara (offline). Akan diupload saat online.' :
-      'File berhasil diupload. Klik "Simpan Perubahan" untuk menyimpan.';
-    
+    const message = uploadResult.isTemporary
+      ? "File disimpan sementara (offline). Akan diupload saat online."
+      : 'File berhasil diupload. Klik "Simpan Perubahan" untuk menyimpan.';
+
     showAlert(message, uploadResult.isTemporary ? "warning" : "success");
     document.getElementById("saveMediaBtn").style.display = "inline-block";
-
   } catch (error) {
     console.error("Upload error:", error);
     showAlert("Gagal mengupload file: " + error.message, "danger");
@@ -831,11 +986,11 @@ async function removeMedia(index, type) {
     // Update database
     if (type === "photo") {
       await updateDoc(docRef, {
-        [`photos.${index}`]: deleteField()
+        [`photos.${index}`]: deleteField(),
       });
     } else {
       await updateDoc(docRef, {
-        video: deleteField()
+        video: deleteField(),
       });
     }
 
@@ -849,9 +1004,7 @@ async function removeMedia(index, type) {
     }
 
     // Remove from gallery
-    mediaGallery = mediaGallery.filter(item => 
-      !(item.type === type && item.index === parseInt(index))
-    );
+    mediaGallery = mediaGallery.filter((item) => !(item.type === type && item.index === parseInt(index)));
 
     // Reset media item
     const mediaItem = document.querySelector(`[data-type="${type}"][data-index="${index}"]`);
@@ -882,9 +1035,9 @@ async function saveAllChanges() {
       const docRef = doc(firestore, "conditionMedia", `K${condition}`);
       const updateData = {
         ...pendingChanges[condition],
-        updatedAt: serverTimestamp()
+        updatedAt: serverTimestamp(),
       };
-      
+
       await setDoc(docRef, updateData, { merge: true });
     }
 
@@ -904,18 +1057,18 @@ async function saveAllChanges() {
 
 // Setup image viewer
 function setupImageViewer() {
-  const prevBtn = document.getElementById('prevBtn');
-  const nextBtn = document.getElementById('nextBtn');
-  const fullscreenBtn = document.getElementById('fullscreenBtn');
-  const downloadBtn = document.getElementById('downloadBtn');
+  const prevBtn = document.getElementById("prevBtn");
+  const nextBtn = document.getElementById("nextBtn");
+  const fullscreenBtn = document.getElementById("fullscreenBtn");
+  const downloadBtn = document.getElementById("downloadBtn");
 
-  prevBtn?.addEventListener('click', showPreviousMedia);
-  nextBtn?.addEventListener('click', showNextMedia);
-  fullscreenBtn?.addEventListener('click', toggleFullscreen);
-  downloadBtn?.addEventListener('click', downloadCurrentMedia);
+  prevBtn?.addEventListener("click", showPreviousMedia);
+  nextBtn?.addEventListener("click", showNextMedia);
+  fullscreenBtn?.addEventListener("click", toggleFullscreen);
+  downloadBtn?.addEventListener("click", downloadCurrentMedia);
 
   // Keyboard navigation
-  document.addEventListener('keydown', handleKeyboardNavigation);
+  document.addEventListener("keydown", handleKeyboardNavigation);
 }
 
 // Open image viewer
@@ -926,10 +1079,10 @@ function openImageViewer(url, type, startIndex = 0) {
   }
 
   // Find the index of the clicked media
-  const clickedIndex = mediaGallery.findIndex(item => item.url === url);
+  const clickedIndex = mediaGallery.findIndex((item) => item.url === url);
   currentMediaIndex = clickedIndex >= 0 ? clickedIndex : startIndex;
 
-  const modal = new bootstrap.Modal(document.getElementById('imageViewerModal'));
+  const modal = new bootstrap.Modal(document.getElementById("imageViewerModal"));
   modal.show();
 
   displayCurrentMedia();
@@ -940,38 +1093,38 @@ function displayCurrentMedia() {
   if (mediaGallery.length === 0) return;
 
   const currentMedia = mediaGallery[currentMediaIndex];
-  const viewerImage = document.getElementById('viewerImage');
-  const viewerVideo = document.getElementById('viewerVideo');
-  const viewerLoading = document.getElementById('viewerLoading');
-  const mediaTitle = document.getElementById('mediaTitle');
-  const mediaCounter = document.getElementById('mediaCounter');
+  const viewerImage = document.getElementById("viewerImage");
+  const viewerVideo = document.getElementById("viewerVideo");
+  const viewerLoading = document.getElementById("viewerLoading");
+  const mediaTitle = document.getElementById("mediaTitle");
+  const mediaCounter = document.getElementById("mediaCounter");
 
   // Show loading
-  viewerLoading.style.display = 'block';
-  viewerImage.style.display = 'none';
-  viewerVideo.style.display = 'none';
+  viewerLoading.style.display = "block";
+  viewerImage.style.display = "none";
+  viewerVideo.style.display = "none";
 
   // Update title and counter
   mediaTitle.textContent = currentMedia.title;
   mediaCounter.textContent = `${currentMediaIndex + 1} / ${mediaGallery.length}`;
 
-  if (currentMedia.type === 'photo') {
+  if (currentMedia.type === "photo") {
     viewerImage.onload = () => {
-      viewerLoading.style.display = 'none';
-      viewerImage.style.display = 'block';
+      viewerLoading.style.display = "none";
+      viewerImage.style.display = "block";
     };
     viewerImage.onerror = () => {
-      viewerLoading.style.display = 'none';
+      viewerLoading.style.display = "none";
       showAlert("Gagal memuat gambar", "danger");
     };
     viewerImage.src = currentMedia.url;
-  } else if (currentMedia.type === 'video') {
+  } else if (currentMedia.type === "video") {
     viewerVideo.onloadeddata = () => {
-      viewerLoading.style.display = 'none';
-      viewerVideo.style.display = 'block';
+      viewerLoading.style.display = "none";
+      viewerVideo.style.display = "block";
     };
     viewerVideo.onerror = () => {
-      viewerLoading.style.display = 'none';
+      viewerLoading.style.display = "none";
       showAlert("Gagal memuat video", "danger");
     };
     viewerVideo.src = currentMedia.url;
@@ -983,16 +1136,16 @@ function displayCurrentMedia() {
 
 // Update navigation buttons
 function updateNavigationButtons() {
-  const prevBtn = document.getElementById('prevBtn');
-  const nextBtn = document.getElementById('nextBtn');
+  const prevBtn = document.getElementById("prevBtn");
+  const nextBtn = document.getElementById("nextBtn");
 
   if (mediaGallery.length <= 1) {
-    prevBtn.style.display = 'none';
-    nextBtn.style.display = 'none';
+    prevBtn.style.display = "none";
+    nextBtn.style.display = "none";
   } else {
-    prevBtn.style.display = 'block';
-    nextBtn.style.display = 'block';
-    
+    prevBtn.style.display = "block";
+    nextBtn.style.display = "block";
+
     prevBtn.disabled = currentMediaIndex === 0;
     nextBtn.disabled = currentMediaIndex === mediaGallery.length - 1;
   }
@@ -1016,35 +1169,34 @@ function showNextMedia() {
 
 // Handle keyboard navigation
 function handleKeyboardNavigation(e) {
-  const modal = document.getElementById('imageViewerModal');
-  if (!modal.classList.contains('show')) return;
+  const modal = document.getElementById("imageViewerModal");
+  if (!modal.classList.contains("show")) return;
 
-  switch(e.key) {
-    case 'ArrowLeft':
+  switch (e.key) {
+    case "ArrowLeft":
       e.preventDefault();
       showPreviousMedia();
       break;
-    case 'ArrowRight':
+    case "ArrowRight":
       e.preventDefault();
       showNextMedia();
       break;
-    case 'Escape':
+    case "Escape":
       e.preventDefault();
       bootstrap.Modal.getInstance(modal)?.hide();
       break;
   }
 }
 
-
 // Download current media
 function downloadCurrentMedia() {
   if (mediaGallery.length === 0) return;
 
   const currentMedia = mediaGallery[currentMediaIndex];
-  const link = document.createElement('a');
+  const link = document.createElement("a");
   link.href = currentMedia.url;
   link.download = `${currentMedia.title}_K${currentCondition}`;
-  link.target = '_blank';
+  link.target = "_blank";
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);
@@ -1053,5 +1205,3 @@ function downloadCurrentMedia() {
 // Make functions available globally
 window.showConditionVisual = showConditionVisual;
 window.printModal = printModal;
-
-

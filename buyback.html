@@ -211,18 +211,17 @@
           font-size: 1rem;
           margin-bottom: 0 !important;
         }
+
+        #btnSetting,
         #btnTambahPenerimaan {
-          padding: 3px 6px !important;
-          font-size: 10px !important;
-          border-radius: 50%;
-          width: 26px;
+          padding: 6px 8px !important;
+          font-size: 12px !important;
           height: 26px;
+          width: 26px;
+          border-radius: 40%;
           display: flex;
           align-items: center;
           justify-content: center;
-        }
-        #btnTambahPenerimaan .fa-plus {
-          margin-right: 0 !important;
         }
 
         html,
@@ -322,8 +321,13 @@
         #tablePenerimaan td:nth-child(6) {
           width: 15% !important;
         }
-        .hapus-baris{
+        .hapus-baris {
           padding: 5px 8px;
+        }
+      }
+      @media print {
+        .no-print {
+          display: none !important;
         }
       }
     </style>
@@ -474,18 +478,24 @@
           <div class="content-wrapper">
             <!-- Buyback Form Card -->
             <div class="card mb-4">
-              <div class="card-header">
-                <h2>
+              <div class="card-header d-flex justify-content-between align-items-center">
+                <h2 class="mb-0">
                   <i class="fas fa-calculator"></i>
                   Detail Barang
                 </h2>
-                <button type="button" class="btn btn-sm btn-primary" id="btnTambahPenerimaan">
-                  <span class="d-none d-sm-inline">
-                    <i class="fas fa-plus me-1"></i>
-                    Tambah
-                  </span>
-                  <span class="d-inline d-sm-none"><i class="fas fa-plus"></i></span>
-                </button>
+                <div class="d-flex">
+                  <button type="button" class="btn btn-sm btn-success me-2" id="btnSetting">
+                    <i class="fas fa-cog me-1 mx-1"></i>
+                    <span class="d-none d-sm-inline">Setting</span>
+                  </button>
+                  <button type="button" class="btn btn-sm btn-primary" id="btnTambahPenerimaan">
+                    <span class="d-none d-sm-inline">
+                      <i class="fas fa-plus me-1"></i>
+                      Tambah
+                    </span>
+                    <span class="d-inline d-sm-none"><i class="fas fa-plus"></i></span>
+                  </button>
+                </div>
               </div>
               <div class="card-body">
                 <form id="penerimaanForm">
@@ -593,7 +603,7 @@
                   <h5 class="fw-bold">Aturan Penentuan Harga:</h5>
                   <ul class="condition-list fs-6 mx-3">
                     <li>
-                      * Perhitungan ini hanya digunakan ketika kondisi barang tidak rusak 
+                      * Perhitungan ini hanya digunakan ketika kondisi barang tidak rusak
                       <strong>(bukan barang leburan).</strong>
                     </li>
                     <li>
@@ -642,7 +652,7 @@
                     </li>
                     <li>
                       <strong>K4 = Kondisi Tidak Sempurna</strong>
-                      (Batu Banyak Lepas > 3 / Butterfly Hilang / Lock Rusak)
+                      (Ada Reject / Butterfly Hilang / Lock Rusak)
                       <button
                         type="button"
                         class="btn btn-sm btn-outline-primary ms-2 condition-visual-btn"
@@ -659,6 +669,82 @@
           </div>
         </div>
       </main>
+    </div>
+
+    <!-- Settings Password Modal -->
+    <div
+      class="modal fade"
+      id="settingsPasswordModal"
+      tabindex="-1"
+      aria-labelledby="settingsPasswordModalLabel"
+      aria-hidden="true"
+    >
+      <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title" id="settingsPasswordModalLabel">
+              <i class="fas fa-lock me-2"></i>
+              Verifikasi Password
+            </h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+          </div>
+          <div class="modal-body">
+            <div class="form-group">
+              <label for="settingsPassword" class="form-label">Masukkan password untuk mengakses pengaturan:</label>
+              <input type="password" class="form-control" id="settingsPassword" required />
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Batal</button>
+            <button type="button" class="btn btn-primary" id="verifyPasswordBtn">Verifikasi</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Buyback Settings Modal -->
+    <div
+      class="modal fade"
+      id="buybackSettingsModal"
+      tabindex="-1"
+      aria-labelledby="buybackSettingsModalLabel"
+      aria-hidden="true"
+    >
+      <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title" id="buybackSettingsModalLabel">
+              <i class="fas fa-cog me-2"></i>
+              Pengaturan Persentase Buyback
+            </h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+          </div>
+          <div class="modal-body">
+            <form id="buybackSettingsForm">
+              <div class="mb-3">
+                <label for="persentaseK1" class="form-label">Persentase K1 (%)</label>
+                <input type="number" class="form-control" id="persentaseK1" min="0" max="100" required />
+              </div>
+              <div class="mb-3">
+                <label for="persentaseK2" class="form-label">Persentase K2 (%)</label>
+                <input type="number" class="form-control" id="persentaseK2" min="0" max="100" required />
+              </div>
+              <div class="mb-3">
+                <label for="persentaseK3" class="form-label">Persentase K3 (%)</label>
+                <input type="number" class="form-control" id="persentaseK3" min="0" max="100" required />
+              </div>
+              <div class="mb-3">
+                <label for="persentaseK4" class="form-label">Persentase K4 (%)</label>
+                <input type="number" class="form-control" id="persentaseK4" min="0" max="100" required />
+              </div>
+            </form>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Batal</button>
+            <button type="button" class="btn btn-primary" id="saveSettingsBtn">Simpan</button>
+          </div>
+        </div>
+      </div>
     </div>
 
     <!-- Result Modal -->
