@@ -31,62 +31,126 @@
     <link rel="shortcut icon" href="img/favicon.ico" type="image/x-icon" />
     <title>Manajemen Stok - Melati Gold Shop</title>
     <style>
+      :root {
+        --primary-color: #5966e0;
+        --secondary-color: #f4f6ff;
+        --accent-color: #4CAF50;
+        --danger-color: #dc3545;
+        --text-dark: #495057;
+        --text-light: #6c757d;
+      }
+
       .table-container {
         max-height: 500px;
         overflow-y: auto;
-      }
-      .stock-summary {
-        background-color: #f8f9fa;
         border-radius: 8px;
-        padding: 15px;
-        margin-bottom: 20px;
-        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
       }
-      .stock-card {
+
+      .table thead th {
+        background: var(--secondary-color);
+        color: var(--text-dark);
+        font-weight: 600;
+        border: none;
+      }
+
+      .table tbody td {
+        vertical-align: middle;
+        padding: 12px;
+      }
+
+      .card {
+        border-radius: 12px;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+        border: none;
+        margin-bottom: 24px;
+      }
+
+      .card-header {
+        background: linear-gradient(135deg, var(--secondary-color) 0%, var(--primary-color) 100%);
+        color: white;
+        border-radius: 12px 12px 0 0 !important;
+        border: none;
+        padding: 1rem 1.5rem;
+      }
+
+      .card-header h2 {
+        margin: 0;
+        font-size: 1.25rem;
+        color: white;
+      }
+
+      .btn {
         border-radius: 8px;
-        padding: 15px;
-        margin-bottom: 15px;
-        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+        font-weight: 500;
+        padding: 8px 16px;
         transition: all 0.3s ease;
       }
+
+      .btn:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+      }
+
+      .nav-tabs {
+        border-bottom: 2px solid var(--secondary-color);
+      }
+
+      .nav-tabs .nav-link {
+        border-radius: 8px 8px 0 0;
+        font-weight: 500;
+        color: var(--text-light);
+        border: none;
+        padding: 10px 20px;
+      }
+
+      .nav-tabs .nav-link.active {
+        background: linear-gradient(135deg, var(--secondary-color) 0%, var(--primary-color) 100%);
+        color: rgb(56, 56, 56);
+        border: none;
+      }
+
+      .stock-summary {
+        background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+        border-radius: 12px;
+        padding: 20px;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+      }
+
+      .stock-card {
+        border-radius: 12px;
+        padding: 20px;
+        margin-bottom: 15px;
+        transition: all 0.3s ease;
+        color: var(--text-dark);
+      }
+
       .stock-card:hover {
         transform: translateY(-3px);
-        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+        box-shadow: 0 8px 20px rgba(0, 0, 0, 0.12);
       }
+
       .stock-card h3 {
         font-size: 1.1rem;
         margin-bottom: 10px;
         font-weight: 600;
       }
+
       .stock-card .number {
         font-size: 1.8rem;
         font-weight: 700;
-        color: #3a3a3a;
+        color: var(--text-dark);
       }
-      .kalung-card {
-        background-color: #e3f2fd;
-      }
-      .liontin-card {
-        background-color: #e8f5e9;
-      }
-      .anting-card {
-        background-color: #fff3e0;
-      }
-      .cincin-card {
-        background-color: #f3e5f5;
-      }
-      .hala-card {
-        background-color: #e0f7fa;
-      }
-      .gelang-card {
-        background-color: #fff8e1;
-      }
-      .giwang-card {
-        background-color: #f1f8e9;
-      }
-      .batu-card {
-        background-color: #fce4ec;
-      }
+
+      /* Enhanced gradient colors for cards */
+      .kalung-card { background: linear-gradient(135deg, #e3f2fd 0%, #9cd1fc 100%); }
+      .liontin-card { background: linear-gradient(135deg, #e8f5e9 0%, #adffb0 100%); }
+      .anting-card { background: linear-gradient(135deg, #fff3e0 0%, #ffcc02 100%); }
+      .cincin-card { background: linear-gradient(135deg, #f3e5f5 0%, #ee8dff 100%); }
+      .hala-card { background: linear-gradient(135deg, #e0f7fa 0%, #88e8f5 100%); }
+      .gelang-card { background: linear-gradient(135deg, #fbe9e7 0%, #fd907c 100%); }
+      .giwang-card { background: linear-gradient(135deg, #f1f8e9 0%, #b3fc60 100%); }
+
       @keyframes fadeInUp {
         from {
           opacity: 0;
@@ -99,12 +163,12 @@
       }
 
       .detail-color-btn {
-        transition: all 0.2s ease-in-out !important;
+        transition: all 0.3s ease !important;
       }
 
       .detail-color-btn:hover:not(:disabled) {
-        transform: translateY(-1px) !important;
-        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1) !important;
+        transform: translateY(-2px) !important;
+        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15) !important;
       }
 
       .detail-color-btn:active:not(:disabled) {
@@ -112,44 +176,96 @@
       }
 
       .table tbody tr {
-        transition: background-color 0.2s ease;
+        transition: all 0.3s ease;
       }
 
       .table tbody tr:hover {
-        background-color: rgba(0, 0, 0, 0.02);
+        background-color: var(--secondary-color);
       }
 
       .badge {
-        font-weight: 300 !important;
+        font-weight: 500 !important;
+        padding: 6px 12px;
+        border-radius: 6px;
       }
+
       .color-badge {
         display: inline-block;
-        width: 20px;
-        height: 12px;
+        width: 24px;
+        height: 24px;
         border-radius: 50%;
         margin-right: 8px;
         border: 2px solid #fff;
-        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
       }
-      .color-pink {
-        background-color: #ff7c89;
+
+      .color-pink { background: linear-gradient(135deg, #ff7c89, #ff5c6c); }
+      .color-kuning { background: linear-gradient(135deg, #ffd54f, #ffb300); }
+      .color-hijau { background: linear-gradient(135deg, #81c784, #4caf50); }
+      .color-biru { background: linear-gradient(135deg, #64b5f6, #1e88e5); }
+      .color-putih { 
+        background: linear-gradient(135deg, #ffffff, #f5f5f5);
+        border: 2px solid #e0e0e0; 
       }
-      .color-kuning {
-        background-color: #ffc107;
-      }
-      .color-hijau {
-        background-color: #28a745;
-      }
-      .color-biru {
-        background-color: #007bff;
-      }
-      .color-putih {
-        background-color: #f8f9fa;
-        border-color: #dee2e6;
-      }
-    </style>
+      /* Loading overlay */
+    .loading-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(255, 255, 255, 0.9);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      z-index: 9999;
+    }
+
+    .loading-spinner {
+      width: 50px;
+      height: 50px;
+      border: 5px solid var(--secondary-color);
+      border-top: 5px solid var(--primary-color);
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+    }
+
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+
+    /* Modal enhancements */
+    .modal-content {
+      border-radius: 12px;
+      border: none;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+    }
+
+    .modal-header {
+      background: linear-gradient(135deg, var(--secondary-color) 0%, var(--primary-color) 100%);
+      color: rgb(56, 56, 56);
+      border-radius: 12px 12px 0 0;
+      padding: 1rem 1.5rem;
+    }
+
+    .modal-header .btn-close {
+      color: white;
+      opacity: 1;
+    }
+
+    .modal-footer {
+      border-top: 1px solid var(--secondary-color);
+      padding: 1rem 1.5rem;
+    }
+  </style>
   </head>
   <body>
+    <!-- Loading Overlay -->
+    <div class="loading-overlay" id="loadingOverlay" style="display: none;">
+      <div class="loading-spinner"></div>
+    </div>
+    
     <div class="app-container">
       <!-- Sidebar -->
       <aside class="sidebar">
@@ -288,9 +404,9 @@
           <div class="content-wrapper">
             <!-- Stock Summary Section -->
             <div class="card mb-4">
-              <div class="card-header">
-                <h2>
-                  <i class="fas fa-chart-pie me-2"></i>
+              <div class="card-header ">
+                <h2 class="text-dark">
+                  <i class="fas fa-chart-pie me-2 "></i>
                   Ringkasan Total Stok
                 </h2>
               </div>
@@ -455,7 +571,7 @@
               >
                 <div class="card mb-4">
                   <div class="card-header d-flex justify-content-between align-items-center">
-                    <h2>
+                    <h2 class="text-dark">
                       <i class="fas fa-vault"></i>
                       Stok Brankas
                     </h2>
@@ -505,7 +621,7 @@
               <div class="tab-pane fade" id="admin" role="tabpanel" aria-labelledby="admin-tab" tabindex="0">
                 <div class="card mb-4">
                   <div class="card-header d-flex justify-content-between align-items-center">
-                    <h2>
+                    <h2 class="text-dark">
                       <i class="fas fa-user-shield"></i>
                       Stok Admin
                     </h2>
@@ -555,7 +671,7 @@
               <div class="tab-pane fade" id="posting" role="tabpanel" aria-labelledby="posting-tab" tabindex="0">
                 <div class="card mb-4">
                   <div class="card-header d-flex justify-content-between align-items-center">
-                    <h2>
+                    <h2 class="text-dark">
                       <i class="fas fa-share-alt"></i>
                       Stok Posting
                     </h2>
@@ -611,7 +727,7 @@
               >
                 <div class="card mb-4">
                   <div class="card-header d-flex justify-content-between align-items-center">
-                    <h2>
+                    <h2 class="text-dark">
                       <i class="fas fa-exclamation-triangle"></i>
                       Stok Barang Rusak
                     </h2>
@@ -661,7 +777,7 @@
               <div class="tab-pane fade" id="batu-lepas" role="tabpanel" aria-labelledby="batu-lepas-tab" tabindex="0">
                 <div class="card mb-4">
                   <div class="card-header d-flex justify-content-between align-items-center">
-                    <h2>
+                    <h2 class="text-dark">
                       <i class="fas fa-gem"></i>
                       Stok Batu Lepas
                     </h2>

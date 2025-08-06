@@ -40,16 +40,17 @@ function initializeCache() {
 // Update cache in localStorage
 function updateCache() {
     try {
+        if (!validateStockData(stockData)) {
+            console.error('Invalid data, not updating cache');
+            return;
+        }
+        
         const cacheData = {
             timestamp: Date.now(),
             data: stockData
         };
         localStorage.setItem(CACHE_KEY, JSON.stringify(cacheData));
-        
-        // Trigger UI update setelah cache update - PERBAIKAN
-        if (document.readyState === 'complete') {
-            updateSummaryTotals();
-        }
+        console.log('Cache updated successfully');
     } catch (error) {
         console.error('Error updating cache:', error);
     }
@@ -815,43 +816,57 @@ function setupEventListeners() {
     });
 }
 
+// Validate stock data structure
+function validateStockData(data) {
+    if (!data || typeof data !== 'object') return false;
+    if (Object.keys(data).length === 0) return false;
+    
+    // Check if all categories exist
+    for (const category of categories) {
+        if (!data[category]) return false;
+    }
+    
+    return true;
+}
+
 // Setup real-time listener
 function setupRealtimeListener() {
-    const stocksRef = collection(firestore, 'stocks');
+    let lastUpdate = Date.now();
+    const MIN_UPDATE_INTERVAL = 1000; // Minimal 1 detik antara updates
     
-    const unsubscribe = onSnapshot(stocksRef, (snapshot) => {
-        let hasChanges = false;
+    const unsubscribe = onSnapshot(collection(firestore, 'stocks'), (snapshot) => {
+        // Prevent too frequent updates
+        if (Date.now() - lastUpdate < MIN_UPDATE_INTERVAL) {
+            return;
+        }
         
+        let hasChanges = false;
         snapshot.docChanges().forEach((change) => {
-            if (change.type === 'modified') {
-                const categoryId = change.doc.id;
-                const categoryData = change.doc.data();
-                
-                if (stockData[categoryId]) {
-                    stockData[categoryId] = categoryData;
+            try {
+                const data = change.doc.data();
+                if (validateStockData(data)) {
+                    stockData[change.doc.id] = data;
                     hasChanges = true;
                 }
+            } catch (error) {
+                console.error('Error processing change:', error);
             }
         });
         
         if (hasChanges) {
-            console.log('Real-time update detected, refreshing UI');
-            // Update UI LANGSUNG - PERBAIKAN
-            updateSummaryTotals();
             updateCache();
-            
-            const tableContainer = document.querySelector('.table-container');
-            if (tableContainer) {
-                populateTables();
-            }
+            updateSummaryTotals();
+            populateTables();
         }
+        
+        lastUpdate = Date.now();
     }, (error) => {
-        console.error('Error in real-time listener:', error);
+        console.error('Real-time listener error:', error);
+        // Try to reconnect after delay
+        setTimeout(setupRealtimeListener, 5000);
     });
     
-    window.addEventListener('beforeunload', () => {
-        unsubscribe();
-    });
+    return unsubscribe;
 }
 
 // Force refresh function
@@ -1067,3 +1082,30 @@ export {
 
 // Make handleLogout available globally
 window.handleLogout = handleLogout;
+
+const MAX_LOADING_TIME = 30000; // 30 detik
+const loadingTimeout = setTimeout(() => {
+    // Handle timeout
+    const indicator = document.getElementById('stockLoadingIndicator');
+    if (indicator) indicator.remove();
+    
+    Swal.fire({
+        icon: 'warning',
+        title: 'Loading Timeout',
+        text: 'Memuat data terlalu lama. Mencoba menggunakan data cache...'
+    });
+    
+    // Try to use cached data
+    initializeCache();
+}, MAX_LOADING_TIME);
+
+// Retry function with exponential backoff
+async function fetchWithRetry(fn, retries = 3, delay = 1000) {
+    try {
+        return await fn();
+    } catch (error) {
+        if (retries === 0) throw error;
+        await new Promise(resolve => setTimeout(resolve, delay));
+        return fetchWithRetry(fn, retries - 1, delay * 2);
+    }
+}
