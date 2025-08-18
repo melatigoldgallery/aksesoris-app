@@ -27,251 +27,30 @@
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     <!-- Custom CSS -->
     <link rel="stylesheet" href="css/pages/absensi-modern.css" />
+    <link rel="stylesheet" href="css/pages/manajemenStok.css" />
     <!-- Favicon sederhana -->
     <link rel="shortcut icon" href="img/favicon.ico" type="image/x-icon" />
     <title>Manajemen Stok - Melati Gold Shop</title>
     <style>
-      :root {
-        --primary-color: #5966e0;
-        --secondary-color: #f4f6ff;
-        --accent-color: #4CAF50;
-        --danger-color: #dc3545;
-        --text-dark: #495057;
-        --text-light: #6c757d;
+      .jenis-column {
+        position: relative;
+        padding-right: 45px;
       }
 
-      .table-container {
-        max-height: 500px;
-        overflow-y: auto;
-        border-radius: 8px;
-        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-      }
-
-      .table thead th {
-        background: var(--secondary-color);
-        color: var(--text-dark);
-        font-weight: 600;
-        border: none;
-      }
-
-      .table tbody td {
-        vertical-align: middle;
-        padding: 12px;
-      }
-
-      .card {
-        border-radius: 12px;
-        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
-        border: none;
-        margin-bottom: 24px;
-      }
-
-      .card-header {
-        background: linear-gradient(135deg, var(--secondary-color) 0%, var(--primary-color) 100%);
-        color: white;
-        border-radius: 12px 12px 0 0 !important;
-        border: none;
-        padding: 1rem 1.5rem;
-      }
-
-      .card-header h2 {
+      .btn-hala {
+        position: absolute;
+        right: 8px;
         margin: 0;
-        font-size: 1.25rem;
-        color: white;
       }
-
-      .btn {
-        border-radius: 8px;
-        font-weight: 500;
-        padding: 8px 16px;
-        transition: all 0.3s ease;
-      }
-
-      .btn:hover {
-        transform: translateY(-1px);
-        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
-      }
-
-      .nav-tabs {
-        border-bottom: 2px solid var(--secondary-color);
-      }
-
-      .nav-tabs .nav-link {
-        border-radius: 8px 8px 0 0;
-        font-weight: 500;
-        color: var(--text-light);
-        border: none;
-        padding: 10px 20px;
-      }
-
-      .nav-tabs .nav-link.active {
-        background: linear-gradient(135deg, var(--secondary-color) 0%, var(--primary-color) 100%);
-        color: rgb(56, 56, 56);
-        border: none;
-      }
-
-      .stock-summary {
-        background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
-        border-radius: 12px;
-        padding: 20px;
-        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
-      }
-
-      .stock-card {
-        border-radius: 12px;
-        padding: 20px;
-        margin-bottom: 15px;
-        transition: all 0.3s ease;
-        color: var(--text-dark);
-      }
-
-      .stock-card:hover {
-        transform: translateY(-3px);
-        box-shadow: 0 8px 20px rgba(0, 0, 0, 0.12);
-      }
-
-      .stock-card h3 {
-        font-size: 1.1rem;
-        margin-bottom: 10px;
-        font-weight: 600;
-      }
-
-      .stock-card .number {
-        font-size: 1.8rem;
-        font-weight: 700;
-        color: var(--text-dark);
-      }
-
-      /* Enhanced gradient colors for cards */
-      .kalung-card { background: linear-gradient(135deg, #e3f2fd 0%, #9cd1fc 100%); }
-      .liontin-card { background: linear-gradient(135deg, #e8f5e9 0%, #adffb0 100%); }
-      .anting-card { background: linear-gradient(135deg, #fff3e0 0%, #ffcc02 100%); }
-      .cincin-card { background: linear-gradient(135deg, #f3e5f5 0%, #ee8dff 100%); }
-      .hala-card { background: linear-gradient(135deg, #e0f7fa 0%, #88e8f5 100%); }
-      .gelang-card { background: linear-gradient(135deg, #fbe9e7 0%, #fd907c 100%); }
-      .giwang-card { background: linear-gradient(135deg, #f1f8e9 0%, #b3fc60 100%); }
-
-      @keyframes fadeInUp {
-        from {
-          opacity: 0;
-          transform: translateY(10px);
-        }
-        to {
-          opacity: 1;
-          transform: translateY(0);
-        }
-      }
-
-      .detail-color-btn {
-        transition: all 0.3s ease !important;
-      }
-
-      .detail-color-btn:hover:not(:disabled) {
-        transform: translateY(-2px) !important;
-        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15) !important;
-      }
-
-      .detail-color-btn:active:not(:disabled) {
-        transform: translateY(0) !important;
-      }
-
-      .table tbody tr {
-        transition: all 0.3s ease;
-      }
-
-      .table tbody tr:hover {
-        background-color: var(--secondary-color);
-      }
-
-      .badge {
-        font-weight: 500 !important;
-        padding: 6px 12px;
-        border-radius: 6px;
-      }
-
-      .color-badge {
-        display: inline-block;
-        width: 24px;
-        height: 24px;
-        border-radius: 50%;
-        margin-right: 8px;
-        border: 2px solid #fff;
-        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
-      }
-
-      .color-pink { background: linear-gradient(135deg, #ff7c89, #ff5c6c); }
-      .color-kuning { background: linear-gradient(135deg, #ffd54f, #ffb300); }
-      .color-hijau { background: linear-gradient(135deg, #81c784, #4caf50); }
-      .color-biru { background: linear-gradient(135deg, #64b5f6, #1e88e5); }
-      .color-putih { 
-        background: linear-gradient(135deg, #ffffff, #f5f5f5);
-        border: 2px solid #e0e0e0; 
-      }
-      /* Loading overlay */
-    .loading-overlay {
-      position: fixed;
-      top: 0;
-      left: 0;
-      right: 0;
-      bottom: 0;
-      background: rgba(255, 255, 255, 0.9);
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      z-index: 9999;
-    }
-
-    .loading-spinner {
-      width: 50px;
-      height: 50px;
-      border: 5px solid var(--secondary-color);
-      border-top: 5px solid var(--primary-color);
-      border-radius: 50%;
-      animation: spin 1s linear infinite;
-    }
-
-    @keyframes spin {
-      0% { transform: rotate(0deg); }
-      100% { transform: rotate(360deg); }
-    }
-
-    /* Modal enhancements */
-    .modal-content {
-      border-radius: 12px;
-      border: none;
-      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
-    }
-
-    .modal-header {
-      background: linear-gradient(135deg, var(--secondary-color) 0%, var(--primary-color) 100%);
-      color: rgb(56, 56, 56);
-      border-radius: 12px 12px 0 0;
-      padding: 1rem 1.5rem;
-    }
-
-    .modal-header .btn-close {
-      color: white;
-      opacity: 1;
-    }
-
-    .modal-footer {
-      border-top: 1px solid var(--secondary-color);
-      padding: 1rem 1.5rem;
-    }
-  </style>
+    </style>
   </head>
   <body>
-    <!-- Loading Overlay -->
-    <div class="loading-overlay" id="loadingOverlay" style="display: none;">
-      <div class="loading-spinner"></div>
-    </div>
-    
     <div class="app-container">
       <!-- Sidebar -->
       <aside class="sidebar">
         <div class="sidebar-header">
           <img src="img/Melati.jfif" alt="Logo" class="logo" />
-          <h1 class="brand-name">Melati Gold Shop</h1>
+          <h1 class="brand-name">Melati Gold Young</h1>
         </div>
         <div class="sidebar-menu">
           <ul class="nav flex-column" id="sidebarAccordion">
@@ -282,21 +61,44 @@
               </a>
             </li>
             <li class="nav-item">
+              <a
+                class="nav-link collapsed"
+                href="#"
+                data-bs-toggle="collapse"
+                data-bs-target="#barangSubmenu"
+                aria-expanded="false"
+              >
+                <i class="fa-solid fa-boxes-stacked"></i>
+                <span class="menu-text">Inventory Barang</span>
+                <i class="fas fa-angle-down ms-auto submenu-icon"></i>
+              </a>
+              <div class="collapse" id="barangSubmenu" data-bs-parent="#sidebarAccordion">
+                <ul class="nav flex-column ms-3">
+                  <li class="nav-item">
+                    <a class="nav-link" href="manajemenStok.html">
+                      <i class="fa-solid fa-boxes-stacked"></i>
+                      <span class="menu-text">Manajemen Stok</span>
+                    </a>
+                  </li>
+                  <li class="nav-item">
+                    <a class="nav-link" href="laporanStokHarian.html">
+                      <i class="fa-solid fa-calendar-xmark"></i>
+                      <span class="menu-text">Laporan Stok Harian</span>
+                    </a>
+                  </li>
+                  <li class="nav-item">
+                    <a class="nav-link" href="mutasiKode.html">
+                      <i class="fa-solid fa-calendar-xmark"></i>
+                      <span class="menu-text">Mutasi Kode</span>
+                    </a>
+                  </li>
+                </ul>
+              </div>
+            </li>
+            <li class="nav-item d-none">
               <a class="nav-link" href="buyback.html">
                 <i class="fas fa-exchange-alt"></i>
                 <span class="menu-text">Buyback</span>
-              </a>
-            </li>
-            <li class="nav-item">
-              <a class="nav-link" href="manajemenStok.html">
-                <i class="fa-solid fa-boxes-stacked"></i>
-                <span class="menu-text">Manajemen Stok</span>
-              </a>
-            </li>
-            <li class="nav-item">
-              <a class="nav-link" href="mutasiKode.html">
-                <i class="fa-solid fa-calendar-xmark"></i>
-                <span class="menu-text">Mutasi Kode</span>
               </a>
             </li>
             <li class="nav-item">
@@ -304,6 +106,70 @@
                 <i class="fas fa-tools"></i>
                 <span class="menu-text">Maintenance</span>
               </a>
+            </li>
+            <li class="nav-item">
+              <a
+                class="nav-link collapsed"
+                href="#"
+                data-bs-toggle="collapse"
+                data-bs-target="#promosiSubmenu"
+                aria-expanded="false"
+              >
+                <i class="fas fa-ad"></i>
+                <span class="menu-text">Promosi</span>
+                <i class="fas fa-angle-down ms-auto submenu-icon"></i>
+              </a>
+              <div class="collapse" id="promosiSubmenu" data-bs-parent="#sidebarAccordion">
+                <ul class="nav flex-column ms-3">
+                  <li class="nav-item">
+                    <a class="nav-link" href="promosi.html">
+                      <i class="fas fa-cog"></i>
+                      <span class="menu-text">Setting Promosi</span>
+                    </a>
+                  </li>
+                  <li class="nav-item">
+                    <a class="nav-link" href="promosi-display.html">
+                      <i class="fas fa-desktop"></i>
+                      <span class="menu-text">Display Promosi</span>
+                    </a>
+                  </li>
+                </ul>
+              </div>
+            </li>
+            <li class="nav-item">
+              <a
+                class="nav-link collapsed"
+                href="#"
+                data-bs-toggle="collapse"
+                data-bs-target="#antrianSubmenu"
+                aria-expanded="false"
+              >
+                <i class="fas fa-ticket-alt"></i>
+                <span class="menu-text">Antrian</span>
+                <i class="fas fa-angle-down ms-auto submenu-icon"></i>
+              </a>
+              <div class="collapse" id="antrianSubmenu" data-bs-parent="#sidebarAccordion">
+                <ul class="nav flex-column ms-3">
+                  <li class="nav-item">
+                    <a class="nav-link" href="admin.html">
+                      <i class="fas fa-user-cog"></i>
+                      <span class="menu-text">Admin Antrian</span>
+                    </a>
+                  </li>
+                  <li class="nav-item">
+                    <a class="nav-link" href="display.html">
+                      <i class="fas fa-desktop"></i>
+                      <span class="menu-text">Display Antrian</span>
+                    </a>
+                  </li>
+                  <li class="nav-item">
+                    <a class="nav-link" href="analisis.html">
+                      <i class="fas fa-chart-bar"></i>
+                      <span class="menu-text">Laporan Antrian</span>
+                    </a>
+                  </li>
+                </ul>
+              </div>
             </li>
             <li class="nav-item">
               <a
@@ -329,12 +195,6 @@
                     <a class="nav-link" href="dataPenjualan.html">
                       <i class="fas fa-shopping-cart"></i>
                       <span class="menu-text">Penjualan Aksesoris</span>
-                    </a>
-                  </li>
-                  <li class="nav-item">
-                    <a class="nav-link" href="return.html">
-                      <i class="fa-solid fa-right-from-bracket"></i>
-                      <span class="menu-text">Return Aksesoris</span>
                     </a>
                   </li>
                   <li class="nav-item">
@@ -391,22 +251,39 @@
         </header>
         <div class="page-content">
           <div class="page-header">
-            <h1>Manajemen Stok</h1>
-            <nav aria-label="breadcrumb">
+            <div class="d-flex justify-content-between align-items-center">
+              <div>
+                <h1 class="mb-2">
+                  <i class="fas fa-boxes-stacked me-3" style="color: #5966e0"></i>
+                  Manajemen Stok
+                </h1>
+              </div>
+              <div class="d-flex gap-2">
+                <button class="btn btn-outline-primary btn-sm" onclick="location.reload()">
+                  <i class="fas fa-sync-alt"></i>
+                  Refresh
+                </button>
+              </div>
+            </div>
+            <nav aria-label="breadcrumb" class="mt-3">
               <ol class="breadcrumb">
-                <li class="breadcrumb-item"><a href="dashboard.html">Home</a></li>
+                <li class="breadcrumb-item">
+                  <a href="dashboard.html">
+                    <i class="fas fa-home"></i>
+                    Home
+                  </a>
+                </li>
                 <li class="breadcrumb-item">Aksesoris</li>
                 <li class="breadcrumb-item active" aria-current="page">Manajemen Stok</li>
               </ol>
             </nav>
           </div>
-
           <div class="content-wrapper">
             <!-- Stock Summary Section -->
             <div class="card mb-4">
-              <div class="card-header ">
-                <h2 class="text-dark">
-                  <i class="fas fa-chart-pie me-2 "></i>
+              <div class="card-header">
+                <h2 class="text-white fs-5">
+                  <i class="fas fa-chart-pie me-2"></i>
                   Ringkasan Total Stok
                 </h2>
               </div>
@@ -414,75 +291,117 @@
                 <div class="stock-summary">
                   <div class="row">
                     <div class="col-md-3 col-sm-6">
-                      <div class="stock-card kalung-card">
+                      <div class="stock-card kalung-card text-dark">
                         <h3>
                           <i class="fas fa-link me-2"></i>
                           KALUNG
                         </h3>
                         <div class="number" id="total-kalung">0</div>
-                        <small>Total dari semua lokasi</small>
+                        <small id="label-jenis-KALUNG">Status</small>
                       </div>
                     </div>
                     <div class="col-md-3 col-sm-6">
-                      <div class="stock-card liontin-card">
+                      <div class="stock-card liontin-card text-dark">
                         <h3>
                           <i class="fas fa-gem me-2"></i>
                           LIONTIN
                         </h3>
                         <div class="number" id="total-liontin">0</div>
-                        <small>Total dari semua lokasi</small>
+                        <small id="label-jenis-LIONTIN">Status</small>
                       </div>
                     </div>
                     <div class="col-md-3 col-sm-6">
-                      <div class="stock-card anting-card">
+                      <div class="stock-card anting-card text-dark">
                         <h3>
                           <i class="fas fa-dot-circle me-2"></i>
                           ANTING
                         </h3>
                         <div class="number" id="total-anting">0</div>
-                        <small>Total dari semua lokasi</small>
+                        <small id="label-jenis-ANTING">Status</small>
                       </div>
                     </div>
                     <div class="col-md-3 col-sm-6">
-                      <div class="stock-card cincin-card">
+                      <div class="stock-card cincin-card text-dark">
                         <h3>
                           <i class="fas fa-circle me-2"></i>
                           CINCIN
                         </h3>
                         <div class="number" id="total-cincin">0</div>
-                        <small>Total dari semua lokasi</small>
+                        <small id="label-jenis-CINCIN">Status</small>
                       </div>
                     </div>
                   </div>
                   <div class="row mt-3">
                     <div class="col-md-3 col-sm-6">
-                      <div class="stock-card hala-card">
-                        <h3>
-                          <i class="fas fa-ring me-2"></i>
-                          HALA
-                        </h3>
-                        <div class="number" id="total-hala">0</div>
-                        <small>Total dari semua lokasi</small>
-                      </div>
-                    </div>
-                    <div class="col-md-3 col-sm-6">
-                      <div class="stock-card gelang-card">
+                      <div class="stock-card gelang-card text-dark">
                         <h3>
                           <i class="fas fa-circle-notch me-2"></i>
                           GELANG
                         </h3>
                         <div class="number" id="total-gelang">0</div>
-                        <small>Total dari semua lokasi</small>
+                        <small id="label-jenis-GELANG">Status</small>
                       </div>
                     </div>
                     <div class="col-md-3 col-sm-6">
-                      <div class="stock-card giwang-card">
+                      <div class="stock-card giwang-card text-dark">
                         <h3>
                           <i class="fas fa-dot-circle me-2"></i>
                           GIWANG
                         </h3>
                         <div class="number" id="total-giwang">0</div>
-                        <small>Total dari semua lokasi</small>
+                        <small id="label-jenis-GIWANG">Status</small>
+                      </div>
+                    </div>
+                    <div class="col-md-3 col-sm-6">
+                      <div class="stock-card hala-card text-dark">
+                        <h3>
+                          <i class="fas fa-ring me-2"></i>
+                          HALA
+                        </h3>
+                        <div class="number" id="total-hala">0</div>
+                        <small id="label-jenis-HALA">Status</small>
+                      </div>
+                    </div>
+                    <div class="col-md-3 col-sm-6">
+                      <div class="stock-card berlian-card text-dark">
+                        <h3>
+                          <i class="fas fa-gem me-2"></i>
+                          BERLIAN
+                        </h3>
+                        <div class="number" id="total-berlian">0</div>
+                        <small id="label-jenis-BERLIAN">Status</small>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="row mt-3">
+                    <div class="col-md-3 col-sm-6">
+                      <div class="stock-card kendari-card text-dark">
+                        <h3>
+                          <i class="fas fa-store me-2"></i>
+                          KENDARI
+                        </h3>
+                        <div class="number" id="total-kendari">0</div>
+                        <small id="label-jenis-KENDARI">Status</small>
+                      </div>
+                    </div>
+                    <div class="col-md-3 col-sm-6">
+                      <div class="stock-card sdw-card text-dark">
+                        <h3>
+                          <i class="fas fa-box me-2"></i>
+                          SDW
+                        </h3>
+                        <div class="number" id="total-sdw">0</div>
+                        <small id="label-jenis-SDW">Status</small>
+                      </div>
+                    </div>
+                    <div class="col-md-3 col-sm-6">
+                      <div class="stock-card emas-bali-card text-dark">
+                        <h3>
+                          <i class="fas fa-coins me-2"></i>
+                          EMAS BALI
+                        </h3>
+                        <div class="number" id="total-emas-bali">0</div>
+                        <small id="label-jenis-EMAS_BALI">Status</small>
                       </div>
                     </div>
                   </div>
@@ -495,566 +414,1193 @@
               <li class="nav-item" role="presentation">
                 <button
                   class="nav-link active"
-                  id="brankas-tab"
+                  id="kalung-tab"
                   data-bs-toggle="tab"
-                  data-bs-target="#brankas"
+                  data-bs-target="#kalung"
                   type="button"
                   role="tab"
+                  aria-controls="kalung"
                 >
-                  <i class="fas fa-vault me-2"></i>
-                  BRANKAS
+                  <i class="fas fa-link me-2"></i>
+                  KALUNG
                 </button>
               </li>
               <li class="nav-item" role="presentation">
                 <button
                   class="nav-link"
-                  id="admin-tab"
+                  id="liontin-tab"
                   data-bs-toggle="tab"
-                  data-bs-target="#admin"
+                  data-bs-target="#liontin"
                   type="button"
                   role="tab"
-                >
-                  <i class="fas fa-user-shield me-2"></i>
-                  ADMIN
-                </button>
-              </li>
-              <li class="nav-item" role="presentation">
-                <button
-                  class="nav-link"
-                  id="posting-tab"
-                  data-bs-toggle="tab"
-                  data-bs-target="#posting"
-                  type="button"
-                  role="tab"
-                >
-                  <i class="fas fa-share-alt me-2"></i>
-                  POSTING
-                </button>
-              </li>
-              <li class="nav-item" role="presentation">
-                <button
-                  class="nav-link"
-                  id="barang-rusak-tab"
-                  data-bs-toggle="tab"
-                  data-bs-target="#barang-rusak"
-                  type="button"
-                  role="tab"
-                >
-                  <i class="fas fa-exclamation-triangle me-2"></i>
-                  BARANG RUSAK
-                </button>
-              </li>
-              <li class="nav-item" role="presentation">
-                <button
-                  class="nav-link"
-                  id="batu-lepas-tab"
-                  data-bs-toggle="tab"
-                  data-bs-target="#batu-lepas"
-                  type="button"
-                  role="tab"
+                  aria-controls="liontin"
                 >
                   <i class="fas fa-gem me-2"></i>
-                  BATU LEPAS
+                  LIONTIN
+                </button>
+              </li>
+              <li class="nav-item" role="presentation">
+                <button
+                  class="nav-link"
+                  id="anting-tab"
+                  data-bs-toggle="tab"
+                  data-bs-target="#anting"
+                  type="button"
+                  role="tab"
+                  aria-controls="anting"
+                >
+                  <i class="fas fa-dot-circle me-2"></i>
+                  ANTING
+                </button>
+              </li>
+              <li class="nav-item" role="presentation">
+                <button
+                  class="nav-link"
+                  id="cincin-tab"
+                  data-bs-toggle="tab"
+                  data-bs-target="#cincin"
+                  type="button"
+                  role="tab"
+                  aria-controls="cincin"
+                >
+                  <i class="fas fa-circle me-2"></i>
+                  CINCIN
+                </button>
+              </li>
+              <li class="nav-item" role="presentation">
+                <button
+                  class="nav-link"
+                  id="gelang-tab"
+                  data-bs-toggle="tab"
+                  data-bs-target="#gelang"
+                  type="button"
+                  role="tab"
+                  aria-controls="gelang"
+                >
+                  <i class="fas fa-circle-notch me-2"></i>
+                  GELANG
+                </button>
+              </li>
+              <li class="nav-item" role="presentation">
+                <button
+                  class="nav-link"
+                  id="giwang-tab"
+                  data-bs-toggle="tab"
+                  data-bs-target="#giwang"
+                  type="button"
+                  role="tab"
+                  aria-controls="giwang"
+                >
+                  <i class="fas fa-dot-circle me-2"></i>
+                  GIWANG
+                </button>
+              </li>
+              <li class="nav-item" role="presentation">
+                <button
+                  class="nav-link"
+                  id="hala-tab"
+                  data-bs-toggle="tab"
+                  data-bs-target="#hala"
+                  type="button"
+                  role="tab"
+                  aria-controls="hala"
+                >
+                  <i class="fas fa-ring me-2"></i>
+                  HALA
+                </button>
+              </li>
+              <li class="nav-item" role="presentation">
+                <button
+                  class="nav-link"
+                  id="kendari-tab"
+                  data-bs-toggle="tab"
+                  data-bs-target="#kendari"
+                  type="button"
+                  role="tab"
+                  aria-controls="kendari"
+                >
+                  <i class="fas fa-store me-2"></i>
+                  KENDARI
+                </button>
+              </li>
+              <li class="nav-item" role="presentation">
+                <button
+                  class="nav-link"
+                  id="berlian-tab"
+                  data-bs-toggle="tab"
+                  data-bs-target="#berlian"
+                  type="button"
+                  role="tab"
+                  aria-controls="berlian"
+                >
+                  <i class="fas fa-gem me-2"></i>
+                  BERLIAN
+                </button>
+              </li>
+              <li class="nav-item" role="presentation">
+                <button
+                  class="nav-link"
+                  id="sdw-tab"
+                  data-bs-toggle="tab"
+                  data-bs-target="#sdw"
+                  type="button"
+                  role="tab"
+                  aria-controls="sdw"
+                >
+                  <i class="fas fa-box me-2"></i>
+                  SDW
+                </button>
+              </li>
+              <li class="nav-item" role="presentation">
+                <button
+                  class="nav-link"
+                  id="emas-bali-tab"
+                  data-bs-toggle="tab"
+                  data-bs-target="#emas-bali"
+                  type="button"
+                  role="tab"
+                  aria-controls="emas-bali"
+                >
+                  <i class="fas fa-coins me-2"></i>
+                  EMAS BALI
+                </button>
+              </li>
+              <li class="nav-item" role="presentation">
+                <button
+                  class="nav-link"
+                  id="stok-komputer-tab"
+                  data-bs-toggle="tab"
+                  data-bs-target="#stok-komputer"
+                  type="button"
+                  role="tab"
+                  aria-controls="stok-komputer"
+                >
+                  <i class="fas fa-desktop me-2"></i>
+                  STOK KOMPUTER
                 </button>
               </li>
             </ul>
 
             <!-- Tab Content -->
             <div class="tab-content" id="stockTabContent">
-              <!-- BRANKAS Tab -->
-              <div
-                class="tab-pane fade show active"
-                id="brankas"
-                role="tabpanel"
-                aria-labelledby="brankas-tab"
-                tabindex="0"
-              >
+              <!-- TAB KALUNG -->
+              <div class="tab-pane fade show active" id="kalung" role="tabpanel" aria-labelledby="kalung-tab">
                 <div class="card mb-4">
-                  <div class="card-header d-flex justify-content-between align-items-center">
-                    <h2 class="text-dark">
-                      <i class="fas fa-vault"></i>
-                      Stok Brankas
-                    </h2>
-                    <div>
-                      <button
-                        class="btn btn-primary me-2"
-                        data-bs-toggle="modal"
-                        data-bs-target="#tambahStokModal"
-                        data-category="brankas"
-                      >
-                        <i class="fas fa-plus-circle me-2"></i>
-                        Tambah Stok
-                      </button>
-                      <button
-                        class="btn btn-danger"
-                        data-bs-toggle="modal"
-                        data-bs-target="#kurangiStokModal"
-                        data-category="brankas"
-                      >
-                        <i class="fas fa-minus-circle me-2"></i>
-                        Kurangi Stok
-                      </button>
-                    </div>
+                  <div class="card-header d-flex justify-content-start align-items-center">
+                    <i class="fas fa-link me-2"></i>
+                    <h3 class="mb-0">Data Kalung</h3>
                   </div>
                   <div class="card-body">
                     <div class="table-container">
                       <table class="table table-hover">
-                        <thead class="table-light">
+                        <thead>
                           <tr>
                             <th>No</th>
-                            <th>Jenis Barang</th>
-                            <th>Jumlah</th>
-                            <th>Terakhir Diperbarui</th>
-                            <th>Riwayat</th>
+                            <th>Jenis</th>
+                            <th class="text-center">Jumlah</th>
+                            <th class="text-center">Aksi</th>
+                            <th class="text-center">Riwayat</th>
+                            <th class="text-center">Terakhir Update</th>
                           </tr>
                         </thead>
-                        <tbody id="brankas-table-body">
-                          <!-- Data will be populated by JavaScript -->
+                        <tbody id="kalung-table-body">
+                          <!-- Data Kalung diisi oleh JS -->
                         </tbody>
                       </table>
                     </div>
                   </div>
                 </div>
               </div>
-
-              <!-- ADMIN Tab -->
-              <div class="tab-pane fade" id="admin" role="tabpanel" aria-labelledby="admin-tab" tabindex="0">
+              <!-- TAB LIONTIN -->
+              <div class="tab-pane fade" id="liontin" role="tabpanel" aria-labelledby="liontin-tab">
                 <div class="card mb-4">
-                  <div class="card-header d-flex justify-content-between align-items-center">
-                    <h2 class="text-dark">
-                      <i class="fas fa-user-shield"></i>
-                      Stok Admin
-                    </h2>
-                    <div>
-                      <button
-                        class="btn btn-primary me-2"
-                        data-bs-toggle="modal"
-                        data-bs-target="#tambahStokModal"
-                        data-category="admin"
-                      >
-                        <i class="fas fa-plus-circle me-2"></i>
-                        Tambah Stok
-                      </button>
-                      <button
-                        class="btn btn-danger"
-                        data-bs-toggle="modal"
-                        data-bs-target="#kurangiStokModal"
-                        data-category="admin"
-                      >
-                        <i class="fas fa-minus-circle me-2"></i>
-                        Kurangi Stok
-                      </button>
-                    </div>
+                  <div class="card-header d-flex justify-content-start align-items-center">
+                    <i class="fas fa-gem me-2"></i>
+                    <h3 class="mb-0 fs-5">Data Liontin</h3>
                   </div>
                   <div class="card-body">
                     <div class="table-container">
                       <table class="table table-hover">
-                        <thead class="table-light">
+                        <thead>
                           <tr>
                             <th>No</th>
-                            <th>Jenis Barang</th>
-                            <th>Jumlah</th>
-                            <th>Terakhir Diperbarui</th>
-                            <th>Riwayat</th>
+                            <th>Jenis</th>
+                            <th class="text-center">Jumlah</th>
+                            <th class="text-center">Aksi</th>
+                            <th class="text-center">Riwayat</th>
+                            <th class="text-center">Terakhir Update</th>
                           </tr>
                         </thead>
-                        <tbody id="admin-table-body">
-                          <!-- Data will be populated by JavaScript -->
+                        <tbody id="liontin-table-body">
+                          <!-- Data Liontin diisi oleh JS -->
                         </tbody>
                       </table>
                     </div>
                   </div>
                 </div>
               </div>
-
-              <!-- POSTING Tab -->
-              <div class="tab-pane fade" id="posting" role="tabpanel" aria-labelledby="posting-tab" tabindex="0">
+              <!-- TAB ANTING -->
+              <div class="tab-pane fade" id="anting" role="tabpanel" aria-labelledby="anting-tab">
                 <div class="card mb-4">
-                  <div class="card-header d-flex justify-content-between align-items-center">
-                    <h2 class="text-dark">
-                      <i class="fas fa-share-alt"></i>
-                      Stok Posting
-                    </h2>
-                    <div>
-                      <button
-                        class="btn btn-primary me-2"
-                        data-bs-toggle="modal"
-                        data-bs-target="#tambahStokModal"
-                        data-category="posting"
-                      >
-                        <i class="fas fa-plus-circle me-2"></i>
-                        Tambah Stok
-                      </button>
-                      <button
-                        class="btn btn-danger"
-                        data-bs-toggle="modal"
-                        data-bs-target="#kurangiStokModal"
-                        data-category="posting"
-                      >
-                        <i class="fas fa-minus-circle me-2"></i>
-                        Kurangi Stok
-                      </button>
-                    </div>
+                  <div class="card-header d-flex justify-content-start align-items-center">
+                    <i class="fas fa-dot-circle me-2"></i>
+                    <h3 class="mb-0 fs-5">Data Anting</h3>
                   </div>
                   <div class="card-body">
                     <div class="table-container">
                       <table class="table table-hover">
-                        <thead class="table-light">
+                        <thead>
                           <tr>
                             <th>No</th>
-                            <th>Jenis Barang</th>
-                            <th>Jumlah</th>
-                            <th>Terakhir Diperbarui</th>
-                            <th>Riwayat</th>
+                            <th>Jenis</th>
+                            <th class="text-center">Jumlah</th>
+                            <th class="text-center">Aksi</th>
+                            <th class="text-center">Riwayat</th>
+                            <th class="text-center">Terakhir Update</th>
                           </tr>
                         </thead>
-                        <tbody id="posting-table-body">
-                          <!-- Data will be populated by JavaScript -->
+                        <tbody id="anting-table-body">
+                          <!-- Data Anting diisi oleh JS -->
                         </tbody>
                       </table>
                     </div>
                   </div>
                 </div>
               </div>
-
-              <!-- BARANG RUSAK Tab -->
-              <div
-                class="tab-pane fade"
-                id="barang-rusak"
-                role="tabpanel"
-                aria-labelledby="barang-rusak-tab"
-                tabindex="0"
-              >
+              <!-- TAB CINCIN -->
+              <div class="tab-pane fade" id="cincin" role="tabpanel" aria-labelledby="cincin-tab">
                 <div class="card mb-4">
-                  <div class="card-header d-flex justify-content-between align-items-center">
-                    <h2 class="text-dark">
-                      <i class="fas fa-exclamation-triangle"></i>
-                      Stok Barang Rusak
-                    </h2>
-                    <div>
-                      <button
-                        class="btn btn-primary me-2"
-                        data-bs-toggle="modal"
-                        data-bs-target="#tambahStokModal"
-                        data-category="barang-rusak"
-                      >
-                        <i class="fas fa-plus-circle me-2"></i>
-                        Tambah Stok
-                      </button>
-                      <button
-                        class="btn btn-danger"
-                        data-bs-toggle="modal"
-                        data-bs-target="#kurangiStokModal"
-                        data-category="barang-rusak"
-                      >
-                        <i class="fas fa-minus-circle me-2"></i>
-                        Kurangi Stok
-                      </button>
-                    </div>
+                  <div class="card-header d-flex justify-content-start align-items-center">
+                    <i class="fas fa-circle me-2"></i>
+                    <h3 class="mb-0 fs-5">Data Cincin</h3>
                   </div>
                   <div class="card-body">
                     <div class="table-container">
                       <table class="table table-hover">
-                        <thead class="table-light">
+                        <thead>
                           <tr>
                             <th>No</th>
-                            <th>Jenis Barang</th>
-                            <th>Jumlah</th>
-                            <th>Terakhir Diperbarui</th>
-                            <th>Riwayat</th>
+                            <th>Jenis</th>
+                            <th class="text-center">Jumlah</th>
+                            <th class="text-center">Aksi</th>
+                            <th class="text-center">Riwayat</th>
+                            <th class="text-center">Terakhir Update</th>
                           </tr>
                         </thead>
-                        <tbody id="barang-rusak-table-body">
-                          <!-- Data will be populated by JavaScript -->
+                        <tbody id="cincin-table-body">
+                          <!-- Data Cincin diisi oleh JS -->
                         </tbody>
                       </table>
                     </div>
                   </div>
                 </div>
               </div>
-
-              <!-- BATU LEPAS Tab -->
-              <div class="tab-pane fade" id="batu-lepas" role="tabpanel" aria-labelledby="batu-lepas-tab" tabindex="0">
+              <!-- TAB GELANG -->
+              <div class="tab-pane fade" id="gelang" role="tabpanel" aria-labelledby="gelang-tab">
                 <div class="card mb-4">
-                  <div class="card-header d-flex justify-content-between align-items-center">
-                    <h2 class="text-dark">
-                      <i class="fas fa-gem"></i>
-                      Stok Batu Lepas
-                    </h2>
-                    <div>
-                      <button
-                        class="btn btn-primary me-2"
-                        data-bs-toggle="modal"
-                        data-bs-target="#tambahStokModal"
-                        data-category="batu-lepas"
-                      >
-                        <i class="fas fa-plus-circle me-2"></i>
-                        Tambah Stok
-                      </button>
-                      <button
-                        class="btn btn-danger"
-                        data-bs-toggle="modal"
-                        data-bs-target="#kurangiStokModal"
-                        data-category="batu-lepas"
-                      >
-                        <i class="fas fa-minus-circle me-2"></i>
-                        Kurangi Stok
-                      </button>
-                    </div>
+                  <div class="card-header d-flex justify-content-start align-items-center">
+                    <i class="fas fa-circle-notch me-2"></i>
+                    <h3 class="mb-0 fs-5">Data Gelang</h3>
                   </div>
                   <div class="card-body">
                     <div class="table-container">
                       <table class="table table-hover">
-                        <thead class="table-light">
+                        <thead>
                           <tr>
                             <th>No</th>
-                            <th>Jenis Barang</th>
-                            <th>Jumlah</th>
-                            <th>Terakhir Diperbarui</th>
-                            <th>Riwayat</th>
+                            <th>Jenis</th>
+                            <th class="text-center">Jumlah</th>
+                            <th class="text-center">Aksi</th>
+                            <th class="text-center">Riwayat</th>
+                            <th class="text-center">Terakhir Update</th>
                           </tr>
                         </thead>
-                        <tbody id="batu-lepas-table-body">
-                          <!-- Data will be populated by JavaScript -->
+                        <tbody id="gelang-table-body">
+                          <!-- Data Gelang diisi oleh JS -->
                         </tbody>
                       </table>
                     </div>
                   </div>
                 </div>
+              </div>
+              <!-- TAB GIWANG -->
+              <div class="tab-pane fade" id="giwang" role="tabpanel" aria-labelledby="giwang-tab">
+                <div class="card mb-4">
+                  <div class="card-header d-flex justify-content-start align-items-center">
+                    <i class="fas fa-dot-circle me-2"></i>
+                    <h3 class="mb-0 fs-5">Data Giwang</h3>
+                  </div>
+                  <div class="card-body">
+                    <div class="table-container">
+                      <table class="table table-hover">
+                        <thead>
+                          <tr>
+                            <th>No</th>
+                            <th>Jenis</th>
+                            <th class="text-center">Jumlah</th>
+                            <th class="text-center">Aksi</th>
+                            <th class="text-center">Riwayat</th>
+                            <th class="text-center">Terakhir Update</th>
+                          </tr>
+                        </thead>
+                        <tbody id="giwang-table-body">
+                          <!-- Data Giwang diisi oleh JS -->
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <!-- TAB HALA -->
+              <div class="tab-pane fade" id="hala" role="tabpanel" aria-labelledby="hala-tab">
+                <div class="card mb-4">
+                  <div class="card-header d-flex justify-content-start align-items-center">
+                    <i class="fas fa-ring me-2"></i>
+                    <h3 class="mb-0 fs-5">Data Hala</h3>
+                  </div>
+                  <div class="card-body">
+                    <div class="table-container">
+                      <table class="table table-hover">
+                        <thead>
+                          <tr>
+                            <th>No</th>
+                            <th>Jenis</th>
+                            <th class="text-center">Jumlah</th>
+                            <th class="text-center">Aksi</th>
+                            <th class="text-center">Riwayat</th>
+                            <th class="text-center">Terakhir Update</th>
+                          </tr>
+                        </thead>
+                        <tbody id="hala-table-body">
+                          <!-- Data Hala diisi oleh JS -->
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <!-- TAB KENDARI -->
+              <div class="tab-pane fade" id="kendari" role="tabpanel" aria-labelledby="kendari-tab">
+                <div class="card mb-4">
+                  <div class="card-header d-flex justify-content-start align-items-center">
+                    <i class="fas fa-store me-2"></i>
+                    <h3 class="mb-0 fs-5">Data Kendari</h3>
+                  </div>
+                  <div class="card-body">
+                    <div class="table-container">
+                      <table class="table table-hover">
+                        <thead>
+                          <tr>
+                            <th>No</th>
+                            <th>Jenis</th>
+                            <th class="text-center">Jumlah</th>
+                            <th class="text-center">Aksi</th>
+                            <th class="text-center">Riwayat</th>
+                            <th class="text-center">Terakhir Update</th>
+                          </tr>
+                        </thead>
+                        <tbody id="kendari-table-body"></tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <!-- TAB BERLIAN -->
+              <div class="tab-pane fade" id="berlian" role="tabpanel" aria-labelledby="berlian-tab">
+                <div class="card mb-4">
+                  <div class="card-header d-flex justify-content-start align-items-center">
+                    <i class="fas fa-gem me-2"></i>
+                    <h3 class="mb-0 fs-5">Data Berlian</h3>
+                  </div>
+                  <div class="card-body">
+                    <div class="table-container">
+                      <table class="table table-hover">
+                        <thead>
+                          <tr>
+                            <th>No</th>
+                            <th>Jenis</th>
+                            <th class="text-center">Jumlah</th>
+                            <th class="text-center">Aksi</th>
+                            <th class="text-center">Riwayat</th>
+                            <th class="text-center">Terakhir Update</th>
+                          </tr>
+                        </thead>
+                        <tbody id="berlian-table-body"></tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <!-- TAB SDW -->
+              <div class="tab-pane fade" id="sdw" role="tabpanel" aria-labelledby="sdw-tab">
+                <div class="card mb-4">
+                  <div class="card-header d-flex justify-content-start align-items-center">
+                    <i class="fas fa-box me-2"></i>
+                    <h3 class="mb-0 fs-5">Data SDW</h3>
+                  </div>
+                  <div class="card-body">
+                    <div class="table-container">
+                      <table class="table table-hover">
+                        <thead>
+                          <tr>
+                            <th>No</th>
+                            <th>Jenis</th>
+                            <th class="text-center">Jumlah</th>
+                            <th class="text-center">Aksi</th>
+                            <th class="text-center">Riwayat</th>
+                            <th class="text-center">Terakhir Update</th>
+                          </tr>
+                        </thead>
+                        <tbody id="sdw-table-body"></tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <!-- TAB EMAS BALI -->
+              <div class="tab-pane fade" id="emas-bali" role="tabpanel" aria-labelledby="emas-bali-tab">
+                <div class="card mb-4">
+                  <div class="card-header d-flex justify-content-start align-items-center">
+                    <i class="fas fa-coins me-2"></i>
+                    <h3 class="mb-0 fs-5">Data Emas Bali</h3>
+                  </div>
+                  <div class="card-body">
+                    <div class="table-container">
+                      <table class="table table-hover">
+                        <thead>
+                          <tr>
+                            <th>No</th>
+                            <th>Jenis</th>
+                            <th class="text-center">Jumlah</th>
+                            <th class="text-center">Aksi</th>
+                            <th class="text-center">Riwayat</th>
+                            <th class="text-center">Terakhir Update</th>
+                          </tr>
+                        </thead>
+                        <tbody id="emas-bali-table-body"></tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <!-- TAB STOK KOMPUTER -->
+              <div class="tab-pane fade" id="stok-komputer" role="tabpanel" aria-labelledby="stok-komputer-tab">
+                <div class="card mb-4">
+                  <div class="card-header d-flex justify-content-start align-items-center">
+                    <i class="fas fa-desktop me-2"></i>
+                    <h3 class="mb-0 fs-5">Data Stok Komputer</h3>
+                  </div>
+                  <div class="card-body">
+                    <div class="table-container">
+                      <table class="table table-hover">
+                        <thead>
+                          <tr>
+                            <th>No</th>
+                            <th>Jenis Barang</th>
+                            <th class="text-center">Jumlah</th>
+                            <th class="text-center">Aksi</th>
+                            <th class="text-center">Terakhir Update</th>
+                          </tr>
+                        </thead>
+                        <tbody id="stok-komputer-table-body">
+                          <!-- Data Stok Komputer diisi oleh JS -->
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <!-- END TAB-CONTENT -->
+            </div>
+
+            <div
+              class="modal fade"
+              id="modalUpdateKomputer"
+              tabindex="-1"
+              aria-labelledby="modalUpdateKomputerLabel"
+              aria-hidden="true"
+            >
+              <div class="modal-dialog">
+                <div class="modal-content">
+                  <form id="formUpdateKomputer">
+                    <div class="modal-header">
+                      <h5 class="modal-title" id="modalUpdateKomputerLabel">Update Stok Komputer</h5>
+                      <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Tutup"></button>
+                    </div>
+                    <div class="modal-body">
+                      <input type="hidden" id="updateKomputerJenis" />
+                      <div class="mb-3">
+                        <label for="updateKomputerJumlah" class="form-label">Jumlah</label>
+                        <input type="number" class="form-control" id="updateKomputerJumlah" min="0" required />
+                      </div>
+                    </div>
+                    <div class="modal-footer">
+                      <button type="submit" class="btn btn-primary w-100">Simpan</button>
+                    </div>
+                  </form>
+                </div>
+              </div>
+            </div>
+
+            <!-- Modal Tambah Stok -->
+            <div
+              class="modal fade"
+              id="modalTambahStok"
+              tabindex="-1"
+              aria-labelledby="modalTambahStokLabel"
+              aria-hidden="true"
+            >
+              <div class="modal-dialog">
+                <div class="modal-content">
+                  <div class="modal-header">
+                    <h5 class="modal-title" id="modalTambahStokLabel">Tambah Stok</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Tutup"></button>
+                  </div>
+                  <div class="modal-body">
+                    <form id="formTambahStok">
+                      <div class="mb-3">
+                        <label for="jenisTambahDisplay" class="form-label">Jenis Barang</label>
+                        <input
+                          type="text"
+                          class="form-control"
+                          id="jenisTambahDisplay"
+                          readonly
+                          style="background-color: #f8f9fa"
+                        />
+                        <input type="hidden" id="jenisTambah" />
+                      </div>
+                      <div class="mb-3">
+                        <label for="jumlahTambah" class="form-label">Jumlah</label>
+                        <input type="number" class="form-control" id="jumlahTambah" min="1" required />
+                      </div>
+                      <div class="mb-3">
+                        <label for="penambahStok" class="form-label">Penambah Stok</label>
+                        <input type="text" class="form-control" id="penambahStok" required />
+                      </div>
+                      <button type="submit" class="btn btn-primary w-100">Simpan</button>
+                    </form>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Modal Tambah Stok HALA -->
+            <div
+              class="modal fade"
+              id="modalTambahStokHala"
+              tabindex="-1"
+              aria-labelledby="modalTambahStokHalaLabel"
+              aria-hidden="true"
+            >
+              <div class="modal-dialog">
+                <div class="modal-content">
+                  <div class="modal-header">
+                    <h5 class="modal-title" id="modalTambahStokHalaLabel">Tambah Stok HALA</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Tutup"></button>
+                  </div>
+                  <div class="modal-body">
+                    <form id="formTambahStokHalaBulk">
+                      <div class="mb-3">
+                        <label class="form-label">Jenis Barang</label>
+                        <input
+                          type="text"
+                          id="jenisTambahHalaDisplay"
+                          class="form-control"
+                          readonly
+                          style="background: #f8f9fa"
+                        />
+                        <input type="hidden" id="jenisTambahHala" />
+                      </div>
+                      <div class="mb-3">
+                        <label class="form-label">Input Multi Jenis Perhiasan</label>
+                        <div class="table-responsive">
+                          <table class="table table-sm align-middle mb-2 hala-bulk-table">
+                            <thead>
+                              <tr>
+                                <th style="width: 35%">Jenis</th>
+                                <th style="width: 25%" class="text-center">Kode</th>
+                                <th style="width: 25%">Jumlah</th>
+                              </tr>
+                            </thead>
+                            <tbody id="bulkHalaTbody">
+                              <tr data-type="KA">
+                                <td>Kalung</td>
+                                <td class="text-center"><span class="badge bg-primary">KA</span></td>
+                                <td>
+                                  <input
+                                    type="number"
+                                    min="0"
+                                    class="form-control form-control-sm hala-qty-input"
+                                    data-type="KA"
+                                    placeholder="0"
+                                  />
+                                </td>
+                              </tr>
+                              <tr data-type="LA">
+                                <td>Liontin</td>
+                                <td class="text-center"><span class="badge bg-primary">LA</span></td>
+                                <td>
+                                  <input
+                                    type="number"
+                                    min="0"
+                                    class="form-control form-control-sm hala-qty-input"
+                                    data-type="LA"
+                                    placeholder="0"
+                                  />
+                                </td>
+                              </tr>
+                              <tr data-type="AN">
+                                <td>Anting</td>
+                                <td class="text-center"><span class="badge bg-primary">AN</span></td>
+                                <td>
+                                  <input
+                                    type="number"
+                                    min="0"
+                                    class="form-control form-control-sm hala-qty-input"
+                                    data-type="AN"
+                                    placeholder="0"
+                                  />
+                                </td>
+                              </tr>
+                              <tr data-type="CA">
+                                <td>Cincin</td>
+                                <td class="text-center"><span class="badge bg-primary">CA</span></td>
+                                <td>
+                                  <input
+                                    type="number"
+                                    min="0"
+                                    class="form-control form-control-sm hala-qty-input"
+                                    data-type="CA"
+                                    placeholder="0"
+                                  />
+                                </td>
+                              </tr>
+                              <tr data-type="SA">
+                                <td>Giwang</td>
+                                <td class="text-center"><span class="badge bg-primary">SA</span></td>
+                                <td>
+                                  <input
+                                    type="number"
+                                    min="0"
+                                    class="form-control form-control-sm hala-qty-input"
+                                    data-type="SA"
+                                    placeholder="0"
+                                  />
+                                </td>
+                              </tr>
+                              <tr data-type="GA">
+                                <td>Gelang</td>
+                                <td class="text-center"><span class="badge bg-primary">GA</span></td>
+                                <td>
+                                  <input
+                                    type="number"
+                                    min="0"
+                                    class="form-control form-control-sm hala-qty-input"
+                                    data-type="GA"
+                                    placeholder="0"
+                                  />
+                                </td>
+                              </tr>
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                      <div class="mb-3">
+                        <label for="penambahStokHalaBulk" class="form-label">Penambah Stok</label>
+                        <input type="text" class="form-control" id="penambahStokHalaBulk" required />
+                      </div>
+                      <div class="d-flex gap-2">
+                        <button type="reset" class="btn btn-outline-secondary w-25" id="resetBulkHalaBtn">Reset</button>
+                        <button type="submit" class="btn btn-primary flex-grow-1" id="submitBulkHalaBtn">
+                          Simpan Semua
+                        </button>
+                      </div>
+                      <small class="text-muted d-block mt-2">Hanya jumlah > 0 yang akan diproses.</small>
+                    </form>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Modal Kurangi Stok HALA (Bulk) -->
+            <div
+              class="modal fade"
+              id="modalKurangiStokHala"
+              tabindex="-1"
+              aria-labelledby="modalKurangiStokHalaLabel"
+              aria-hidden="true"
+            >
+              <div class="modal-dialog modal-lg">
+                <div class="modal-content">
+                  <div class="modal-header">
+                    <h5 class="modal-title" id="modalKurangiStokHalaLabel">Kurangi Stok HALA</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Tutup"></button>
+                  </div>
+                  <div class="modal-body">
+                    <form id="formKurangiStokHalaBulk">
+                      <div class="mb-3">
+                        <label for="jenisKurangiHalaDisplay" class="form-label">Jenis Barang</label>
+                        <input
+                          type="text"
+                          class="form-control"
+                          id="jenisKurangiHalaDisplay"
+                          readonly
+                          style="background-color: #f8f9fa"
+                        />
+                        <input type="hidden" id="jenisKurangiHala" />
+                      </div>
+                      <div class="table-responsive hala-bulk-table mb-3">
+                        <table class="table table-sm table-bordered align-middle">
+                          <thead class="table-warning">
+                            <tr>
+                              <th style="width: 35%">Jenis Perhiasan</th>
+                              <th style="width: 15%" class="text-center">Kode</th>
+                              <th style="width: 25%" class="text-center">Stok Saat Ini</th>
+                              <th style="width: 25%">Kurangi</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            <tr data-type="KA">
+                              <td>Kalung</td>
+                              <td class="text-center"><span class="badge bg-warning text-dark">KA</span></td>
+                              <td class="text-center"><span class="current-stock" data-type="KA">0</span></td>
+                              <td>
+                                <input
+                                  type="number"
+                                  min="0"
+                                  class="form-control form-control-sm hala-reduce-qty-input"
+                                  data-type="KA"
+                                  placeholder="0"
+                                />
+                              </td>
+                            </tr>
+                            <tr data-type="LA">
+                              <td>Liontin</td>
+                              <td class="text-center"><span class="badge bg-warning text-dark">LA</span></td>
+                              <td class="text-center"><span class="current-stock" data-type="LA">0</span></td>
+                              <td>
+                                <input
+                                  type="number"
+                                  min="0"
+                                  class="form-control form-control-sm hala-reduce-qty-input"
+                                  data-type="LA"
+                                  placeholder="0"
+                                />
+                              </td>
+                            </tr>
+                            <tr data-type="AN">
+                              <td>Anting</td>
+                              <td class="text-center"><span class="badge bg-warning text-dark">AN</span></td>
+                              <td class="text-center"><span class="current-stock" data-type="AN">0</span></td>
+                              <td>
+                                <input
+                                  type="number"
+                                  min="0"
+                                  class="form-control form-control-sm hala-reduce-qty-input"
+                                  data-type="AN"
+                                  placeholder="0"
+                                />
+                              </td>
+                            </tr>
+                            <tr data-type="CA">
+                              <td>Cincin</td>
+                              <td class="text-center"><span class="badge bg-warning text-dark">CA</span></td>
+                              <td class="text-center"><span class="current-stock" data-type="CA">0</span></td>
+                              <td>
+                                <input
+                                  type="number"
+                                  min="0"
+                                  class="form-control form-control-sm hala-reduce-qty-input"
+                                  data-type="CA"
+                                  placeholder="0"
+                                />
+                              </td>
+                            </tr>
+                            <tr data-type="SA">
+                              <td>Giwang</td>
+                              <td class="text-center"><span class="badge bg-warning text-dark">SA</span></td>
+                              <td class="text-center"><span class="current-stock" data-type="SA">0</span></td>
+                              <td>
+                                <input
+                                  type="number"
+                                  min="0"
+                                  class="form-control form-control-sm hala-reduce-qty-input"
+                                  data-type="SA"
+                                  placeholder="0"
+                                />
+                              </td>
+                            </tr>
+                            <tr data-type="GA">
+                              <td>Gelang</td>
+                              <td class="text-center"><span class="badge bg-warning text-dark">GA</span></td>
+                              <td class="text-center"><span class="current-stock" data-type="GA">0</span></td>
+                              <td>
+                                <input
+                                  type="number"
+                                  min="0"
+                                  class="form-control form-control-sm hala-reduce-qty-input"
+                                  data-type="GA"
+                                  placeholder="0"
+                                />
+                              </td>
+                            </tr>
+                          </tbody>
+                        </table>
+                      </div>
+                      <div class="mb-3">
+                        <label for="pengurangStokHalaBulk" class="form-label">Pengurang Stok</label>
+                        <input type="text" class="form-control" id="pengurangStokHalaBulk" required />
+                      </div>
+                      <div class="mb-3">
+                        <label for="keteranganKurangiHalaBulk" class="form-label">Keterangan</label>
+                        <textarea
+                          class="form-control"
+                          id="keteranganKurangiHalaBulk"
+                          rows="2"
+                          placeholder="Opsional"
+                        ></textarea>
+                      </div>
+                      <div class="d-flex gap-2">
+                        <button type="reset" class="btn btn-outline-secondary w-25" id="resetBulkKurangiHalaBtn">
+                          Reset
+                        </button>
+                        <button type="submit" class="btn btn-warning flex-grow-1" id="submitBulkKurangiHalaBtn">
+                          Simpan Pengurangan
+                        </button>
+                      </div>
+                      <small class="text-muted d-block mt-2">
+                        Hanya jumlah > 0 yang akan diproses. Validasi stok dilakukan sebelum dikurangi.
+                      </small>
+                    </form>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Modal Detail HALA -->
+            <div
+              class="modal fade"
+              id="modalDetailHala"
+              tabindex="-1"
+              aria-labelledby="modalDetailHalaLabel"
+              aria-hidden="true"
+            >
+              <div class="modal-dialog modal-lg">
+                <div class="modal-content">
+                  <div class="modal-header">
+                    <h5 class="modal-title" id="modalDetailHalaLabel">Detail Stok HALA</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Tutup"></button>
+                  </div>
+                  <div class="modal-body">
+                    <div class="table-responsive">
+                      <table class="table table-hover">
+                        <thead>
+                          <tr>
+                            <th>No</th>
+                            <th>Jenis Perhiasan</th>
+                            <th>Kode</th>
+                            <th class="text-center">Jumlah</th>
+                          </tr>
+                        </thead>
+                        <tbody id="hala-detail-table-body">
+                          <!-- Data detail HALA akan diisi oleh JS -->
+                        </tbody>
+                        <tfoot>
+                          <tr class="table-active">
+                            <th colspan="3" class="text-end">Total:</th>
+                            <th class="text-center" id="hala-detail-total">0</th>
+                          </tr>
+                        </tfoot>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Modal Update Stok HALA (Bulk) -->
+            <div
+              class="modal fade"
+              id="modalUpdateStokHala"
+              tabindex="-1"
+              aria-labelledby="modalUpdateStokHalaLabel"
+              aria-hidden="true"
+            >
+              <div class="modal-dialog modal-lg">
+                <div class="modal-content">
+                  <div class="modal-header">
+                    <h5 class="modal-title" id="modalUpdateStokHalaLabel">Update Stok HALA</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Tutup"></button>
+                  </div>
+                  <div class="modal-body">
+                    <form id="formUpdateStokHalaBulk">
+                      <div class="mb-3">
+                        <label for="jenisUpdateHalaDisplay" class="form-label">Jenis Barang</label>
+                        <input
+                          type="text"
+                          class="form-control"
+                          id="jenisUpdateHalaDisplay"
+                          readonly
+                          style="background-color: #f8f9fa"
+                        />
+                        <input type="hidden" id="jenisUpdateHala" />
+                      </div>
+                      <div class="table-responsive hala-bulk-table mb-3">
+                        <table class="table table-sm table-bordered align-middle">
+                          <thead class="table-info">
+                            <tr>
+                              <th style="width: 35%">Jenis Perhiasan</th>
+                              <th style="width: 15%" class="text-center">Kode</th>
+                              <th style="width: 25%" class="text-center">Stok Saat Ini</th>
+                              <th style="width: 25%">Update Jadi</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            <tr data-type="KA">
+                              <td>Kalung</td>
+                              <td class="text-center"><span class="badge bg-info text-dark">KA</span></td>
+                              <td class="text-center"><span class="current-stock" data-type="KA">0</span></td>
+                              <td>
+                                <input
+                                  type="number"
+                                  min="0"
+                                  class="form-control form-control-sm hala-update-qty-input"
+                                  data-type="KA"
+                                  placeholder="(tetap)"
+                                />
+                              </td>
+                            </tr>
+                            <tr data-type="LA">
+                              <td>Liontin</td>
+                              <td class="text-center"><span class="badge bg-info text-dark">LA</span></td>
+                              <td class="text-center"><span class="current-stock" data-type="LA">0</span></td>
+                              <td>
+                                <input
+                                  type="number"
+                                  min="0"
+                                  class="form-control form-control-sm hala-update-qty-input"
+                                  data-type="LA"
+                                  placeholder="(tetap)"
+                                />
+                              </td>
+                            </tr>
+                            <tr data-type="AN">
+                              <td>Anting</td>
+                              <td class="text-center"><span class="badge bg-info text-dark">AN</span></td>
+                              <td class="text-center"><span class="current-stock" data-type="AN">0</span></td>
+                              <td>
+                                <input
+                                  type="number"
+                                  min="0"
+                                  class="form-control form-control-sm hala-update-qty-input"
+                                  data-type="AN"
+                                  placeholder="(tetap)"
+                                />
+                              </td>
+                            </tr>
+                            <tr data-type="CA">
+                              <td>Cincin</td>
+                              <td class="text-center"><span class="badge bg-info text-dark">CA</span></td>
+                              <td class="text-center"><span class="current-stock" data-type="CA">0</span></td>
+                              <td>
+                                <input
+                                  type="number"
+                                  min="0"
+                                  class="form-control form-control-sm hala-update-qty-input"
+                                  data-type="CA"
+                                  placeholder="(tetap)"
+                                />
+                              </td>
+                            </tr>
+                            <tr data-type="SA">
+                              <td>Giwang</td>
+                              <td class="text-center"><span class="badge bg-info text-dark">SA</span></td>
+                              <td class="text-center"><span class="current-stock" data-type="SA">0</span></td>
+                              <td>
+                                <input
+                                  type="number"
+                                  min="0"
+                                  class="form-control form-control-sm hala-update-qty-input"
+                                  data-type="SA"
+                                  placeholder="(tetap)"
+                                />
+                              </td>
+                            </tr>
+                            <tr data-type="GA">
+                              <td>Gelang</td>
+                              <td class="text-center"><span class="badge bg-info text-dark">GA</span></td>
+                              <td class="text-center"><span class="current-stock" data-type="GA">0</span></td>
+                              <td>
+                                <input
+                                  type="number"
+                                  min="0"
+                                  class="form-control form-control-sm hala-update-qty-input"
+                                  data-type="GA"
+                                  placeholder="(tetap)"
+                                />
+                              </td>
+                            </tr>
+                          </tbody>
+                        </table>
+                      </div>
+                      <div class="mb-3">
+                        <label for="petugasUpdateStokHalaBulk" class="form-label">Nama Staf</label>
+                        <input type="text" class="form-control" id="petugasUpdateStokHalaBulk" required />
+                      </div>
+                      <div class="mb-3">
+                        <label for="keteranganUpdateHalaBulk" class="form-label">Keterangan</label>
+                        <textarea
+                          class="form-control"
+                          id="keteranganUpdateHalaBulk"
+                          rows="2"
+                          placeholder="Opsional"
+                        ></textarea>
+                      </div>
+                      <div class="d-flex gap-2">
+                        <button type="reset" class="btn btn-outline-secondary w-25" id="resetBulkUpdateHalaBtn">
+                          Reset
+                        </button>
+                        <button type="submit" class="btn btn-primary flex-grow-1" id="submitBulkUpdateHalaBtn">
+                          Simpan Perubahan
+                        </button>
+                      </div>
+                      <small class="text-muted d-block mt-2">
+                        Kosongkan kolom jika tidak ingin mengubah jenis tersebut.
+                      </small>
+                    </form>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Modal Kurangi Stok -->
+            <div
+              class="modal fade"
+              id="modalKurangiStok"
+              tabindex="-1"
+              aria-labelledby="modalKurangiStokLabel"
+              aria-hidden="true"
+            >
+              <div class="modal-dialog">
+                <div class="modal-content">
+                  <div class="modal-header">
+                    <h5 class="modal-title" id="modalKurangiStokLabel">Kurangi Stok</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Tutup"></button>
+                  </div>
+                  <div class="modal-body">
+                    <form id="formKurangiStok">
+                      <div class="mb-3">
+                        <label for="jenisKurangiDisplay" class="form-label">Jenis Barang</label>
+                        <input
+                          type="text"
+                          class="form-control"
+                          id="jenisKurangiDisplay"
+                          readonly
+                          style="background-color: #f8f9fa"
+                        />
+                        <input type="hidden" id="jenisKurangi" />
+                      </div>
+                      <div class="mb-3">
+                        <label for="jumlahKurangi" class="form-label">Jumlah</label>
+                        <input type="number" class="form-control" id="jumlahKurangi" min="1" required />
+                      </div>
+                      <div class="mb-3">
+                        <label for="pengurangStok" class="form-label">Pengurang Stok</label>
+                        <input type="text" class="form-control" id="pengurangStok" required />
+                      </div>
+                      <div class="mb-3">
+                        <label for="keteranganKurangi" class="form-label">Keterangan</label>
+                        <textarea class="form-control" id="keteranganKurangi" rows="2"></textarea>
+                      </div>
+                      <button type="submit" class="btn btn-primary w-100">Simpan</button>
+                    </form>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <!-- END CONTENT WRAPPER -->
+          </div>
+
+          <!-- Modal Riwayat -->
+          <div
+            class="modal fade"
+            id="modalRiwayat"
+            tabindex="-1"
+            aria-labelledby="modalRiwayatLabel"
+            aria-hidden="true"
+          >
+            <div class="modal-dialog modal-lg">
+              <div class="modal-content">
+                <div class="modal-header">
+                  <h5 class="modal-title" id="modalRiwayatLabel">
+                    Riwayat Stok
+                    <span id="riwayat-title"></span>
+                  </h5>
+                  <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Tutup"></button>
+                </div>
+                <div class="modal-body">
+                  <div class="table-responsive">
+                    <table class="table table-bordered table-hover">
+                      <thead>
+                        <tr>
+                          <th>No</th>
+                          <th>Tanggal</th>
+                          <th>Status</th>
+                          <th>Jumlah</th>
+                          <th>Nama Staff</th>
+                          <th>Keterangan</th>
+                        </tr>
+                      </thead>
+                      <tbody id="riwayat-table-body"></tbody>
+                    </table>
+                  </div>
+                  <div id="riwayat-info" class="text-muted small mt-1"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Modal Update Stok Display/Manual -->
+          <div
+            class="modal fade"
+            id="modalUpdateStok"
+            tabindex="-1"
+            aria-labelledby="modalUpdateStokLabel"
+            aria-hidden="true"
+          >
+            <div class="modal-dialog">
+              <div class="modal-content">
+                <form id="formUpdateStok">
+                  <div class="modal-header">
+                    <h5 class="modal-title" id="modalUpdateStokLabel">Update Stok</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Tutup"></button>
+                  </div>
+                  <div class="modal-body">
+                    <input type="hidden" id="updateStokMainCat" />
+                    <input type="hidden" id="updateStokCategory" />
+                    <div class="mb-3">
+                      <label for="updateStokJenis" class="form-label">Jenis</label>
+                      <input type="text" class="form-control" id="updateStokJenis" readonly />
+                    </div>
+                    <div class="mb-3">
+                      <label for="updateStokJumlah" class="form-label">Jumlah</label>
+                      <input type="number" class="form-control" id="updateStokJumlah" min="0" required />
+                    </div>
+                    <div class="mb-3">
+                      <label for="updateStokPetugas" class="form-label">Nama Staf</label>
+                      <input type="text" class="form-control" id="updateStokPetugas" required />
+                    </div>
+                  </div>
+                  <div class="modal-footer">
+                    <button type="submit" class="btn btn-primary w-100">Update Stok</button>
+                  </div>
+                </form>
               </div>
             </div>
           </div>
         </div>
       </main>
     </div>
-
-    <!-- Universal Modal for Add Stock -->
-    <div class="modal fade" id="tambahStokModal" tabindex="-1">
-      <div class="modal-dialog">
-        <div class="modal-content">
-          <div class="modal-header">
-            <h5 class="modal-title">
-              <i class="fas fa-plus-circle me-2"></i>
-              Tambah Stok
-              <span id="tambah-category-title"></span>
-            </h5>
-            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-          </div>
-          <div class="modal-body">
-            <form id="tambahStokForm">
-              <div class="mb-3">
-                <label for="jenis-barang-tambah" class="form-label">Jenis Barang</label>
-                <select class="form-select" id="jenis-barang-tambah" required>
-                  <option value="">Pilih Jenis Barang</option>
-                  <option value="KALUNG">KALUNG</option>
-                  <option value="LIONTIN">LIONTIN</option>
-                  <option value="ANTING">ANTING</option>
-                  <option value="CINCIN">CINCIN</option>
-                  <option value="HALA">HALA</option>
-                  <option value="GELANG">GELANG</option>
-                  <option value="GIWANG">GIWANG</option>
-                </select>
-              </div>
-              <div class="mb-3">
-                <label for="warna-barcode-tambah" class="form-label">Warna Barcode</label>
-                <select class="form-select" id="warna-barcode-tambah" required>
-                  <option value="">Pilih Warna Barcode</option>
-                  <option value="PINK">
-                    <span class="color-badge color-pink"></span>
-                    PINK
-                  </option>
-                  <option value="KUNING">
-                    <span class="color-badge color-kuning"></span>
-                    KUNING
-                  </option>
-                  <option value="HIJAU">
-                    <span class="color-badge color-hijau"></span>
-                    HIJAU
-                  </option>
-                  <option value="BIRU">
-                    <span class="color-badge color-biru"></span>
-                    BIRU
-                  </option>
-                  <option value="PUTIH">
-                    <span class="color-badge color-putih"></span>
-                    PUTIH
-                  </option>
-                </select>
-              </div>
-              <div class="mb-3">
-                <label for="jumlah-tambah" class="form-label">Jumlah</label>
-                <input type="number" class="form-control" id="jumlah-tambah" min="1" required />
-              </div>
-              <div class="mb-3">
-                <label for="penambah-stok" class="form-label">Penambah Stok</label>
-                <input type="text" class="form-control" id="penambah-stok" required />
-              </div>
-              <div class="mb-3">
-                <label for="penerima-stok" class="form-label">Penerima Stok</label>
-                <input type="text" class="form-control" id="penerima-stok" required />
-              </div>
-            </form>
-          </div>
-          <div class="modal-footer">
-            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
-              <i class="fas fa-times me-2"></i>
-              Batal
-            </button>
-            <button type="button" class="btn btn-primary" id="simpan-tambah-stok">
-              <i class="fas fa-save me-2"></i>
-              Simpan
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Universal Modal for Reduce Stock -->
-    <div class="modal fade" id="kurangiStokModal" tabindex="-1">
-      <div class="modal-dialog">
-        <div class="modal-content">
-          <div class="modal-header">
-            <h5 class="modal-title">
-              <i class="fas fa-minus-circle me-2"></i>
-              Kurangi Stok
-              <span id="kurang-category-title"></span>
-            </h5>
-            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-          </div>
-          <div class="modal-body">
-            <form id="kurangiStokForm">
-              <div class="mb-3">
-                <label for="jenis-barang-kurang" class="form-label">Jenis Barang</label>
-                <select class="form-select" id="jenis-barang-kurang" required>
-                  <option value="">Pilih Jenis Barang</option>
-                  <option value="KALUNG">KALUNG</option>
-                  <option value="LIONTIN">LIONTIN</option>
-                  <option value="ANTING">ANTING</option>
-                  <option value="CINCIN">CINCIN</option>
-                  <option value="HALA">HALA</option>
-                  <option value="GELANG">GELANG</option>
-                  <option value="GIWANG">GIWANG</option>
-                </select>
-              </div>
-              <div class="mb-3">
-                <label for="warna-barcode-kurang" class="form-label">Warna Barcode</label>
-                <select class="form-select" id="warna-barcode-kurang" required>
-                  <option value="">Pilih Warna Barcode</option>
-                  <!-- Options will be populated based on available stock -->
-                </select>
-              </div>
-              <div class="mb-3">
-                <label for="jumlah-kurang" class="form-label">Jumlah</label>
-                <input type="number" class="form-control" id="jumlah-kurang" min="1" required />
-                <small class="form-text text-muted">
-                  Stok tersedia:
-                  <span id="stok-tersedia">0</span>
-                </small>
-              </div>
-              <div class="mb-3">
-                <label for="pengurang-stok" class="form-label">Pengurang Stok</label>
-                <input type="text" class="form-control" id="pengurang-stok" required />
-              </div>
-              <div class="mb-3">
-                <label for="keterangan-stok" class="form-label">Keterangan</label>
-                <textarea class="form-control" id="keterangan-stok" rows="3" required></textarea>
-              </div>
-            </form>
-          </div>
-          <div class="modal-footer">
-            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
-              <i class="fas fa-times me-2"></i>
-              Batal
-            </button>
-            <button type="button" class="btn btn-primary" id="simpan-kurang-stok">
-              <i class="fas fa-save me-2"></i>
-              Simpan
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Modal for History -->
-    <div class="modal fade" id="historyModal" tabindex="-1">
-      <div class="modal-dialog modal-xl">
-        <div class="modal-content">
-          <div class="modal-header">
-            <h5 class="modal-title">
-              <i class="fas fa-history me-2"></i>
-              Riwayat Stok
-              <span id="history-title"></span>
-            </h5>
-            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-          </div>
-          <div class="modal-body">
-            <div class="table-responsive">
-              <table class="table table-striped">
-                <thead class="table-light">
-                  <tr>
-                    <th>Tanggal</th>
-                    <th>Jenis</th>
-                    <th>Warna Barcode</th>
-                    <th>Operasi</th>
-                    <th>Jumlah</th>
-                    <th>Penambah/Pengurang</th>
-                    <th>Penerima/Keterangan</th>
-                  </tr>
-                </thead>
-                <tbody id="history-table-body">
-                  <!-- Data will be populated by JavaScript -->
-                </tbody>
-              </table>
-            </div>
-          </div>
-          <div class="modal-footer">
-            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
-              <i class="fas fa-times me-2"></i>
-              Tutup
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Modal for Detail Color Stock - MODAL BARU -->
-    <div class="modal fade" id="detailColorModal" tabindex="-1">
-      <div class="modal-dialog">
-        <div class="modal-content">
-          <div class="modal-header">
-            <h5 class="modal-title">
-              <i class="fas fa-palette me-2"></i>
-              Detail Stok Per Warna -
-              <span id="detail-color-title"></span>
-            </h5>
-            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-          </div>
-          <div class="modal-body">
-            <div class="table-responsive">
-              <table class="table table-striped">
-                <thead class="table-light">
-                  <tr>
-                    <th>Warna Barcode</th>
-                    <th>Jumlah</th>
-                    <th>Terakhir Diperbarui</th>
-                  </tr>
-                </thead>
-                <tbody id="detail-color-table-body">
-                  <!-- Data will be populated by JavaScript -->
-                </tbody>
-              </table>
-            </div>
-          </div>
-          <div class="modal-footer">
-            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
-              <i class="fas fa-times me-2"></i>
-              Tutup
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-
     <!-- Scripts -->
     <script type="module" src="js/main.js"></script>
     <script type="module" src="js/manajemenStok.js"></script>
