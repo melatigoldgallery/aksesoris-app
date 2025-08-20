@@ -3,7 +3,19 @@ import { firestore } from "./configFirebase.js";
 import { doc, getDoc, setDoc } from "https://www.gstatic.com/firebasejs/10.4.0/firebase-firestore.js";
 
 // Copy subset constants (pastikan sinkron dengan manajemenStok.js)
-const mainCategories = ["KALUNG", "LIONTIN", "ANTING", "CINCIN", "HALA", "GELANG", "GIWANG"];
+const mainCategories = [
+  "KALUNG",
+  "LIONTIN",
+  "ANTING",
+  "CINCIN",
+  "HALA",
+  "GELANG",
+  "GIWANG",
+  "KENDARI",
+  "BERLIAN",
+  "SDW",
+  "EMAS_BALI",
+];
 const summaryCategories = ["brankas", "posting", "barang-display", "barang-rusak", "batu-lepas", "manual", "admin"];
 
 // Cache ringan untuk stok agar tidak fetch berulang via window.stockData jika halaman ini dibuka terpisah
@@ -212,10 +224,10 @@ function scheduleAutoSnapshot() {
 
 function initDailyReportPage() {
   const dateInput = document.getElementById("dailyReportDate");
-  const showBtn = document.getElementById("dailyReportShowBtn");
-  const exportBtn = document.getElementById("dailyReportExportBtn");
-  const statusInfo = document.getElementById("dailyReportStatusInfo");
   if (!dateInput) return;
+  const showBtn = document.getElementById("dailyReportShowBtn");
+  const exportBtn = document.getElementById("dailyReportExportBtn"); // may be null in some HTML variants
+  const statusInfo = document.getElementById("dailyReportStatusInfo");
   const todayKey = formatDateKey(new Date());
   dateInput.value = todayKey;
   // Disable future dates
@@ -225,32 +237,40 @@ function initDailyReportPage() {
   // Pastikan snapshot kemarin jika terlewat
   ensureYesterdaySnapshotIfMissing();
 
-  showBtn.addEventListener("click", async () => {
-    const val = dateInput.value;
-    if (!val) return alert("Pilih tanggal");
-    showBtn.disabled = true;
-    const original = showBtn.innerHTML;
-    showBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Memuat...';
-    try {
-      const data = await loadDailyStockSnapshot(val);
-      if (data) {
-        renderDailyReportTable(data);
-        statusInfo.textContent = "Data snapshot";
-      } else {
-        await fetchStockSnapshot();
-        const current = { items: computeCurrentSummarySnapshot(), createdAt: null };
-        renderDailyReportTable(current);
+  if (showBtn) {
+    showBtn.addEventListener("click", async () => {
+      const val = dateInput.value;
+      if (!val) return alert("Pilih tanggal");
+      showBtn.disabled = true;
+      const original = showBtn.innerHTML;
+      showBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Memuat...';
+      try {
+        const data = await loadDailyStockSnapshot(val);
+        if (data) {
+          renderDailyReportTable(data);
+          statusInfo.textContent = "Data snapshot";
+        } else {
+          await fetchStockSnapshot();
+          const current = { items: computeCurrentSummarySnapshot(), createdAt: null };
+          renderDailyReportTable(current);
+        }
+      } catch (e) {
+        console.error(e);
+        alert("Gagal memuat laporan");
+      } finally {
+        showBtn.disabled = false;
+        showBtn.innerHTML = original;
       }
-    } catch (e) {
-      console.error(e);
-      alert("Gagal memuat laporan");
-    } finally {
-      showBtn.disabled = false;
-      showBtn.innerHTML = original;
-    }
-  });
+    });
+  } else {
+    console.warn("dailyReportShowBtn not found in DOM");
+  }
 
-  exportBtn.addEventListener("click", exportTableToCSV);
+  if (exportBtn) {
+    exportBtn.addEventListener("click", exportTableToCSV);
+  } else {
+    // export button is optional in the page; no-op if missing
+  }
 
   // Jalankan pengecekan apakah sudah lewat jam 23:00 dan snapshot belum ada.
   ensureTodaySnapshotIfPassed();

@@ -2,6 +2,32 @@
   max-height: 500px;
   overflow-y: auto;
 }
+/* Compact tab bar improvements for better UX */
+.nav-tabs.compact {
+  gap: 6px;
+  padding: 8px 12px;
+  align-items: center;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.nav-tabs.compact .nav-link {
+  padding: 8px 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border-radius: 10px;
+  white-space: nowrap;
+}
+.nav-tabs.compact .nav-link i {
+  font-size: 0.95rem;
+}
+.nav-tabs.compact::-webkit-scrollbar {
+  height: 8px;
+}
+.nav-tabs.compact::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.08);
+  border-radius: 8px;
+}
 .stock-summary {
   background-color: #f8f9fa;
   border-radius: 8px;
@@ -737,6 +763,122 @@
 /* Reduce summary card number size slightly for balance */
 .stock-card .number {
   font-size: 1.9rem;
+}
+
+/* ===== Compact Modal Styling (simpler, smaller, scoped) ===== */
+/* Target only the add/update/reduce modals to keep global modal styles intact */
+#modalTambahStok .modal-dialog,
+#modalKurangiStok .modal-dialog,
+#modalUpdateStok .modal-dialog,
+#modalTambahStokHala .modal-dialog,
+#modalKurangiStokHala .modal-dialog,
+#modalUpdateStokHala .modal-dialog,
+#modalUpdateKomputer .modal-dialog,
+#modalDetailHala .modal-dialog,
+#modalRiwayat .modal-dialog {
+  max-width: 400px;
+}
+
+/* HALA bulk modals may need slightly more width but still constrained */
+#modalKurangiStokHala .modal-dialog,
+#modalUpdateStokHala .modal-dialog {
+  max-width: 720px;
+}
+
+#modalTambahStok .modal-content,
+#modalKurangiStok .modal-content,
+#modalUpdateStok .modal-content,
+#modalTambahStokHala .modal-content,
+#modalKurangiStokHala .modal-content,
+#modalUpdateStokHala .modal-content,
+#modalUpdateKomputer .modal-content {
+  border-radius: 12px;
+}
+
+/* Reduce header/body/footer paddings and font sizes inside the targeted modals */
+#modalTambahStok .modal-header,
+#modalKurangiStok .modal-header,
+#modalUpdateStok .modal-header,
+#modalTambahStokHala .modal-header,
+#modalKurangiStokHala .modal-header,
+#modalUpdateStokHala .modal-header,
+#modalUpdateKomputer .modal-header {
+  padding: 10px 14px;
+}
+
+#modalTambahStok .modal-title,
+#modalKurangiStok .modal-title,
+#modalUpdateStok .modal-title,
+#modalTambahStokHala .modal-title,
+#modalKurangiStokHala .modal-title,
+#modalUpdateStokHala .modal-title,
+#modalUpdateKomputer .modal-title {
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+#modalTambahStok .modal-body,
+#modalKurangiStok .modal-body,
+#modalUpdateStok .modal-body,
+#modalTambahStokHala .modal-body,
+#modalKurangiStokHala .modal-body,
+#modalUpdateStokHala .modal-body,
+#modalUpdateKomputer .modal-body {
+  padding: 12px 14px;
+  font-size: 0.95rem;
+}
+
+#modalTambahStok .modal-footer,
+#modalKurangiStok .modal-footer,
+#modalUpdateStok .modal-footer,
+#modalTambahStokHala .modal-footer,
+#modalKurangiStokHala .modal-footer,
+#modalUpdateStokHala .modal-footer,
+#modalUpdateKomputer .modal-footer {
+  padding: 10px 14px;
+}
+
+/* Smaller form labels & controls inside these modals */
+#modalTambahStok .form-label,
+#modalKurangiStok .form-label,
+#modalUpdateStok .form-label,
+#modalTambahStokHala .form-label,
+#modalKurangiStokHala .form-label,
+#modalUpdateStokHala .form-label,
+#modalUpdateKomputer .form-label {
+  font-size: 0.75rem;
+  margin-bottom: 6px;
+}
+
+#modalTambahStok .form-control,
+#modalKurangiStok .form-control,
+#modalUpdateStok .form-control,
+#modalTambahStokHala .form-control,
+#modalKurangiStokHala .form-control,
+#modalUpdateStokHala .form-control,
+#modalUpdateKomputer .form-control {
+  padding: 8px 10px;
+  font-size: 0.88rem;
+}
+
+/* Responsive: ensure modal fits small screens neatly */
+@media (max-width: 576px) {
+  #modalTambahStok .modal-dialog,
+  #modalKurangiStok .modal-dialog,
+  #modalUpdateStok .modal-dialog,
+  #modalTambahStokHala .modal-dialog,
+  #modalKurangiStokHala .modal-dialog,
+  #modalUpdateStokHala .modal-dialog,
+  #modalUpdateKomputer .modal-dialog {
+    max-width: calc(100% - 32px);
+    margin: 8px;
+  }
+
+  #modalTambahStok .modal-body,
+  #modalKurangiStok .modal-body,
+  #modalUpdateStok .modal-body {
+    padding: 10px;
+  }
 }
 
 /* Responsive: extra compact on <576px */

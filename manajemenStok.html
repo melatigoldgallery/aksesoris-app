@@ -410,7 +410,9 @@
             </div>
 
             <!-- Tab Navigation -->
-            <ul class="nav nav-tabs mb-3" id="stockTabs" role="tablist">
+            <ul class="nav nav-tabs compact overflow-auto" id="stockTab" role="tablist">
+              <!-- compact class uses existing CSS to reduce padding; overflow-auto enables horizontal scroll on small screens -->
+
               <li class="nav-item" role="presentation">
                 <button
                   class="nav-link active"
@@ -1446,15 +1448,6 @@
                       <div class="mb-3">
                         <label for="petugasUpdateStokHalaBulk" class="form-label">Nama Staf</label>
                         <input type="text" class="form-control" id="petugasUpdateStokHalaBulk" required />
-                      </div>
-                      <div class="mb-3">
-                        <label for="keteranganUpdateHalaBulk" class="form-label">Keterangan</label>
-                        <textarea
-                          class="form-control"
-                          id="keteranganUpdateHalaBulk"
-                          rows="2"
-                          placeholder="Opsional"
-                        ></textarea>
                       </div>
                       <div class="d-flex gap-2">
                         <button type="reset" class="btn btn-outline-secondary w-25" id="resetBulkUpdateHalaBtn">

@@ -344,55 +344,89 @@ export async function populateTables() {
             ? stockData[categoryKey][mainCat]
             : { quantity: 0, lastUpdated: null, history: [] };
 
-        // Kondisi untuk menampilkan tombol Update
-  const showUpdateButton = (subCat === "Display" || subCat === "Manual" || subCat === "Admin") && mainCat !== 'HALA';
-
         const tr = document.createElement("tr");
 
-        // Kolom aksi
-        const actionColumn = showUpdateButton
-          ? `
+        // Untuk HALA dan KENDARI: tampilkan tombol Update multi-jenis pada baris tertentu
+        const halaUpdateSubcats = ["Display", "Rusak", "Batu Lepas", "Manual", "Admin", "Contoh Custom"];
+        let actionColumn = "";
+        if (
+          (mainCat === "HALA" ||
+            mainCat === "KENDARI" ||
+            mainCat === "BERLIAN" ||
+            mainCat === "SDW" ||
+            mainCat === "EMAS_BALI") &&
+          halaUpdateSubcats.includes(subCat)
+        ) {
+          actionColumn = `
             <td class="text-center">
-              <button class="btn btn-success btn-sm update-stock-btn"
+              <button class="btn btn-success btn-sm update-hala-btn"
                       data-main="${mainCat}"
                       data-category="${categoryKey}"
                       data-subcategory="${subCat}">
                 <i class="fas fa-edit"></i> Update
               </button>
             </td>
-          `
-          : `
-            <td class="text-center">
-              <div class="dropdown position-relative">
-                <button class="btn btn-secondary btn-sm dropdown-toggle" type="button"
-                        data-bs-toggle="dropdown"
-                        data-bs-display="static"
-                        data-bs-boundary="viewport">
-                  <i class="fas fa-cog"></i> Aksi
-                </button>
-                <ul class="dropdown-menu shadow" style="z-index: 2000;">
-                  <li>
-                    <a class="dropdown-item add-stock-btn" href="#"
-                       data-main="${mainCat}" data-category="${categoryKey}">
-                       <i class="fas fa-plus"></i> Tambah
-                    </a>
-                  </li>
-                  <li>
-                    <a class="dropdown-item reduce-stock-btn" href="#"
-                       data-main="${mainCat}" data-category="${categoryKey}">
-                       <i class="fas fa-minus"></i> Kurangi
-                    </a>
-                  </li>
-                </ul>
-              </div>
-            </td>
           `;
+        } else {
+          // Kondisi untuk menampilkan tombol Update pada tab lain (sebelumnya)
+          // Tambahkan pengecualian untuk KALUNG agar baris Rusak, Batu Lepas, Contoh Custom juga menjadi Update
+          const halaLikeUpdateMains = ["KALUNG", "LIONTIN", "ANTING", "CINCIN", "GELANG", "GIWANG"];
+          const showUpdateButton =
+            (subCat === "Display" ||
+              subCat === "Manual" ||
+              subCat === "Admin" ||
+              (halaLikeUpdateMains.includes(mainCat) &&
+                (subCat === "Rusak" || subCat === "Batu Lepas" || subCat === "Contoh Custom"))) &&
+            mainCat !== "HALA";
+
+          actionColumn = showUpdateButton
+            ? `
+              <td class="text-center">
+                <button class="btn btn-success btn-sm update-stock-btn"
+                        data-main="${mainCat}"
+                        data-category="${categoryKey}"
+                        data-subcategory="${subCat}">
+                  <i class="fas fa-edit"></i> Update
+                </button>
+              </td>
+            `
+            : `
+              <td class="text-center">
+                <div class="dropdown position-relative">
+                  <button class="btn btn-secondary btn-sm dropdown-toggle" type="button"
+                          data-bs-toggle="dropdown"
+                          data-bs-display="static"
+                          data-bs-boundary="viewport">
+                    <i class="fas fa-cog"></i> Aksi
+                  </button>
+                  <ul class="dropdown-menu shadow" style="z-index: 2000;">
+                    <li>
+                      <a class="dropdown-item add-stock-btn" href="#"
+                         data-main="${mainCat}" data-category="${categoryKey}">
+                         <i class="fas fa-plus"></i> Tambah
+                      </a>
+                    </li>
+                    <li>
+                      <a class="dropdown-item reduce-stock-btn" href="#"
+                         data-main="${mainCat}" data-category="${categoryKey}">
+                         <i class="fas fa-minus"></i> Kurangi
+                      </a>
+                    </li>
+                  </ul>
+                </div>
+              </td>
+            `;
+        }
 
         tr.innerHTML = `
           <td class="fw-bold">${idx + 1}</td>
           <td class="fw-medium jenis-column">${subCat} ${
-          mainCat === "HALA"
-            ? `<button class="btn btn-outline-primary btn-sm detail-hala-btn btn-hala" data-main="${mainCat}" data-category="${categoryKey}" title="Detail HALA"><i class="fas fa-eye"></i></button>
+          mainCat === "HALA" ||
+          mainCat === "KENDARI" ||
+          mainCat === "BERLIAN" ||
+          mainCat === "SDW" ||
+          mainCat === "EMAS_BALI"
+            ? `<button class="btn btn-outline-primary btn-sm detail-hala-btn btn-hala" data-main="${mainCat}" data-category="${categoryKey}" title="Detail ${mainCat}"><i class="fas fa-eye"></i></button>
               `
             : ""
         }</td>
@@ -1085,16 +1119,23 @@ let currentMainCat = "";
 let currentCategory = "";
 
 document.body.addEventListener("click", function (e) {
-  // Tambah stok HALA (khusus)
-  if (e.target.classList.contains("add-stock-btn") && e.target.dataset.main === "HALA") {
+  // Tambah stok HALA (khusus) — juga untuk KENDARI pada kategori brankas/posting
+  if (
+    e.target.classList.contains("add-stock-btn") &&
+    (e.target.dataset.main === "HALA" ||
+      ((e.target.dataset.main === "KENDARI" || e.target.dataset.main === "BERLIAN") &&
+        ["brankas", "posting"].includes(e.target.dataset.category)))
+  ) {
     e.preventDefault();
     currentMainCat = e.target.dataset.main;
     currentCategory = e.target.dataset.category;
 
-  // Reset form HALA bulk
-  const bulkForm = document.getElementById("formTambahStokHalaBulk");
-  if (bulkForm) bulkForm.reset();
-  document.querySelectorAll('.hala-qty-input').forEach(inp => { inp.value = ""; });
+    // Reset form HALA bulk
+    const bulkForm = document.getElementById("formTambahStokHalaBulk");
+    if (bulkForm) bulkForm.reset();
+    document.querySelectorAll(".hala-qty-input").forEach((inp) => {
+      inp.value = "";
+    });
 
     // Set jenis barang otomatis berdasarkan kategori
     const jenisDisplay = `${currentMainCat} - ${reverseCategoryMapping[currentCategory] || currentCategory}`;
@@ -1104,19 +1145,35 @@ document.body.addEventListener("click", function (e) {
     // Update modal title
     document.getElementById("modalTambahStokHalaLabel").textContent = `Tambah Stok ${jenisDisplay}`;
 
+    // Pastikan struktur details tersedia untuk KENDARI/HALA agar input bisa menampilkan stok kini jika diperlukan
+    (async () => {
+      try {
+        await fetchStockData();
+        if (!stockData[currentCategory]) stockData[currentCategory] = {};
+        initializeHalaStructure(stockData[currentCategory], currentMainCat);
+      } catch (err) {
+        /* ignore */
+      }
+    })();
+
     $("#modalTambahStokHala").modal("show");
     return;
   }
 
-  // Kurangi stok HALA (khusus)
-  if (e.target.classList.contains("reduce-stock-btn") && e.target.dataset.main === "HALA") {
+  // Kurangi stok HALA (khusus) — juga untuk KENDARI pada kategori brankas/posting
+  if (
+    e.target.classList.contains("reduce-stock-btn") &&
+    (e.target.dataset.main === "HALA" ||
+      ((e.target.dataset.main === "KENDARI" || e.target.dataset.main === "BERLIAN") &&
+        ["brankas", "posting"].includes(e.target.dataset.category)))
+  ) {
     e.preventDefault();
     currentMainCat = e.target.dataset.main;
     currentCategory = e.target.dataset.category;
     // Reset bulk reduce form
     const bulkReduceForm = document.getElementById("formKurangiStokHalaBulk");
     if (bulkReduceForm) bulkReduceForm.reset();
-    document.querySelectorAll('.hala-reduce-qty-input').forEach(inp => inp.value = "");
+    document.querySelectorAll(".hala-reduce-qty-input").forEach((inp) => (inp.value = ""));
     // Populate current stock numbers for each type
     (async () => {
       try {
@@ -1126,9 +1183,20 @@ document.body.addEventListener("click", function (e) {
         document.getElementById("jenisKurangiHala").value = currentCategory;
         document.getElementById("modalKurangiStokHalaLabel").textContent = `Kurangi Stok ${jenisDisplay}`;
         const item = stockData[currentCategory] && stockData[currentCategory][currentMainCat];
-        halaJewelryTypes.forEach(t => {
+        // Ensure details exist before reading
+        if (!item || !item.details) {
+          // try initialize so spans show 0
+          if (stockData[currentCategory]) initializeHalaStructure(stockData[currentCategory], currentMainCat);
+        }
+        halaJewelryTypes.forEach((t) => {
           const span = document.querySelector(`.current-stock[data-type="${t}"]`);
-            if (span) span.textContent = item && item.details ? (item.details[t] || 0) : 0;
+          if (span)
+            span.textContent =
+              stockData[currentCategory] &&
+              stockData[currentCategory][currentMainCat] &&
+              stockData[currentCategory][currentMainCat].details
+                ? stockData[currentCategory][currentMainCat].details[t] || 0
+                : 0;
         });
         $("#modalKurangiStokHala").modal("show");
       } catch (err) {
@@ -1144,7 +1212,17 @@ document.body.addEventListener("click", function (e) {
     const btn = e.target.classList.contains("detail-hala-btn") ? e.target : e.target.closest(".detail-hala-btn");
     const mainCat = btn.dataset.main;
     const categoryKey = btn.dataset.category;
-    showHalaDetail(categoryKey, mainCat);
+    // Ensure HALA-like detail structure exists for KENDARI as well
+    (async () => {
+      try {
+        await fetchStockData();
+        if (!stockData[categoryKey]) stockData[categoryKey] = {};
+        initializeHalaStructure(stockData[categoryKey], mainCat);
+      } catch (err) {
+        // ignore init errors, show modal may still handle missing data
+      }
+      showHalaDetail(categoryKey, mainCat);
+    })();
     return;
   }
 
@@ -1278,37 +1356,40 @@ if (formTambahStokHalaBulk) {
 
 const formBulkReduce = document.getElementById("formKurangiStokHalaBulk");
 if (formBulkReduce) {
-  formBulkReduce.onsubmit = async function(e){
+  formBulkReduce.onsubmit = async function (e) {
     e.preventDefault();
     const submitBtn = this.querySelector('button[type="submit"]');
     const originalText = submitBtn.innerHTML;
     try {
       submitBtn.disabled = true;
       submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Menyimpan...';
-      const pengurang = document.getElementById('pengurangStokHalaBulk').value;
-      const keterangan = document.getElementById('keteranganKurangiHalaBulk').value;
-      if (!pengurang || !currentCategory || !currentMainCat) throw new Error('Data belum lengkap');
-      const inputs = Array.from(document.querySelectorAll('.hala-reduce-qty-input'));
-      const items = inputs.map(inp => ({ type: inp.dataset.type, qty: parseInt(inp.value || '0') }))
-        .filter(it => it.qty > 0);
-      if (items.length === 0) throw new Error('Isi minimal satu jumlah > 0');
+      const pengurang = document.getElementById("pengurangStokHalaBulk").value;
+      const keterangan = document.getElementById("keteranganKurangiHalaBulk").value;
+      if (!pengurang || !currentCategory || !currentMainCat) throw new Error("Data belum lengkap");
+      const inputs = Array.from(document.querySelectorAll(".hala-reduce-qty-input"));
+      const items = inputs
+        .map((inp) => ({ type: inp.dataset.type, qty: parseInt(inp.value || "0") }))
+        .filter((it) => it.qty > 0);
+      if (items.length === 0) throw new Error("Isi minimal satu jumlah > 0");
       const success = await reduceStockHalaBulk(currentCategory, currentMainCat, items, pengurang, keterangan);
       if (success) {
-        showSuccessNotification(`Berhasil mengurangi ${items.length} jenis (total ${items.reduce((a,b)=>a+b.qty,0)})`);
-        $('#modalKurangiStokHala').modal('hide');
+        showSuccessNotification(
+          `Berhasil mengurangi ${items.length} jenis (total ${items.reduce((a, b) => a + b.qty, 0)})`
+        );
+        $("#modalKurangiStokHala").modal("hide");
       }
     } catch (err) {
-      console.error('Bulk reduce HALA error', err);
-      showErrorNotification(err.message || 'Gagal simpan bulk kurangi HALA');
+      console.error("Bulk reduce HALA error", err);
+      showErrorNotification(err.message || "Gagal simpan bulk kurangi HALA");
     } finally {
       submitBtn.disabled = false;
       submitBtn.innerHTML = originalText;
     }
   };
-  const resetReduceBtn = document.getElementById('resetBulkKurangiHalaBtn');
+  const resetReduceBtn = document.getElementById("resetBulkKurangiHalaBtn");
   if (resetReduceBtn) {
-    resetReduceBtn.addEventListener('click', () => {
-      document.querySelectorAll('.hala-reduce-qty-input').forEach(i => i.value = '');
+    resetReduceBtn.addEventListener("click", () => {
+      document.querySelectorAll(".hala-reduce-qty-input").forEach((i) => (i.value = ""));
     });
   }
 }
@@ -1392,6 +1473,116 @@ document.addEventListener("DOMContentLoaded", async function () {
     showErrorMessage("Gagal memuat data. Silakan refresh halaman.");
   }
 });
+
+// === Handler Update HALA (baris -> buka modal, isi nilai, submit untuk update multi jenis) ===
+document.body.addEventListener("click", async function (e) {
+  if (e.target.classList.contains("update-hala-btn") || e.target.closest(".update-hala-btn")) {
+    const btn = e.target.classList.contains("update-hala-btn") ? e.target : e.target.closest(".update-hala-btn");
+    currentMainCat = btn.dataset.main; // should be 'HALA'
+    currentCategory = btn.dataset.category;
+
+    // Ambil data saat ini dan isi input pada modal Update HALA
+    try {
+      await fetchStockData();
+      const item =
+        stockData[currentCategory] && stockData[currentCategory][currentMainCat]
+          ? stockData[currentCategory][currentMainCat]
+          : { details: {} };
+      // Isi current-stock span dan input value pada modalUpdateStokHala
+      halaJewelryTypes.forEach((t) => {
+        const span = document.querySelector(`#modalUpdateStokHala .current-stock[data-type="${t}"]`);
+        const input = document.querySelector(`#modalUpdateStokHala .hala-update-qty-input[data-type="${t}"]`);
+        if (span) span.textContent = item.details && item.details[t] !== undefined ? item.details[t] : 0;
+        if (input) input.value = item.details && item.details[t] !== undefined ? item.details[t] : "";
+      });
+
+      const jenisDisplay = `${currentMainCat} - ${reverseCategoryMapping[currentCategory] || currentCategory}`;
+      document.getElementById("jenisUpdateHalaDisplay").value = jenisDisplay;
+      document.getElementById("jenisUpdateHala").value = currentCategory;
+      document.getElementById("modalUpdateStokHalaLabel").textContent = `Update Stok ${jenisDisplay}`;
+      $("#modalUpdateStokHala").modal("show");
+    } catch (err) {
+      console.error("Gagal buka modal update HALA", err);
+      showErrorNotification("Gagal memuat data HALA");
+    }
+  }
+});
+
+// Submit handler untuk formUpdateStokHalaBulk — mengganti nilai semua jenis sekaligus
+const formUpdateHala = document.getElementById("formUpdateStokHalaBulk");
+if (formUpdateHala) {
+  formUpdateHala.onsubmit = async function (e) {
+    e.preventDefault();
+    const submitBtn = document.getElementById("submitBulkUpdateHalaBtn");
+    const originalText = submitBtn ? submitBtn.innerHTML : "";
+    try {
+      if (submitBtn) {
+        submitBtn.disabled = true;
+        submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Menyimpan...';
+      }
+      const petugas = document.getElementById("petugasUpdateStokHalaBulk").value.trim();
+      if (!petugas) throw new Error("Nama staf harus diisi");
+      const category = document.getElementById("jenisUpdateHala").value;
+      const mainCat = document.getElementById("jenisUpdateHalaDisplay").value.split(" - ")[0] || "HALA";
+
+      await fetchStockData();
+      if (!stockData[category]) stockData[category] = {};
+      // Ensure the HALA structure exists and has .details initialized
+      if (!stockData[category][mainCat] || !stockData[category][mainCat].details) {
+        initializeHalaStructure(stockData[category], mainCat);
+      }
+
+      const item = stockData[category][mainCat] || { details: {} };
+      // Ambil nilai input (jika kosong, biarkan tidak diubah)
+      const updates = [];
+      halaJewelryTypes.forEach((t) => {
+        const input = document.querySelector(`.hala-update-qty-input[data-type="${t}"]`);
+        if (!input) return;
+        const val = input.value;
+        if (val === "") return; // kosong -> skip (tidak diubah)
+        const newVal = parseInt(val || "0");
+        if (isNaN(newVal) || newVal < 0) throw new Error("Nilai tidak valid");
+        updates.push({ type: t, qty: newVal });
+      });
+
+      if (updates.length === 0)
+        throw new Error("Kosongkan kolom jika tidak ingin mengubah, atau isi minimal satu jenis.");
+
+      // Terapkan update: set setiap details[type] = newVal
+      updates.forEach((u) => {
+        item.details[u.type] = u.qty;
+      });
+      // Recalculate total & lastUpdated & add history single entry
+      item.quantity = calculateHalaTotal(stockData[category], mainCat);
+      item.lastUpdated = new Date().toISOString();
+      item.history.unshift({
+        date: item.lastUpdated,
+        action: "Update Bulk",
+        quantity: updates.reduce((s, it) => s + it.qty, 0),
+        petugas,
+        items: updates.map((it) => ({
+          jewelryType: it.type,
+          jewelryName: halaJewelryMapping[it.type],
+          quantity: it.qty,
+        })),
+      });
+      if (item.history.length > 10) item.history = item.history.slice(0, 10);
+
+      await saveData(category, mainCat);
+      await populateTables();
+      showSuccessNotification("Update HALA berhasil");
+      $("#modalUpdateStokHala").modal("hide");
+    } catch (err) {
+      console.error("Gagal update HALA", err);
+      showErrorNotification(err.message || "Gagal update HALA");
+    } finally {
+      if (submitBtn) {
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = originalText;
+      }
+    }
+  };
+}
 
 // === UI Enhancement Functions ===
 function showLoadingState() {
