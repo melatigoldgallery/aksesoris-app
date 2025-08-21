@@ -687,7 +687,7 @@ function updateSummaryTotals() {
     if (total === komputer) {
       totalEl.className = "number text-success";
       if (statusEl) {
-        statusEl.innerHTML = `<i class="fas fa-check-circle me-1"></i>Sesuai Sistem (klop)`;
+        statusEl.innerHTML = `<i class="fas fa-check-circle me-1"></i>klop`;
         statusEl.className = "text-dark fw-bold";
       }
     } else if (total < komputer) {
