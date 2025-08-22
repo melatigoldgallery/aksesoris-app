@@ -739,3 +739,22 @@
   box-shadow: 0 0 0 0.2rem rgba(255, 193, 7, 0.35);
   border-color: #ffc107;
 }
+
+/* Nonaktifkan scroll di kontainer modal saat terbuka */
+.modal,
+.modal-open .modal {
+  overflow: auto !important;
+}
+
+/* Pastikan bagian dalam modal tidak memicu scroll tersembunyi */
+.modal .modal-dialog,
+.modal .modal-content,
+.modal .modal-body {
+  overflow: visible !important;
+  max-height: none !important;
+}
+
+/* Table dalam modal tidak memunculkan scrollbar horizontal */
+.modal .table-responsive {
+  overflow: visible !important;      /* matikan overflow-x:auto bawaan */
+}

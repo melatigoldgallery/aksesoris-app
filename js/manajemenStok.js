@@ -619,7 +619,7 @@ async function updateStokKomputer(jenis, jumlah) {
 }
 
 // === Update Stok Display/Manual ===
-async function updateStokDisplayManual(category, mainCat, newQuantity, petugas) {
+async function updateStokDisplayManual(category, mainCat, newQuantity, petugas, keterangan = "") {
   await fetchStockData();
   if (!stockData[category] || !stockData[category][mainCat]) {
     // Inisialisasi jika belum ada
@@ -648,7 +648,7 @@ async function updateStokDisplayManual(category, mainCat, newQuantity, petugas) 
     quantityDiff = 0;
   }
 
-  // Add to history
+  // Add to history (SIMPAN KETERANGAN)
   item.history.unshift({
     date: item.lastUpdated,
     action: actionType,
@@ -656,6 +656,7 @@ async function updateStokDisplayManual(category, mainCat, newQuantity, petugas) 
     oldQuantity: oldQuantity,
     newQuantity: newQty,
     petugas,
+    keterangan: keterangan || undefined, // opsional
   });
 
   // Keep only last 10 records
@@ -1065,9 +1066,9 @@ function showHistoryModal(category, mainCat) {
       actionBadge = `<span class="badge bg-danger">${record.action}</span>`;
     } else if (record.action.includes("Update")) {
       if (record.action.includes("Tambah")) {
-        actionBadge = '<span class="badge bg-info">Update (+)</span>';
+        actionBadge = '<span class="badge bg-success">Update (+)</span>';
       } else if (record.action.includes("Kurangi")) {
-        actionBadge = '<span class="badge bg-warning">Update (-)</span>';
+        actionBadge = '<span class="badge bg-danger">Update (-)</span>';
       } else {
         actionBadge = '<span class="badge bg-secondary">Update</span>';
       }
@@ -1281,6 +1282,8 @@ document.body.addEventListener("click", function (e) {
     document.getElementById("updateStokJenis").value = `${mainCat} - ${subCategory}`;
     document.getElementById("updateStokJumlah").value = stockItem.quantity;
     document.getElementById("updateStokPetugas").value = "";
+    const ketFieldUpdate = document.querySelector("#modalUpdateStok #keteranganKurangi");
+    if (ketFieldUpdate) ketFieldUpdate.value = "";
 
     $("#modalUpdateStok").modal("show");
   }
@@ -1422,13 +1425,14 @@ document.getElementById("formUpdateStok").onsubmit = async function (e) {
   const category = document.getElementById("updateStokCategory").value;
   const jumlah = document.getElementById("updateStokJumlah").value;
   const petugas = document.getElementById("updateStokPetugas").value;
+  const keterangan = this.querySelector("#keteranganKurangi")?.value?.trim() || "";
 
   if (!mainCat || !category || jumlah === "" || !petugas) {
     alert("Semua field yang wajib harus diisi.");
     return;
   }
 
-  await updateStokDisplayManual(category, mainCat, jumlah, petugas);
+  await updateStokDisplayManual(category, mainCat, jumlah, petugas, keterangan);
   $("#modalUpdateStok").modal("hide");
 };
 

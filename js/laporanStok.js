@@ -309,23 +309,23 @@ class OptimizedStockReport {
       this.renderStockTable();
       this.isDataLoaded = true;
       console.log("✅ Data loading completed successfully");
-// Setup real-time listener
-    this.setupRealtimeListener(selectedDate);
 
-    // Force trigger real-time update untuk data hari ini
-    if (this.isSameDate(selectedDate, new Date())) {
-      console.log("📡 Forcing initial real-time update for today's data...");
-      await this.handleRealtimeUpdate();
-    } else {
-      // Load normal untuk tanggal sebelumnya
-      await this.loadStockMasterData(forceRefresh);
-      await this.fetchReturnData(selectedDate);
-      await this.calculateStockForDate(selectedDate, forceRefresh);
-      this.renderStockTable();
-    }
+      // Setup real-time listener
+      this.setupRealtimeListener(selectedDate);
 
-    this.isDataLoaded = true;
+      // Force trigger real-time update untuk data hari ini
+      if (this.isSameDate(selectedDate, new Date())) {
+        console.log("📡 Forcing initial real-time update for today's data...");
+        await this.handleRealtimeUpdate();
+      } else {
+        // Load normal untuk tanggal sebelumnya
+        await this.loadStockMasterData(forceRefresh);
+        await this.fetchReturnData(selectedDate);
+        await this.calculateStockForDate(selectedDate, forceRefresh);
+        this.renderStockTable();
+      }
 
+      this.isDataLoaded = true;
     } catch (error) {
       console.error("❌ Error loading stock data:", error);
       this.showError("Terjadi kesalahan saat memuat data: " + error.message);
@@ -358,7 +358,7 @@ class OptimizedStockReport {
     const endOfDay = new Date(today);
     endOfDay.setHours(23, 59, 59, 999);
 
-    // Listen to stock transactions
+    // Listen to stock transactions (termasuk return)
     const transQuery = query(
       collection(firestore, "stokAksesorisTransaksi"),
       where("timestamp", ">=", Timestamp.fromDate(startOfDay)),
@@ -386,22 +386,9 @@ class OptimizedStockReport {
       }
     });
 
-    // Listen to return data changes
-    const returnQuery = query(
-      collection(firestore, "returnBarang"),
-      where("tanggal", "==", today.toISOString().split("T")[0])
-    );
-
-    const unsubscribeReturn = onSnapshot(returnQuery, (snapshot) => {
-      if (!snapshot.metadata.hasPendingWrites && this.isDataLoaded) {
-        console.log("📡 Real-time update detected for return data");
-        this.handleRealtimeUpdate();
-      }
-    });
-
+    // Hapus listener returnBarang untuk menghindari double-count
     this.listeners.set("transactions", unsubscribeTrans);
     this.listeners.set("additions", unsubscribeAdd);
-    this.listeners.set("returns", unsubscribeReturn);
   }
 
   // Remove today's listener
@@ -414,58 +401,53 @@ class OptimizedStockReport {
   }
 
   // Improved handleRealtimeUpdate with force refresh and proper initialization
-async handleRealtimeUpdate() {
-  if (!this.currentSelectedDate) return;
+  async handleRealtimeUpdate() {
+    if (!this.currentSelectedDate) return;
 
-  try {
-    console.log("📡 Processing real-time update...");
+    try {
+      console.log("📡 Processing real-time update...");
 
-    // Clear all relevant caches to force fresh data
-    this.clearCacheForDate(this.currentSelectedDate);
-    
-    // Force refresh stock master data first
-    await this.loadStockMasterData(true);
-    
-    // Get fresh base snapshot
-    const baseSnapshot = await this.getSnapshotAsBase(this.currentSelectedDate);
-    console.log(`📊 Got base snapshot with ${baseSnapshot.size} items`);
+      // Clear all relevant caches to force fresh data
+      this.clearCacheForDate(this.currentSelectedDate);
 
-    // Recalculate with fresh data
-    await this.calculateStockForDate(this.currentSelectedDate, true);
-    
-    // Refresh return data
-    await this.fetchReturnData(this.currentSelectedDate);
+      // Force refresh stock master data first
+      await this.loadStockMasterData(true);
 
-    // Recalculate final stock with return data
-    this.filteredStockData = this.filteredStockData.map(item => {
-      const returnAmount = this.returnData.get(item.kode) || 0;
-      return {
-        ...item,
-        return: returnAmount,
-        stokAkhir: Math.max(0, 
-          item.stokAwal + 
-          item.tambahStok - 
-          item.laku - 
-          item.free - 
-          item.gantiLock - 
-          returnAmount
-        )
-      };
-    });
+      // Get fresh base snapshot
+      const baseSnapshot = await this.getSnapshotAsBase(this.currentSelectedDate);
+      console.log(`📊 Got base snapshot with ${baseSnapshot.size} items`);
 
-    // Update display
-    await this.renderStockTable();
-    
-    // Show update notification
-    this.showUpdateIndicator();
-    
-    console.log("✅ Real-time update completed successfully");
+      // Recalculate with fresh data
+      await this.calculateStockForDate(this.currentSelectedDate, true);
 
-  } catch (error) {
-    console.error("❌ Error handling real-time update:", error);
-    this.showError("Gagal memperbarui data secara real-time");
+      // Refresh return data
+      await this.fetchReturnData(this.currentSelectedDate);
+
+      // Recalculate final stock with return data
+      this.filteredStockData = this.filteredStockData.map((item) => {
+        const returnAmount = this.returnData.get(item.kode) || 0;
+        return {
+          ...item,
+          return: returnAmount,
+          stokAkhir: Math.max(
+            0,
+            item.stokAwal + item.tambahStok - item.laku - item.free - item.gantiLock - returnAmount
+          ),
+        };
+      });
+
+      // Update display
+      await this.renderStockTable();
+
+      // Show update notification
+      this.showUpdateIndicator();
+
+      console.log("✅ Real-time update completed successfully");
+    } catch (error) {
+      console.error("❌ Error handling real-time update:", error);
+      this.showError("Gagal memperbarui data secara real-time");
+    }
   }
-}
 
   // Load stock master data with smart caching
   async loadStockMasterData(forceRefresh = false) {
@@ -569,8 +551,6 @@ async handleRealtimeUpdate() {
   async calculateStockForDate(selectedDate, forceRefresh = false) {
     const dateStr = this.formatDate(selectedDate).replace(/\//g, "-");
     const cacheKey = `stock_${dateStr}`;
-
-    // Check cache first (except for today's data or forced refresh)
     const isToday = this.isSameDate(selectedDate, new Date());
     if (!forceRefresh && !isToday && this.isCacheValid(cacheKey)) {
       this.filteredStockData = this.cache.get(cacheKey);
@@ -583,40 +563,20 @@ async handleRealtimeUpdate() {
 
     try {
       console.log(`📊 Calculating stock for ${dateStr} (force: ${forceRefresh}, today: ${isToday})`);
-
-      // PERBAIKAN: Gunakan logika kontinuitas dari laporanStok.js
-      // 1. Get base snapshot dengan prioritas yang tepat
-      console.log("🔍 Getting base snapshot...");
       const baseSnapshot = await this.getSnapshotAsBase(selectedDate);
-      console.log(`📅 Base snapshot size: ${baseSnapshot.size}`);
 
-      // 2. Calculate stock until previous day
       const previousDate = new Date(selectedDate);
       previousDate.setUTCDate(previousDate.getUTCDate() - 1);
       previousDate.setUTCHours(23, 59, 59, 999);
 
-      console.log("📈 Calculating stock from base...");
       const previousStockMap = await this.calculateStockFromBase(baseSnapshot, previousDate);
-      console.log(`📊 Previous stock map size: ${previousStockMap.size}`);
 
-      // 3. Get today's transactions only
       const startOfDay = new Date(selectedDate);
       startOfDay.setUTCHours(0, 0, 0, 0);
       const endOfDay = new Date(selectedDate);
       endOfDay.setUTCHours(23, 59, 59, 999);
-
-      console.log(`📋 Getting today's transactions from ${startOfDay.toISOString()} to ${endOfDay.toISOString()}`);
       const todayTransactions = await this.getTransactionsForDate(startOfDay, endOfDay);
-      console.log(`📊 Today's transactions size: ${todayTransactions.size}`);
 
-      // Debug: Log sample transaction data
-      if (todayTransactions.size > 0) {
-        const firstTrans = todayTransactions.entries().next().value;
-        console.log("🔍 Sample transaction:", firstTrans);
-      }
-
-      // 4. Combine: previous stock + today's transactions = final stock
-      console.log("🔄 Combining data...");
       this.filteredStockData = this.stockData.map((item) => {
         const kode = item.kode;
         const stokAwal = previousStockMap.get(kode) || 0;
@@ -625,93 +585,60 @@ async handleRealtimeUpdate() {
           laku: 0,
           free: 0,
           gantiLock: 0,
+          return: 0,
         };
-
-        // Get return data for this item
-        const returnAmount = this.returnData.get(kode) || 0;
 
         const stokAkhir = Math.max(
           0,
-          stokAwal + todayTrans.tambahStok - todayTrans.laku - todayTrans.free - todayTrans.gantiLock - returnAmount
+          stokAwal +
+            todayTrans.tambahStok -
+            todayTrans.laku -
+            todayTrans.free -
+            todayTrans.gantiLock -
+            (todayTrans.return || 0)
         );
 
-        const result = {
+        return {
           ...item,
-          stokAwal: stokAwal,
+          stokAwal,
           tambahStok: todayTrans.tambahStok,
           laku: todayTrans.laku,
           free: todayTrans.free,
           gantiLock: todayTrans.gantiLock,
-          return: returnAmount,
-          stokAkhir: stokAkhir,
+          return: todayTrans.return || 0,
+          stokAkhir,
         };
-
-        // Debug: Log if all values are 0
-        if (
-          stokAwal === 0 &&
-          todayTrans.tambahStok === 0 &&
-          todayTrans.laku === 0 &&
-          todayTrans.free === 0 &&
-          todayTrans.gantiLock === 0 &&
-          returnAmount === 0
-        ) {
-          console.log(`⚠️ All values are 0 for ${kode}:`, result);
-        }
-
-        return result;
       });
 
-      // 5. Add items that exist in transactions but not in master
       todayTransactions.forEach((trans, kode) => {
-        const exists = this.filteredStockData.find((item) => item.kode === kode);
-        if (!exists) {
+        if (!this.filteredStockData.find((i) => i.kode === kode)) {
           const stokAwal = previousStockMap.get(kode) || 0;
-          const returnAmount = this.returnData.get(kode) || 0;
           const stokAkhir = Math.max(
             0,
-            stokAwal + trans.tambahStok - trans.laku - trans.free - trans.gantiLock - returnAmount
+            stokAwal + trans.tambahStok - trans.laku - trans.free - trans.gantiLock - (trans.return || 0)
           );
-
           this.filteredStockData.push({
-            kode: kode,
+            kode,
             nama: trans.nama || "",
             kategori: trans.kategori || "",
-            stokAwal: stokAwal,
+            stokAwal,
             tambahStok: trans.tambahStok,
             laku: trans.laku,
             free: trans.free,
             gantiLock: trans.gantiLock,
-            return: returnAmount,
-            stokAkhir: stokAkhir,
+            return: trans.return || 0,
+            stokAkhir,
           });
         }
       });
 
-      // 6. Sort data
       this.filteredStockData.sort((a, b) => {
-        if (a.kategori !== b.kategori) {
-          return a.kategori === "kotak" ? -1 : 1;
-        }
+        if (a.kategori !== b.kategori) return a.kategori === "kotak" ? -1 : 1;
         return a.kode.localeCompare(b.kode);
       });
 
-      // Cache the result (with appropriate TTL)
       const ttl = isToday ? this.CACHE_TTL_TODAY : this.CACHE_TTL_STANDARD;
       this.setCache(cacheKey, [...this.filteredStockData], ttl);
-
-      console.log(`✅ Stock calculated for ${dateStr}: ${this.filteredStockData.length} items`);
-
-      // Debug: Log summary
-      const nonZeroItems = this.filteredStockData.filter(
-        (item) =>
-          item.stokAwal > 0 ||
-          item.tambahStok > 0 ||
-          item.laku > 0 ||
-          item.free > 0 ||
-          item.gantiLock > 0 ||
-          item.return > 0
-      );
-      console.log(`📊 Items with non-zero values: ${nonZeroItems.length}/${this.filteredStockData.length}`);
     } catch (error) {
       console.error("❌ Error calculating stock for date:", error);
       throw error;
@@ -925,13 +852,24 @@ async handleRealtimeUpdate() {
           // Apply transactions to stock
           transactions.forEach((trans, kode) => {
             const currentStock = stockMap.get(kode) || 0;
-            const newStock = Math.max(0, currentStock + trans.tambahStok - trans.laku - trans.free - trans.gantiLock);
+            const newStock = Math.max(
+              0,
+              currentStock + trans.tambahStok - trans.laku - trans.free - trans.gantiLock - (trans.return || 0)
+            );
             stockMap.set(kode, newStock);
 
             // Debug: Log significant changes
-            if (trans.tambahStok > 0 || trans.laku > 0 || trans.free > 0 || trans.gantiLock > 0) {
+            if (
+              trans.tambahStok > 0 ||
+              trans.laku > 0 ||
+              trans.free > 0 ||
+              trans.gantiLock > 0 ||
+              (trans.return || 0) > 0
+            ) {
               console.log(
-                `📊 ${kode}: ${currentStock} + ${trans.tambahStok} - ${trans.laku} - ${trans.free} - ${trans.gantiLock} = ${newStock}`
+                `📊 ${kode}: ${currentStock} + ${trans.tambahStok} - ${trans.laku} - ${trans.free} - ${
+                  trans.gantiLock
+                } - ${trans.return || 0} = ${newStock}`
               );
             }
           });
@@ -962,41 +900,28 @@ async handleRealtimeUpdate() {
     const endDateStr = endDate.toISOString().split("T")[0];
     const cacheKey = `trans_${startDateStr}_${endDateStr}`;
 
-    console.log(`🔍 Getting transactions from ${startDateStr} to ${endDateStr}`);
-    console.log(`🔍 Date range: ${startDate.toISOString()} to ${endDate.toISOString()}`);
-
-    // Check cache first (shorter TTL for recent data)
-    const isRecent = Date.now() - endDate.getTime() < 24 * 60 * 60 * 1000; // Within 24 hours
+    const isRecent = Date.now() - endDate.getTime() < 24 * 60 * 60 * 1000;
     const ttl = isRecent ? this.CACHE_TTL_TODAY : this.CACHE_TTL_STANDARD;
 
     if (this.isCacheValid(cacheKey, ttl)) {
       const cached = this.cache.get(cacheKey);
-      console.log(`📋 Using cached transactions: ${cached instanceof Map ? cached.size : 0} items`);
-      // Pastikan return Map
       return cached instanceof Map ? cached : new Map();
     }
 
     const transactionMap = new Map();
 
     try {
-      // Get stock transactions
-      console.log("📋 Querying stokAksesorisTransaksi...");
-      console.log(`📋 Query range: ${Timestamp.fromDate(startDate).toDate().toISOString()} to ${Timestamp.fromDate(endDate).toDate().toISOString()}`);
-      
       const transQuery = query(
         collection(firestore, "stokAksesorisTransaksi"),
         where("timestamp", ">=", Timestamp.fromDate(startDate)),
-        where("timestamp", "<=", Timestamp.fromDate(endDate)),
-        orderBy("timestamp", "asc")
+        where("timestamp", "<=", Timestamp.fromDate(endDate))
       );
 
       const transSnapshot = await getDocs(transQuery);
-      console.log(`📋 Found ${transSnapshot.size} stock transactions`);
 
       transSnapshot.forEach((doc) => {
         const data = doc.data();
         const kode = data.kode;
-
         if (!kode) return;
 
         if (!transactionMap.has(kode)) {
@@ -1005,13 +930,14 @@ async handleRealtimeUpdate() {
             laku: 0,
             free: 0,
             gantiLock: 0,
+            return: 0,
             nama: data.nama || "",
             kategori: data.kategori || "",
           });
         }
 
         const trans = transactionMap.get(kode);
-        const jumlah = data.jumlah || 0;
+        const jumlah = parseInt(data.jumlah) || 0;
 
         switch (data.jenis) {
           case "tambah":
@@ -1026,11 +952,16 @@ async handleRealtimeUpdate() {
           case "gantiLock":
             trans.gantiLock += jumlah;
             break;
+          case "return":
+            trans.return += jumlah;
+            break; // return sebagai pengurang
+          case "reverse_return":
+            trans.return -= jumlah;
+            break; // pembatalan return mengurangi nilai return bersih
         }
       });
 
-      // Get stock additions
-      console.log("📋 Querying stockAdditions...");
+      // stockAdditions tetap menambah tambahStok
       const addQuery = query(
         collection(firestore, "stockAdditions"),
         where("timestamp", ">=", Timestamp.fromDate(startDate)),
@@ -1038,8 +969,6 @@ async handleRealtimeUpdate() {
       );
 
       const addSnapshot = await getDocs(addQuery);
-      console.log(`📋 Found ${addSnapshot.size} stock additions`);
-
       addSnapshot.forEach((doc) => {
         const data = doc.data();
         if (!data.items?.length) return;
@@ -1054,31 +983,21 @@ async handleRealtimeUpdate() {
               laku: 0,
               free: 0,
               gantiLock: 0,
+              return: 0,
               nama: item.nama || "",
               kategori: "",
             });
           }
-
           const trans = transactionMap.get(kode);
           trans.tambahStok += parseInt(item.jumlah) || 0;
         });
       });
 
-      // Cache the transaction data
       this.setCache(cacheKey, transactionMap, ttl);
-
-      console.log(`📋 Loaded transactions: ${transactionMap.size} items`);
-
-      // Debug: Log sample transactions
-      if (transactionMap.size > 0) {
-        const firstTrans = transactionMap.entries().next().value;
-        console.log("🔍 Sample transaction data:", firstTrans);
-      }
-
       return transactionMap;
     } catch (error) {
       console.error("❌ Error getting transactions for date:", error);
-      return new Map(); // SELALU return Map
+      return new Map();
     }
   }
 
@@ -1230,9 +1149,9 @@ async handleRealtimeUpdate() {
             doc.styles.tableHeader.fontSize = 9;
             doc.content[1].table.widths = ["5%", "9%", "28%", "8%", "8%", "8%", "8%", "8%", "8%", "8%"];
             // Center align all columns except name column (3rd column)
-            doc.content[1].table.body.forEach(row => {
+            doc.content[1].table.body.forEach((row) => {
               row.forEach((cell, index) => {
-                cell.alignment = index !== 2 ? 'center' : 'left';
+                cell.alignment = index !== 2 ? "center" : "left";
               });
             });
           },
@@ -1524,15 +1443,15 @@ async handleRealtimeUpdate() {
     try {
       const parts = dateString.split("/");
       if (parts.length !== 3) return null;
-      
+
       // Create date in UTC to avoid timezone issues
       const year = parseInt(parts[2]);
       const month = parseInt(parts[1]) - 1; // Month is 0-indexed
       const day = parseInt(parts[0]);
-      
+
       // Create date using UTC methods to ensure consistent timezone handling
       const date = new Date(Date.UTC(year, month, day));
-      
+
       console.log(`📅 Parsed date: ${dateString} -> ${date.toISOString()} (UTC)`);
       return date;
     } catch (error) {
