@@ -238,7 +238,6 @@ async function saveData(category, type) {
       stockCacheMeta.set(category, Date.now());
       updateCache();
     } catch (e) {
-      alert("Gagal simpan data stok. Silakan coba lagi.");
     }
   }
 }
@@ -889,7 +888,7 @@ async function addStockHalaBulk(category, mainCat, items, adder) {
     item.lastUpdated = new Date().toISOString();
     item.history.unshift({
       date: item.lastUpdated,
-      action: "Tambah Bulk",
+      action: "Tambah",
       quantity: totalAdded,
       adder,
       items: items.map((it) => ({
@@ -1005,7 +1004,7 @@ async function reduceStockHalaBulk(category, mainCat, items, pengurang, keterang
     item.lastUpdated = new Date().toISOString();
     item.history.unshift({
       date: item.lastUpdated,
-      action: "Kurangi Bulk",
+      action: "Kurangi",
       quantity: totalReduced,
       pengurang,
       keterangan,
@@ -1060,9 +1059,9 @@ function showHistoryModal(category, mainCat) {
 
     // Determine action badge color and text
     let actionBadge;
-    if (record.action === "Tambah" || record.action === "Tambah Bulk") {
+    if (record.action === "Tambah" || record.action === "Tambah") {
       actionBadge = `<span class="badge bg-success">${record.action}</span>`;
-    } else if (record.action === "Kurangi" || record.action === "Kurangi Bulk") {
+    } else if (record.action === "Kurangi" || record.action === "Kurangi") {
       actionBadge = `<span class="badge bg-danger">${record.action}</span>`;
     } else if (record.action.includes("Update")) {
       if (record.action.includes("Tambah")) {
