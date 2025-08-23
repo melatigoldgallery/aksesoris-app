@@ -1123,7 +1123,7 @@ document.body.addEventListener("click", function (e) {
   if (
     e.target.classList.contains("add-stock-btn") &&
     (e.target.dataset.main === "HALA" ||
-      ((e.target.dataset.main === "KENDARI" || e.target.dataset.main === "BERLIAN") &&
+      ((e.target.dataset.main === "KENDARI" || e.target.dataset.main === "BERLIAN" || e.target.dataset.main === "SDW" || e.target.dataset.main === "EMAS_BALI") &&
         ["brankas", "posting"].includes(e.target.dataset.category)))
   ) {
     e.preventDefault();
@@ -1164,7 +1164,7 @@ document.body.addEventListener("click", function (e) {
   if (
     e.target.classList.contains("reduce-stock-btn") &&
     (e.target.dataset.main === "HALA" ||
-      ((e.target.dataset.main === "KENDARI" || e.target.dataset.main === "BERLIAN") &&
+      ((e.target.dataset.main === "KENDARI" || e.target.dataset.main === "BERLIAN" || e.target.dataset.main === "SDW" || e.target.dataset.main === "EMAS_BALI") &&
         ["brankas", "posting"].includes(e.target.dataset.category)))
   ) {
     e.preventDefault();
