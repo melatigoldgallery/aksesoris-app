@@ -74,7 +74,8 @@
                 data-bs-target="#barangSubmenu"
                 aria-expanded="false"
               >
-                <<i class="fa-solid fa-cubes"></i>
+                <
+                <i class="fa-solid fa-cubes"></i>
                 <span class="menu-text">Inventory Barang</span>
                 <i class="fas fa-angle-down ms-auto submenu-icon"></i>
               </a>
@@ -222,8 +223,8 @@
           </div>
           <div class="content-wrapper">
             <!-- Stock Summary Section -->
-            <div class="card mb-4">
-              <div class="card-header">
+            <div class="card mb-2">
+              <div class="card-header py-2">
                 <h2 class="text-white fs-5">
                   <i class="fas fa-chart-pie me-2 text-white"></i>
                   Ringkasan Total Stok
@@ -351,8 +352,120 @@
               </div>
             </div>
 
+            <!-- Modal Update Komputer - KALUNG/LIONTIN (per warna) -->
+            <div
+              class="modal fade"
+              id="modalUpdateKomputerWarna"
+              tabindex="-1"
+              aria-labelledby="modalUpdateKomputerWarnaLabel"
+              aria-hidden="true"
+            >
+              <div class="modal-dialog modal-lg">
+                <div class="modal-content">
+                  <form id="formUpdateKomputerWarna">
+                    <div class="modal-header">
+                      <h5 class="modal-title" id="modalUpdateKomputerWarnaLabel">Update Stok Komputer</h5>
+                      <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Tutup"></button>
+                    </div>
+                    <div class="modal-body">
+                      <div class="mb-3">
+                        <label class="form-label">Jenis</label>
+                        <input
+                          type="text"
+                          class="form-control"
+                          id="jenisUpdateKomputerWarnaDisplay"
+                          readonly
+                          style="background-color: #f8f9fa"
+                        />
+                        <input type="hidden" id="jenisUpdateKomputerWarna" />
+                      </div>
+                      <div class="table-responsive hala-bulk-table mb-2">
+                        <table class="table table-sm table-bordered align-middle">
+                          <thead class="table-light">
+                            <tr>
+                              <th style="width: 60%">Warna</th>
+                              <th style="width: 40%">Jumlah</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            <tr>
+                              <td>Hijau</td>
+                              <td>
+                                <input
+                                  type="number"
+                                  min="0"
+                                  class="form-control form-control-sm komputer-warna-qty-input"
+                                  data-type="HIJAU"
+                                  placeholder="0"
+                                />
+                              </td>
+                            </tr>
+                            <tr>
+                              <td>Biru</td>
+                              <td>
+                                <input
+                                  type="number"
+                                  min="0"
+                                  class="form-control form-control-sm komputer-warna-qty-input"
+                                  data-type="BIRU"
+                                  placeholder="0"
+                                />
+                              </td>
+                            </tr>
+                            <tr>
+                              <td>Putih</td>
+                              <td>
+                                <input
+                                  type="number"
+                                  min="0"
+                                  class="form-control form-control-sm komputer-warna-qty-input"
+                                  data-type="PUTIH"
+                                  placeholder="0"
+                                />
+                              </td>
+                            </tr>
+                            <tr>
+                              <td>Pink</td>
+                              <td>
+                                <input
+                                  type="number"
+                                  min="0"
+                                  class="form-control form-control-sm komputer-warna-qty-input"
+                                  data-type="PINK"
+                                  placeholder="0"
+                                />
+                              </td>
+                            </tr>
+                            <tr>
+                              <td>Kuning</td>
+                              <td>
+                                <input
+                                  type="number"
+                                  min="0"
+                                  class="form-control form-control-sm komputer-warna-qty-input"
+                                  data-type="KUNING"
+                                  placeholder="0"
+                                />
+                              </td>
+                            </tr>
+                          </tbody>
+                        </table>
+                      </div>
+                      <small class="text-muted">
+                        Jumlah total akan disimpan ke Stok Komputer sebagai total KALUNG.
+                      </small>
+                    </div>
+                    <div class="modal-footer">
+                      <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Batal</button>
+                      <button type="submit" class="btn btn-primary">Simpan</button>
+                    </div>
+                  </form>
+                </div>
+              </div>
+            </div>
+
             <!-- Tab Navigation -->
-            <ul class="nav nav-tabs compact overflow-auto" id="stockTab" role="tablist">
+            <ul class="nav nav-tabs compact overflow-auto m-0" id="stockTab" role="tablist">
               <!-- compact class uses existing CSS to reduce padding; overflow-auto enables horizontal scroll on small screens -->
 
               <li class="nav-item" role="presentation">
@@ -530,7 +643,7 @@
               <!-- TAB KALUNG -->
               <div class="tab-pane fade show active" id="kalung" role="tabpanel" aria-labelledby="kalung-tab">
                 <div class="card mb-4">
-                  <div class="card-header d-flex justify-content-start align-items-center">
+                  <div class="card-header p-2 d-flex justify-content-start align-items-center">
                     <i class="fas fa-link me-2"></i>
                     <h3 class="mb-0">Data Kalung</h3>
                   </div>
@@ -558,7 +671,7 @@
               <!-- TAB LIONTIN -->
               <div class="tab-pane fade" id="liontin" role="tabpanel" aria-labelledby="liontin-tab">
                 <div class="card mb-4">
-                  <div class="card-header d-flex justify-content-start align-items-center">
+                  <div class="card-header p-2 d-flex justify-content-start align-items-center">
                     <i class="fas fa-gem me-2"></i>
                     <h3 class="mb-0 fs-5">Data Liontin</h3>
                   </div>
@@ -586,7 +699,7 @@
               <!-- TAB ANTING -->
               <div class="tab-pane fade" id="anting" role="tabpanel" aria-labelledby="anting-tab">
                 <div class="card mb-4">
-                  <div class="card-header d-flex justify-content-start align-items-center">
+                  <div class="card-header p-2 d-flex justify-content-start align-items-center">
                     <i class="fas fa-dot-circle me-2"></i>
                     <h3 class="mb-0 fs-5">Data Anting</h3>
                   </div>
@@ -614,7 +727,7 @@
               <!-- TAB CINCIN -->
               <div class="tab-pane fade" id="cincin" role="tabpanel" aria-labelledby="cincin-tab">
                 <div class="card mb-4">
-                  <div class="card-header d-flex justify-content-start align-items-center">
+                  <div class="card-header p-2 d-flex justify-content-start align-items-center">
                     <i class="fas fa-circle me-2"></i>
                     <h3 class="mb-0 fs-5">Data Cincin</h3>
                   </div>
@@ -642,7 +755,7 @@
               <!-- TAB GELANG -->
               <div class="tab-pane fade" id="gelang" role="tabpanel" aria-labelledby="gelang-tab">
                 <div class="card mb-4">
-                  <div class="card-header d-flex justify-content-start align-items-center">
+                  <div class="card-header p-2 d-flex justify-content-start align-items-center">
                     <i class="fas fa-circle-notch me-2"></i>
                     <h3 class="mb-0 fs-5">Data Gelang</h3>
                   </div>
@@ -670,7 +783,7 @@
               <!-- TAB GIWANG -->
               <div class="tab-pane fade" id="giwang" role="tabpanel" aria-labelledby="giwang-tab">
                 <div class="card mb-4">
-                  <div class="card-header d-flex justify-content-start align-items-center">
+                  <div class="card-header p-2 d-flex justify-content-start align-items-center">
                     <i class="fas fa-dot-circle me-2"></i>
                     <h3 class="mb-0 fs-5">Data Giwang</h3>
                   </div>
@@ -698,7 +811,7 @@
               <!-- TAB HALA -->
               <div class="tab-pane fade" id="hala" role="tabpanel" aria-labelledby="hala-tab">
                 <div class="card mb-4">
-                  <div class="card-header d-flex justify-content-start align-items-center">
+                  <div class="card-header p-2 d-flex justify-content-start align-items-center">
                     <i class="fas fa-ring me-2"></i>
                     <h3 class="mb-0 fs-5">Data Hala</h3>
                   </div>
@@ -726,7 +839,7 @@
               <!-- TAB KENDARI -->
               <div class="tab-pane fade" id="kendari" role="tabpanel" aria-labelledby="kendari-tab">
                 <div class="card mb-4">
-                  <div class="card-header d-flex justify-content-start align-items-center">
+                  <div class="card-header p-2 d-flex justify-content-start align-items-center">
                     <i class="fas fa-store me-2"></i>
                     <h3 class="mb-0 fs-5">Data Kendari</h3>
                   </div>
@@ -752,7 +865,7 @@
               <!-- TAB BERLIAN -->
               <div class="tab-pane fade" id="berlian" role="tabpanel" aria-labelledby="berlian-tab">
                 <div class="card mb-4">
-                  <div class="card-header d-flex justify-content-start align-items-center">
+                  <div class="card-header p-2 d-flex justify-content-start align-items-center">
                     <i class="fas fa-gem me-2"></i>
                     <h3 class="mb-0 fs-5">Data Berlian</h3>
                   </div>
@@ -778,7 +891,7 @@
               <!-- TAB SDW -->
               <div class="tab-pane fade" id="sdw" role="tabpanel" aria-labelledby="sdw-tab">
                 <div class="card mb-4">
-                  <div class="card-header d-flex justify-content-start align-items-center">
+                  <div class="card-header p-2 d-flex justify-content-start align-items-center">
                     <i class="fas fa-box me-2"></i>
                     <h3 class="mb-0 fs-5">Data SDW</h3>
                   </div>
@@ -804,7 +917,7 @@
               <!-- TAB EMAS BALI -->
               <div class="tab-pane fade" id="emas-bali" role="tabpanel" aria-labelledby="emas-bali-tab">
                 <div class="card mb-4">
-                  <div class="card-header d-flex justify-content-start align-items-center">
+                  <div class="card-header p-2 d-flex justify-content-start align-items-center">
                     <i class="fas fa-coins me-2"></i>
                     <h3 class="mb-0 fs-5">Data Emas Bali</h3>
                   </div>
@@ -830,7 +943,7 @@
               <!-- TAB STOK KOMPUTER -->
               <div class="tab-pane fade" id="stok-komputer" role="tabpanel" aria-labelledby="stok-komputer-tab">
                 <div class="card mb-4">
-                  <div class="card-header d-flex justify-content-start align-items-center">
+                  <div class="card-header p-2 d-flex justify-content-start align-items-center">
                     <i class="fas fa-desktop me-2"></i>
                     <h3 class="mb-0 fs-5">Data Stok Komputer</h3>
                   </div>
@@ -922,6 +1035,388 @@
                         <input type="text" class="form-control" id="penambahStok" required />
                       </div>
                       <button type="submit" class="btn btn-primary w-100">Simpan</button>
+                    </form>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <!-- Modal Tambah Stok KALUNG (Bulk) -->
+            <div
+              class="modal fade"
+              id="modalTambahStokKalung"
+              tabindex="-1"
+              aria-labelledby="modalTambahStokKalungLabel"
+              aria-hidden="true"
+            >
+              <div class="modal-dialog modal-lg">
+                <div class="modal-content">
+                  <div class="modal-header">
+                    <h5 class="modal-title" id="modalTambahStokKalungLabel">Tambah Stok KALUNG</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Tutup"></button>
+                  </div>
+                  <div class="modal-body">
+                    <form id="formTambahStokKalungBulk">
+                      <div class="mb-3">
+                        <label class="form-label">Jenis Barang</label>
+                        <input
+                          type="text"
+                          id="jenisTambahKalungDisplay"
+                          class="form-control"
+                          readonly
+                          style="background-color: #f8f9fa"
+                        />
+                        <input type="hidden" id="jenisTambahKalung" />
+                      </div>
+                      <div class="table-responsive hala-bulk-table mb-3">
+                        <table class="table table-sm table-bordered align-middle">
+                          <thead class="table-success">
+                            <tr>
+                              <th style="width: 50%">Warna</th>
+                              <th style="width: 50%">Jumlah</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            <tr>
+                              <td>Hijau</td>
+                              <td>
+                                <input
+                                  type="number"
+                                  min="0"
+                                  class="form-control form-control-sm kalung-add-qty-input"
+                                  data-type="HIJAU"
+                                  placeholder="0"
+                                />
+                              </td>
+                            </tr>
+                            <tr>
+                              <td>Biru</td>
+                              <td>
+                                <input
+                                  type="number"
+                                  min="0"
+                                  class="form-control form-control-sm kalung-add-qty-input"
+                                  data-type="BIRU"
+                                  placeholder="0"
+                                />
+                              </td>
+                            </tr>
+                            <tr>
+                              <td>Putih</td>
+                              <td>
+                                <input
+                                  type="number"
+                                  min="0"
+                                  class="form-control form-control-sm kalung-add-qty-input"
+                                  data-type="PUTIH"
+                                  placeholder="0"
+                                />
+                              </td>
+                            </tr>
+                            <tr>
+                              <td>Pink</td>
+                              <td>
+                                <input
+                                  type="number"
+                                  min="0"
+                                  class="form-control form-control-sm kalung-add-qty-input"
+                                  data-type="PINK"
+                                  placeholder="0"
+                                />
+                              </td>
+                            </tr>
+                            <tr>
+                              <td>Kuning</td>
+                              <td>
+                                <input
+                                  type="number"
+                                  min="0"
+                                  class="form-control form-control-sm kalung-add-qty-input"
+                                  data-type="KUNING"
+                                  placeholder="0"
+                                />
+                              </td>
+                            </tr>
+                          </tbody>
+                        </table>
+                      </div>
+                      <div class="mb-3">
+                        <label class="form-label">Penambah Stok</label>
+                        <input type="text" class="form-control" id="penambahStokKalungBulk" required />
+                      </div>
+                      <div class="d-flex gap-2">
+                        <button type="reset" class="btn btn-outline-secondary w-25" id="resetBulkKalungAddBtn">
+                          Reset
+                        </button>
+                        <button type="submit" class="btn btn-primary flex-grow-1" id="submitBulkKalungAddBtn">
+                          Simpan Semua
+                        </button>
+                      </div>
+                      <small class="text-muted d-block mt-2">Hanya jumlah > 0 yang akan diproses.</small>
+                    </form>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Modal Kurangi Stok KALUNG (Bulk) -->
+            <div
+              class="modal fade"
+              id="modalKurangiStokKalung"
+              tabindex="-1"
+              aria-labelledby="modalKurangiStokKalungLabel"
+              aria-hidden="true"
+            >
+              <div class="modal-dialog modal-lg">
+                <div class="modal-content">
+                  <div class="modal-header">
+                    <h5 class="modal-title" id="modalKurangiStokKalungLabel">Kurangi Stok KALUNG</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Tutup"></button>
+                  </div>
+                  <div class="modal-body">
+                    <form id="formKurangiStokKalungBulk">
+                      <div class="mb-3">
+                        <label class="form-label">Jenis Barang</label>
+                        <input
+                          type="text"
+                          id="jenisKurangiKalungDisplay"
+                          class="form-control"
+                          readonly
+                          style="background-color: #f8f9fa"
+                        />
+                        <input type="hidden" id="jenisKurangiKalung" />
+                      </div>
+                      <div class="table-responsive hala-bulk-table mb-3">
+                        <table class="table table-sm table-bordered align-middle">
+                          <thead class="table-warning">
+                            <tr>
+                              <th style="width: 40%">Warna</th>
+                              <th style="width: 30%" class="text-center">Stok Saat Ini</th>
+                              <th style="width: 30%">Kurangi</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            <tr>
+                              <td>Hijau</td>
+                              <td class="text-center"><span class="current-stock" data-type="HIJAU">0</span></td>
+                              <td>
+                                <input
+                                  type="number"
+                                  min="0"
+                                  class="form-control form-control-sm kalung-reduce-qty-input"
+                                  data-type="HIJAU"
+                                  placeholder="0"
+                                />
+                              </td>
+                            </tr>
+                            <tr>
+                              <td>Biru</td>
+                              <td class="text-center"><span class="current-stock" data-type="BIRU">0</span></td>
+                              <td>
+                                <input
+                                  type="number"
+                                  min="0"
+                                  class="form-control form-control-sm kalung-reduce-qty-input"
+                                  data-type="BIRU"
+                                  placeholder="0"
+                                />
+                              </td>
+                            </tr>
+                            <tr>
+                              <td>Putih</td>
+                              <td class="text-center"><span class="current-stock" data-type="PUTIH">0</span></td>
+                              <td>
+                                <input
+                                  type="number"
+                                  min="0"
+                                  class="form-control form-control-sm kalung-reduce-qty-input"
+                                  data-type="PUTIH"
+                                  placeholder="0"
+                                />
+                              </td>
+                            </tr>
+                            <tr>
+                              <td>Pink</td>
+                              <td class="text-center"><span class="current-stock" data-type="PINK">0</span></td>
+                              <td>
+                                <input
+                                  type="number"
+                                  min="0"
+                                  class="form-control form-control-sm kalung-reduce-qty-input"
+                                  data-type="PINK"
+                                  placeholder="0"
+                                />
+                              </td>
+                            </tr>
+                            <tr>
+                              <td>Kuning</td>
+                              <td class="text-center"><span class="current-stock" data-type="KUNING">0</span></td>
+                              <td>
+                                <input
+                                  type="number"
+                                  min="0"
+                                  class="form-control form-control-sm kalung-reduce-qty-input"
+                                  data-type="KUNING"
+                                  placeholder="0"
+                                />
+                              </td>
+                            </tr>
+                          </tbody>
+                        </table>
+                      </div>
+                      <div class="mb-3">
+                        <label class="form-label">Pengurang Stok</label>
+                        <input type="text" class="form-control" id="pengurangStokKalungBulk" required />
+                      </div>
+                      <div class="mb-3">
+                        <label class="form-label">Keterangan</label>
+                        <textarea
+                          class="form-control"
+                          id="keteranganKurangiKalungBulk"
+                          rows="2"
+                          placeholder="Opsional"
+                        ></textarea>
+                      </div>
+                      <div class="d-flex gap-2">
+                        <button type="reset" class="btn btn-outline-secondary w-25" id="resetBulkKalungReduceBtn">
+                          Reset
+                        </button>
+                        <button type="submit" class="btn btn-warning flex-grow-1" id="submitBulkKalungReduceBtn">
+                          Simpan Pengurangan
+                        </button>
+                      </div>
+                      <small class="text-muted d-block mt-2">Hanya jumlah > 0 yang akan diproses.</small>
+                    </form>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Modal Update Stok KALUNG (Bulk) -->
+            <div
+              class="modal fade"
+              id="modalUpdateStokKalung"
+              tabindex="-1"
+              aria-labelledby="modalUpdateStokKalungLabel"
+              aria-hidden="true"
+            >
+              <div class="modal-dialog modal-lg">
+                <div class="modal-content">
+                  <div class="modal-header">
+                    <h5 class="modal-title" id="modalUpdateStokKalungLabel">Update Stok KALUNG</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Tutup"></button>
+                  </div>
+                  <div class="modal-body">
+                    <form id="formUpdateStokKalungBulk">
+                      <div class="mb-3">
+                        <label class="form-label">Jenis Barang</label>
+                        <input
+                          type="text"
+                          id="jenisUpdateKalungDisplay"
+                          class="form-control"
+                          readonly
+                          style="background-color: #f8f9fa"
+                        />
+                        <input type="hidden" id="jenisUpdateKalung" />
+                      </div>
+                      <div class="table-responsive hala-bulk-table mb-3">
+                        <table class="table table-sm table-bordered align-middle">
+                          <thead class="table-info">
+                            <tr>
+                              <th style="width: 40%">Warna</th>
+                              <th style="width: 30%" class="text-center">Stok Saat Ini</th>
+                              <th style="width: 30%">Update Jadi</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            <tr>
+                              <td>Hijau</td>
+                              <td class="text-center"><span class="current-stock" data-type="HIJAU">0</span></td>
+                              <td>
+                                <input
+                                  type="number"
+                                  min="0"
+                                  class="form-control form-control-sm kalung-update-qty-input"
+                                  data-type="HIJAU"
+                                  placeholder="(tetap)"
+                                />
+                              </td>
+                            </tr>
+                            <tr>
+                              <td>Biru</td>
+                              <td class="text-center"><span class="current-stock" data-type="BIRU">0</span></td>
+                              <td>
+                                <input
+                                  type="number"
+                                  min="0"
+                                  class="form-control form-control-sm kalung-update-qty-input"
+                                  data-type="BIRU"
+                                  placeholder="(tetap)"
+                                />
+                              </td>
+                            </tr>
+                            <tr>
+                              <td>Putih</td>
+                              <td class="text-center"><span class="current-stock" data-type="PUTIH">0</span></td>
+                              <td>
+                                <input
+                                  type="number"
+                                  min="0"
+                                  class="form-control form-control-sm kalung-update-qty-input"
+                                  data-type="PUTIH"
+                                  placeholder="(tetap)"
+                                />
+                              </td>
+                            </tr>
+                            <tr>
+                              <td>Pink</td>
+                              <td class="text-center"><span class="current-stock" data-type="PINK">0</span></td>
+                              <td>
+                                <input
+                                  type="number"
+                                  min="0"
+                                  class="form-control form-control-sm kalung-update-qty-input"
+                                  data-type="PINK"
+                                  placeholder="(tetap)"
+                                />
+                              </td>
+                            </tr>
+                            <tr>
+                              <td>Kuning</td>
+                              <td class="text-center"><span class="current-stock" data-type="KUNING">0</span></td>
+                              <td>
+                                <input
+                                  type="number"
+                                  min="0"
+                                  class="form-control form-control-sm kalung-update-qty-input"
+                                  data-type="KUNING"
+                                  placeholder="(tetap)"
+                                />
+                              </td>
+                            </tr>
+                          </tbody>
+                        </table>
+                      </div>
+                      <div class="mb-3">
+                        <label class="form-label">Nama Staf</label>
+                        <input type="text" class="form-control" id="petugasUpdateStokKalungBulk" required />
+                      </div>
+                      <div class="mb-3">
+                        <label class="form-label">Keterangan</label>
+                        <textarea
+                          class="form-control"
+                          id="keteranganUpdateKalungBulk"
+                          rows="2"
+                          placeholder="Opsional"
+                        ></textarea>
+                      </div>
+                      <div class="d-flex gap-2">
+                        <button type="reset" class="btn btn-outline-secondary w-25" id="resetBulkKalungUpdateBtn">
+                          Reset
+                        </button>
+                        <button type="submit" class="btn btn-primary flex-grow-1" id="submitBulkKalungUpdateBtn">
+                          Simpan Perubahan
+                        </button>
+                      </div>
                     </form>
                   </div>
                 </div>
@@ -1253,6 +1748,467 @@
                           <tr class="table-active">
                             <th colspan="3" class="text-end">Total:</th>
                             <th class="text-center" id="hala-detail-total">0</th>
+                          </tr>
+                        </tfoot>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Modal Detail KALUNG -->
+            <div
+              class="modal fade"
+              id="modalDetailKalung"
+              tabindex="-1"
+              aria-labelledby="modalDetailKalungLabel"
+              aria-hidden="true"
+            >
+              <div class="modal-dialog modal-lg">
+                <div class="modal-content">
+                  <div class="modal-header">
+                    <h5 class="modal-title" id="modalDetailKalungLabel">Detail Stok KALUNG</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Tutup"></button>
+                  </div>
+                  <div class="modal-body">
+                    <div class="table-responsive">
+                      <table class="table table-sm table-striped align-middle">
+                        <thead class="table-light">
+                          <tr>
+                            <th style="width: 10%">No</th>
+                            <th style="width: 40%">Warna</th>
+                            <th style="width: 20%">Kode</th>
+                            <th style="width: 30%" class="text-center">Jumlah</th>
+                          </tr>
+                        </thead>
+                        <tbody id="kalung-detail-table-body"></tbody>
+                        <tfoot>
+                          <tr>
+                            <th colspan="3" class="text-end">Total</th>
+                            <th class="text-center" id="kalung-detail-total">0</th>
+                          </tr>
+                        </tfoot>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Modal Tambah Stok LIONTIN (Bulk) -->
+            <div
+              class="modal fade"
+              id="modalTambahStokLiontin"
+              tabindex="-1"
+              aria-labelledby="modalTambahStokLiontinLabel"
+              aria-hidden="true"
+            >
+              <div class="modal-dialog modal-lg">
+                <div class="modal-content">
+                  <div class="modal-header">
+                    <h5 class="modal-title" id="modalTambahStokLiontinLabel">Tambah Stok LIONTIN</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Tutup"></button>
+                  </div>
+                  <div class="modal-body">
+                    <form id="formTambahStokLiontinBulk">
+                      <div class="mb-3">
+                        <label class="form-label">Jenis Barang</label>
+                        <input
+                          type="text"
+                          id="jenisTambahLiontinDisplay"
+                          class="form-control"
+                          readonly
+                          style="background-color: #f8f9fa"
+                        />
+                        <input type="hidden" id="jenisTambahLiontin" />
+                      </div>
+                      <div class="table-responsive hala-bulk-table mb-3">
+                        <table class="table table-sm table-bordered align-middle">
+                          <thead class="table-success">
+                            <tr>
+                              <th style="width: 50%">Warna</th>
+                              <th style="width: 50%">Jumlah</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            <tr>
+                              <td>Hijau</td>
+                              <td>
+                                <input
+                                  type="number"
+                                  min="0"
+                                  class="form-control form-control-sm liontin-add-qty-input"
+                                  data-type="HIJAU"
+                                  placeholder="0"
+                                />
+                              </td>
+                            </tr>
+                            <tr>
+                              <td>Biru</td>
+                              <td>
+                                <input
+                                  type="number"
+                                  min="0"
+                                  class="form-control form-control-sm liontin-add-qty-input"
+                                  data-type="BIRU"
+                                  placeholder="0"
+                                />
+                              </td>
+                            </tr>
+                            <tr>
+                              <td>Putih</td>
+                              <td>
+                                <input
+                                  type="number"
+                                  min="0"
+                                  class="form-control form-control-sm liontin-add-qty-input"
+                                  data-type="PUTIH"
+                                  placeholder="0"
+                                />
+                              </td>
+                            </tr>
+                            <tr>
+                              <td>Pink</td>
+                              <td>
+                                <input
+                                  type="number"
+                                  min="0"
+                                  class="form-control form-control-sm liontin-add-qty-input"
+                                  data-type="PINK"
+                                  placeholder="0"
+                                />
+                              </td>
+                            </tr>
+                            <tr>
+                              <td>Kuning</td>
+                              <td>
+                                <input
+                                  type="number"
+                                  min="0"
+                                  class="form-control form-control-sm liontin-add-qty-input"
+                                  data-type="KUNING"
+                                  placeholder="0"
+                                />
+                              </td>
+                            </tr>
+                          </tbody>
+                        </table>
+                      </div>
+                      <div class="mb-3">
+                        <label class="form-label">Penambah Stok</label>
+                        <input type="text" class="form-control" id="penambahStokLiontinBulk" required />
+                      </div>
+                      <div class="d-flex gap-2">
+                        <button type="reset" class="btn btn-outline-secondary w-25" id="resetBulkLiontinAddBtn">
+                          Reset
+                        </button>
+                        <button type="submit" class="btn btn-primary flex-grow-1" id="submitBulkLiontinAddBtn">
+                          Simpan Semua
+                        </button>
+                      </div>
+                      <small class="text-muted d-block mt-2">Hanya jumlah > 0 yang akan diproses.</small>
+                    </form>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Modal Kurangi Stok LIONTIN (Bulk) -->
+            <div
+              class="modal fade"
+              id="modalKurangiStokLiontin"
+              tabindex="-1"
+              aria-labelledby="modalKurangiStokLiontinLabel"
+              aria-hidden="true"
+            >
+              <div class="modal-dialog modal-lg">
+                <div class="modal-content">
+                  <div class="modal-header">
+                    <h5 class="modal-title" id="modalKurangiStokLiontinLabel">Kurangi Stok LIONTIN</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Tutup"></button>
+                  </div>
+                  <div class="modal-body">
+                    <form id="formKurangiStokLiontinBulk">
+                      <div class="mb-3">
+                        <label class="form-label">Jenis Barang</label>
+                        <input
+                          type="text"
+                          id="jenisKurangiLiontinDisplay"
+                          class="form-control"
+                          readonly
+                          style="background-color: #f8f9fa"
+                        />
+                        <input type="hidden" id="jenisKurangiLiontin" />
+                      </div>
+                      <div class="table-responsive hala-bulk-table mb-3">
+                        <table class="table table-sm table-bordered align-middle">
+                          <thead class="table-warning">
+                            <tr>
+                              <th style="width: 40%">Warna</th>
+                              <th style="width: 30%" class="text-center">Stok Saat Ini</th>
+                              <th style="width: 30%">Kurangi</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            <tr>
+                              <td>Hijau</td>
+                              <td class="text-center"><span class="current-stock" data-type="HIJAU">0</span></td>
+                              <td>
+                                <input
+                                  type="number"
+                                  min="0"
+                                  class="form-control form-control-sm liontin-reduce-qty-input"
+                                  data-type="HIJAU"
+                                  placeholder="0"
+                                />
+                              </td>
+                            </tr>
+                            <tr>
+                              <td>Biru</td>
+                              <td class="text-center"><span class="current-stock" data-type="BIRU">0</span></td>
+                              <td>
+                                <input
+                                  type="number"
+                                  min="0"
+                                  class="form-control form-control-sm liontin-reduce-qty-input"
+                                  data-type="BIRU"
+                                  placeholder="0"
+                                />
+                              </td>
+                            </tr>
+                            <tr>
+                              <td>Putih</td>
+                              <td class="text-center"><span class="current-stock" data-type="PUTIH">0</span></td>
+                              <td>
+                                <input
+                                  type="number"
+                                  min="0"
+                                  class="form-control form-control-sm liontin-reduce-qty-input"
+                                  data-type="PUTIH"
+                                  placeholder="0"
+                                />
+                              </td>
+                            </tr>
+                            <tr>
+                              <td>Pink</td>
+                              <td class="text-center"><span class="current-stock" data-type="PINK">0</span></td>
+                              <td>
+                                <input
+                                  type="number"
+                                  min="0"
+                                  class="form-control form-control-sm liontin-reduce-qty-input"
+                                  data-type="PINK"
+                                  placeholder="0"
+                                />
+                              </td>
+                            </tr>
+                            <tr>
+                              <td>Kuning</td>
+                              <td class="text-center"><span class="current-stock" data-type="KUNING">0</span></td>
+                              <td>
+                                <input
+                                  type="number"
+                                  min="0"
+                                  class="form-control form-control-sm liontin-reduce-qty-input"
+                                  data-type="KUNING"
+                                  placeholder="0"
+                                />
+                              </td>
+                            </tr>
+                          </tbody>
+                        </table>
+                      </div>
+                      <div class="mb-3">
+                        <label class="form-label">Pengurang Stok</label>
+                        <input type="text" class="form-control" id="pengurangStokLiontinBulk" required />
+                      </div>
+                      <div class="mb-3">
+                        <label class="form-label">Keterangan</label>
+                        <textarea
+                          class="form-control"
+                          id="keteranganKurangiLiontinBulk"
+                          rows="2"
+                          placeholder="Opsional"
+                        ></textarea>
+                      </div>
+                      <div class="d-flex gap-2">
+                        <button type="reset" class="btn btn-outline-secondary w-25" id="resetBulkLiontinReduceBtn">
+                          Reset
+                        </button>
+                        <button type="submit" class="btn btn-warning flex-grow-1" id="submitBulkLiontinReduceBtn">
+                          Simpan Pengurangan
+                        </button>
+                      </div>
+                      <small class="text-muted d-block mt-2">Hanya jumlah > 0 yang akan diproses.</small>
+                    </form>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Modal Update Stok LIONTIN (Bulk) -->
+            <div
+              class="modal fade"
+              id="modalUpdateStokLiontin"
+              tabindex="-1"
+              aria-labelledby="modalUpdateStokLiontinLabel"
+              aria-hidden="true"
+            >
+              <div class="modal-dialog modal-lg">
+                <div class="modal-content">
+                  <div class="modal-header">
+                    <h5 class="modal-title" id="modalUpdateStokLiontinLabel">Update Stok LIONTIN</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Tutup"></button>
+                  </div>
+                  <div class="modal-body">
+                    <form id="formUpdateStokLiontinBulk">
+                      <div class="mb-3">
+                        <label class="form-label">Jenis Barang</label>
+                        <input
+                          type="text"
+                          id="jenisUpdateLiontinDisplay"
+                          class="form-control"
+                          readonly
+                          style="background-color: #f8f9fa"
+                        />
+                        <input type="hidden" id="jenisUpdateLiontin" />
+                      </div>
+                      <div class="table-responsive hala-bulk-table mb-3">
+                        <table class="table table-sm table-bordered align-middle">
+                          <thead class="table-info">
+                            <tr>
+                              <th style="width: 40%">Warna</th>
+                              <th style="width: 30%" class="text-center">Stok Saat Ini</th>
+                              <th style="width: 30%">Update Jadi</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            <tr>
+                              <td>Hijau</td>
+                              <td class="text-center"><span class="current-stock" data-type="HIJAU">0</span></td>
+                              <td>
+                                <input
+                                  type="number"
+                                  min="0"
+                                  class="form-control form-control-sm liontin-update-qty-input"
+                                  data-type="HIJAU"
+                                  placeholder="(tetap)"
+                                />
+                              </td>
+                            </tr>
+                            <tr>
+                              <td>Biru</td>
+                              <td class="text-center"><span class="current-stock" data-type="BIRU">0</span></td>
+                              <td>
+                                <input
+                                  type="number"
+                                  min="0"
+                                  class="form-control form-control-sm liontin-update-qty-input"
+                                  data-type="BIRU"
+                                  placeholder="(tetap)"
+                                />
+                              </td>
+                            </tr>
+                            <tr>
+                              <td>Putih</td>
+                              <td class="text-center"><span class="current-stock" data-type="PUTIH">0</span></td>
+                              <td>
+                                <input
+                                  type="number"
+                                  min="0"
+                                  class="form-control form-control-sm liontin-update-qty-input"
+                                  data-type="PUTIH"
+                                  placeholder="(tetap)"
+                                />
+                              </td>
+                            </tr>
+                            <tr>
+                              <td>Pink</td>
+                              <td class="text-center"><span class="current-stock" data-type="PINK">0</span></td>
+                              <td>
+                                <input
+                                  type="number"
+                                  min="0"
+                                  class="form-control form-control-sm liontin-update-qty-input"
+                                  data-type="PINK"
+                                  placeholder="(tetap)"
+                                />
+                              </td>
+                            </tr>
+                            <tr>
+                              <td>Kuning</td>
+                              <td class="text-center"><span class="current-stock" data-type="KUNING">0</span></td>
+                              <td>
+                                <input
+                                  type="number"
+                                  min="0"
+                                  class="form-control form-control-sm liontin-update-qty-input"
+                                  data-type="KUNING"
+                                  placeholder="(tetap)"
+                                />
+                              </td>
+                            </tr>
+                          </tbody>
+                        </table>
+                      </div>
+                      <div class="mb-3">
+                        <label class="form-label">Nama Staf</label>
+                        <input type="text" class="form-control" id="petugasUpdateStokLiontinBulk" required />
+                      </div>
+                      <div class="mb-3">
+                        <label class="form-label">Keterangan</label>
+                        <textarea
+                          class="form-control"
+                          id="keteranganUpdateLiontinBulk"
+                          rows="2"
+                          placeholder="Opsional"
+                        ></textarea>
+                      </div>
+                      <div class="d-flex gap-2">
+                        <button type="reset" class="btn btn-outline-secondary w-25" id="resetBulkLiontinUpdateBtn">
+                          Reset
+                        </button>
+                        <button type="submit" class="btn btn-primary flex-grow-1" id="submitBulkLiontinUpdateBtn">
+                          Simpan Perubahan
+                        </button>
+                      </div>
+                    </form>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Modal Detail LIONTIN -->
+            <div
+              class="modal fade"
+              id="modalDetailLiontin"
+              tabindex="-1"
+              aria-labelledby="modalDetailLiontinLabel"
+              aria-hidden="true"
+            >
+              <div class="modal-dialog modal-lg">
+                <div class="modal-content">
+                  <div class="modal-header">
+                    <h5 class="modal-title" id="modalDetailLiontinLabel">Detail Stok LIONTIN</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Tutup"></button>
+                  </div>
+                  <div class="modal-body">
+                    <div class="table-responsive">
+                      <table class="table table-sm table-striped align-middle">
+                        <thead class="table-light">
+                          <tr>
+                            <th style="width: 10%">No</th>
+                            <th style="width: 40%">Warna</th>
+                            <th style="width: 20%">Kode</th>
+                            <th style="width: 30%" class="text-center">Jumlah</th>
+                          </tr>
+                        </thead>
+                        <tbody id="liontin-detail-table-body"></tbody>
+                        <tfoot>
+                          <tr>
+                            <th colspan="3" class="text-end">Total</th>
+                            <th class="text-center" id="liontin-detail-total">0</th>
                           </tr>
                         </tfoot>
                       </table>

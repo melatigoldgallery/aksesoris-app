@@ -640,7 +640,17 @@
 #modalKurangiStokHala .modal-dialog,
 #modalUpdateStokHala .modal-dialog,
 #modalUpdateKomputer .modal-dialog,
-#modalDetailHala .modal-dialog {
+#modalDetailHala .modal-dialog,
+#modalTambahStokKalung .modal-dialog,
+#modalKurangiStokKalung .modal-dialog,
+#modalDetailKalung .modal-dialog,
+#modalUpdateStokKalung .modal-dialog,
+#modalTambahStokLiontin .modal-dialog,
+#modalKurangiStokLiontin .modal-dialog,
+#modalDetailLiontin .modal-dialog,
+#modalUpdateStokLiontin .modal-dialog,
+#modalUpdateKomputerWarna .modal-dialog,
+#modalDetailWarna .modal-dialog {
   max-width: 400px;
 }
 
@@ -671,7 +681,16 @@
 #modalTambahStokHala .modal-header,
 #modalKurangiStokHala .modal-header,
 #modalUpdateStokHala .modal-header,
-#modalUpdateKomputer .modal-header {
+#modalUpdateKomputer .modal-header,
+#modalTambahStokKalung .modal-header,
+#modalKurangiStokKalung .modal-header,
+#modalDetailKalung .modal-header,
+#modalUpdateStokKalung .modal-header,
+#modalTambahStokLiontin .modal-header,
+#modalKurangiStokLiontin .modal-header,
+#modalDetailLiontin .modal-header,
+#modalUpdateStokLiontin .modal-header,
+#modalDetailWarna .modal-header {
   padding: 10px 14px;
 }
 
@@ -693,7 +712,7 @@
 #modalKurangiStokHala .modal-body,
 #modalUpdateStokHala .modal-body,
 #modalUpdateKomputer .modal-body {
-  padding: 12px 14px;
+  padding: 10px 14px;
   font-size: 0.95rem;
 }
 
@@ -714,7 +733,8 @@
 #modalTambahStokHala .form-label,
 #modalKurangiStokHala .form-label,
 #modalUpdateStokHala .form-label,
-#modalUpdateKomputer .form-label {
+#modalUpdateKomputer .form-label,
+#modalUpdateStokKalung .form-label {
   font-size: 0.75rem;
   margin-bottom: 0px;
 }
@@ -725,7 +745,14 @@
 #modalTambahStokHala .form-control,
 #modalKurangiStokHala .form-control,
 #modalUpdateStokHala .form-control,
-#modalUpdateKomputer .form-control {
+#modalUpdateKomputer .form-control,
+#modalUpdateStokKalung .form-control,
+#modalTambahStokKalung .form-control,
+#modalUpdateStokLiontin .form-control,
+#modalTambahStokLiontin .form-control,
+#modalUpdateKomputerWarna .form-control,
+#modalTambahStokKomputerWarna .form-control
+{
   padding: 8px 10px;
   font-size: 0.88rem;
 }

@@ -57,6 +57,25 @@ const halaJewelryMapping = {
   SA: "Giwang",
   GA: "Gelang",
 };
+
+// Jenis warna khusus untuk KALUNG (typed model mirip HALA)
+const kalungColorTypes = ["HIJAU", "BIRU", "PUTIH", "PINK", "KUNING"];
+const kalungColorMapping = {
+  HIJAU: "Hijau",
+  BIRU: "Biru",
+  PUTIH: "Putih",
+  PINK: "Pink",
+  KUNING: "Kuning",
+};
+// Jenis warna khusus untuk LIONTIN (sama seperti KALUNG)
+const liontinColorTypes = ["HIJAU", "BIRU", "PUTIH", "PINK", "KUNING"];
+const liontinColorMapping = {
+  HIJAU: "Hijau",
+  BIRU: "Biru",
+  PUTIH: "Putih",
+  PINK: "Pink",
+  KUNING: "Kuning",
+};
 const categoryMapping = {
   "Stok Brankas": "brankas",
   "Belum Posting": "posting",
@@ -237,8 +256,7 @@ async function saveData(category, type) {
       await setDoc(doc(firestore, "stocks", category), stockData[category]);
       stockCacheMeta.set(category, Date.now());
       updateCache();
-    } catch (e) {
-    }
+    } catch (e) {}
   }
 }
 
@@ -278,6 +296,138 @@ function initializeHalaStructure(categoryData, mainCat) {
   });
 
   return categoryData[mainCat];
+}
+
+// === Generic typed helpers (digunakan untuk KALUNG agar kode ringkas) ===
+function ensureTypedStructure(categoryData, mainCat, types) {
+  if (!categoryData[mainCat]) {
+    categoryData[mainCat] = { quantity: 0, lastUpdated: null, history: [], details: {} };
+  }
+  const node = categoryData[mainCat];
+  if (!node.details) node.details = {};
+  types.forEach((t) => {
+    if (node.details[t] === undefined) node.details[t] = 0;
+  });
+  return node;
+}
+
+function calculateTypedTotal(categoryData, mainCat, types) {
+  const node = categoryData[mainCat];
+  if (!node || !node.details) return 0;
+  return types.reduce((sum, t) => sum + parseInt(node.details[t] || 0), 0);
+}
+
+async function addTypedBulk(category, mainCat, types, typeToName, items, adder) {
+  await fetchStockData();
+  if (!stockData[category]) stockData[category] = {};
+  const node = ensureTypedStructure(stockData[category], mainCat, types);
+  let total = 0;
+  items.forEach(({ type, qty }) => {
+    node.details[type] += qty;
+    total += qty;
+  });
+  node.quantity = calculateTypedTotal(stockData[category], mainCat, types);
+  node.lastUpdated = new Date().toISOString();
+  node.history.unshift({
+    date: node.lastUpdated,
+    action: "Tambah Bulk",
+    quantity: total,
+    adder,
+    items: items.map((it) => ({ jewelryType: it.type, jewelryName: typeToName[it.type], quantity: it.qty })),
+  });
+  if (node.history.length > 10) node.history = node.history.slice(0, 10);
+  await saveData(category, mainCat);
+  await populateTables();
+}
+
+async function reduceTypedBulk(category, mainCat, types, typeToName, items, pengurang, keterangan) {
+  await fetchStockData();
+  if (!stockData[category]) stockData[category] = {};
+  const node = ensureTypedStructure(stockData[category], mainCat, types);
+  const insufficient = [];
+  items.forEach(({ type, qty }) => {
+    const cur = parseInt(node.details[type] || 0);
+    if (qty > cur) insufficient.push({ type, name: typeToName[type], requested: qty, current: cur });
+  });
+  if (insufficient.length) {
+    const msg = insufficient.map((i) => `${i.name} (${i.type}) diminta ${i.requested}, stok ${i.current}`).join("; ");
+    throw new Error("Stok tidak cukup: " + msg);
+  }
+  let total = 0;
+  items.forEach(({ type, qty }) => {
+    node.details[type] -= qty;
+    total += qty;
+  });
+  node.quantity = calculateTypedTotal(stockData[category], mainCat, types);
+  node.lastUpdated = new Date().toISOString();
+  node.history.unshift({
+    date: node.lastUpdated,
+    action: "Kurangi Bulk",
+    quantity: total,
+    pengurang,
+    keterangan,
+    items: items.map((it) => ({ jewelryType: it.type, jewelryName: typeToName[it.type], quantity: it.qty })),
+  });
+  if (node.history.length > 10) node.history = node.history.slice(0, 10);
+  await saveData(category, mainCat);
+  await populateTables();
+}
+
+async function updateTypedBulk(category, mainCat, types, typeToName, updates, petugas, keterangan) {
+  await fetchStockData();
+  if (!stockData[category]) stockData[category] = {};
+  const node = ensureTypedStructure(stockData[category], mainCat, types);
+  const changes = [];
+  updates.forEach(({ type, newQty }) => {
+    const oldQty = parseInt(node.details[type] || 0);
+    if (newQty !== null && !isNaN(newQty) && newQty !== oldQty) {
+      node.details[type] = newQty;
+      changes.push({ type, name: typeToName[type], oldQty, newQty, diff: newQty - oldQty });
+    }
+  });
+  if (!changes.length) throw new Error("Tidak ada perubahan yang diinput.");
+  node.quantity = calculateTypedTotal(stockData[category], mainCat, types);
+  node.lastUpdated = new Date().toISOString();
+  const totalDiff = changes.reduce((a, c) => a + Math.abs(c.diff), 0);
+  node.history.unshift({
+    date: node.lastUpdated,
+    action: "Update Bulk",
+    quantity: totalDiff,
+    petugas,
+    keterangan,
+    items: changes.map((c) => ({
+      jewelryType: c.type,
+      jewelryName: c.name,
+      quantity: c.diff,
+      oldQuantity: c.oldQty,
+      newQuantity: c.newQty,
+    })),
+  });
+  if (node.history.length > 10) node.history = node.history.slice(0, 10);
+  await saveData(category, mainCat);
+  await populateTables();
+}
+
+// Wrapper untuk KALUNG yang memakai helper generic
+async function addStockKalungBulk(category, items, adder) {
+  return addTypedBulk(category, "KALUNG", kalungColorTypes, kalungColorMapping, items, adder);
+}
+async function reduceStockKalungBulk(category, items, pengurang, keterangan) {
+  return reduceTypedBulk(category, "KALUNG", kalungColorTypes, kalungColorMapping, items, pengurang, keterangan);
+}
+async function updateStockKalungBulk(category, updates, petugas, keterangan) {
+  return updateTypedBulk(category, "KALUNG", kalungColorTypes, kalungColorMapping, updates, petugas, keterangan);
+}
+
+// Wrapper untuk LIONTIN yang memakai helper generic
+async function addStockLiontinBulk(category, items, adder) {
+  return addTypedBulk(category, "LIONTIN", liontinColorTypes, liontinColorMapping, items, adder);
+}
+async function reduceStockLiontinBulk(category, items, pengurang, keterangan) {
+  return reduceTypedBulk(category, "LIONTIN", liontinColorTypes, liontinColorMapping, items, pengurang, keterangan);
+}
+async function updateStockLiontinBulk(category, updates, petugas, keterangan) {
+  return updateTypedBulk(category, "LIONTIN", liontinColorTypes, liontinColorMapping, updates, petugas, keterangan);
 }
 
 function calculateHalaTotal(categoryData, mainCat) {
@@ -419,14 +569,21 @@ export async function populateTables() {
 
         tr.innerHTML = `
           <td class="fw-bold">${idx + 1}</td>
-          <td class="fw-medium jenis-column">${subCat} ${
+          <td class="fw-medium jenis-column d-flex justify-content-between">${subCat} ${
           mainCat === "HALA" ||
           mainCat === "KENDARI" ||
           mainCat === "BERLIAN" ||
           mainCat === "SDW" ||
           mainCat === "EMAS_BALI"
-            ? `<button class="btn btn-outline-primary btn-sm detail-hala-btn btn-hala" data-main="${mainCat}" data-category="${categoryKey}" title="Detail ${mainCat}"><i class="fas fa-eye"></i></button>
-              `
+            ? `<button class="btn btn-outline-primary btn-sm detail-hala-btn btn-hala" data-main="${mainCat}" data-category="${categoryKey}" title="Detail ${mainCat}"><i class="fas fa-eye"></i></button>`
+            : ""
+        } ${
+          mainCat === "KALUNG"
+            ? `<button class="btn btn-outline-primary btn-sm detail-kalung-btn ms-1" data-main="KALUNG" data-category="${categoryKey}" title="Detail Kalung"><i class="fas fa-eye"></i></button>`
+            : ""
+        } ${
+          mainCat === "LIONTIN"
+            ? `<button class="btn btn-outline-primary btn-sm detail-liontin-btn ms-1" data-main="LIONTIN" data-category="${categoryKey}" title="Detail Liontin"><i class="fas fa-eye"></i></button>`
             : ""
         }</td>
           <td class="text-center">
@@ -586,10 +743,19 @@ let komputerEditMainCat = "";
 document.body.addEventListener("click", function (e) {
   if (e.target.classList.contains("edit-komputer-btn")) {
     komputerEditMainCat = e.target.dataset.main;
-    document.getElementById("updateKomputerJumlah").value =
-      stockData["stok-komputer"][komputerEditMainCat]?.quantity || 0;
-    document.getElementById("updateKomputerJenis").value = komputerEditMainCat;
-    $("#modalUpdateKomputer").modal("show");
+    if (komputerEditMainCat === "KALUNG" || komputerEditMainCat === "LIONTIN") {
+      const disp = document.getElementById("jenisUpdateKomputerWarnaDisplay");
+      const hid = document.getElementById("jenisUpdateKomputerWarna");
+      if (disp) disp.value = komputerEditMainCat;
+      if (hid) hid.value = komputerEditMainCat;
+      document.querySelectorAll(".komputer-warna-qty-input").forEach((inp) => (inp.value = ""));
+      $("#modalUpdateKomputerWarna").modal("show");
+    } else {
+      document.getElementById("updateKomputerJumlah").value =
+        stockData["stok-komputer"][komputerEditMainCat]?.quantity || 0;
+      document.getElementById("updateKomputerJenis").value = komputerEditMainCat;
+      $("#modalUpdateKomputer").modal("show");
+    }
   }
 });
 
@@ -605,13 +771,42 @@ document.getElementById("formUpdateKomputer").onsubmit = async function (e) {
   $("#modalUpdateKomputer").modal("hide");
 };
 
-async function updateStokKomputer(jenis, jumlah) {
+// Khusus KALUNG: form per-warna untuk Stok Komputer (menyimpan total)
+const formUpdateKomputerWarna = document.getElementById("formUpdateKomputerWarna");
+if (formUpdateKomputerWarna) {
+  formUpdateKomputerWarna.onsubmit = async function (e) {
+    e.preventDefault();
+    try {
+      const jenis = document.getElementById("jenisUpdateKomputerWarna").value || "";
+      const inputs = Array.from(document.querySelectorAll(".komputer-warna-qty-input"));
+      const details = inputs.reduce((acc, inp) => {
+        const type = inp.dataset.type;
+        const val = parseInt(inp.value || "0") || 0;
+        if (type) acc[type] = val;
+        return acc;
+      }, {});
+      const total = Object.values(details).reduce((sum, v) => sum + (parseInt(v) || 0), 0);
+      if (!jenis) throw new Error("Jenis tidak valid");
+      await updateStokKomputer(jenis, total, details);
+      $("#modalUpdateKomputerWarna").modal("hide");
+    } catch (err) {
+      console.error("Gagal update stok komputer per warna", err);
+      showErrorNotification("Gagal update stok komputer");
+    }
+  };
+}
+
+async function updateStokKomputer(jenis, jumlah, details) {
   await fetchStockData();
   if (!stockData["stok-komputer"]) return;
   if (!stockData["stok-komputer"][jenis]) {
-    stockData["stok-komputer"][jenis] = { quantity: 0, lastUpdated: null, history: [] };
+    stockData["stok-komputer"][jenis] = { quantity: 0, lastUpdated: null, history: [], details: {} };
   }
   stockData["stok-komputer"][jenis].quantity = parseInt(jumlah);
+  // Simpan rincian per-warna bila disediakan (khusus KALUNG/LIONTIN)
+  if (details && typeof details === "object") {
+    stockData["stok-komputer"][jenis].details = { ...details };
+  }
   stockData["stok-komputer"][jenis].lastUpdated = new Date().toISOString();
   await saveData("stok-komputer", jenis);
   await populateTables();
@@ -801,6 +996,86 @@ function showHalaDetail(category, mainCat) {
     "modalDetailHalaLabel"
   ).textContent = `Detail Stok ${mainCat} - ${reverseCategoryMapping[category]}`;
 
+  modal.show();
+}
+
+// === Fungsi untuk menampilkan detail KALUNG ===
+function showKalungDetail(category, mainCat) {
+  const modal = new bootstrap.Modal(document.getElementById("modalDetailKalung"));
+  const tbody = document.getElementById("kalung-detail-table-body");
+  const totalEl = document.getElementById("kalung-detail-total");
+
+  tbody.innerHTML = "";
+
+  if (!stockData[category] || !stockData[category][mainCat] || !stockData[category][mainCat].details) {
+    tbody.innerHTML = `<tr><td colspan="4" class="text-center text-muted">Tidak ada data detail</td></tr>`;
+    totalEl.textContent = "0";
+    return modal.show();
+  }
+
+  const details = stockData[category][mainCat].details;
+  let total = 0;
+
+  kalungColorTypes.forEach((type, index) => {
+    const quantity = parseInt(details[type] || 0);
+    total += quantity;
+
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td>${index + 1}</td>
+      <td>${kalungColorMapping[type]}</td>
+      <td><span class="badge bg-primary">${type}</span></td>
+      <td class="text-center"><strong>${quantity}</strong></td>
+    `;
+    tbody.appendChild(tr);
+  });
+
+  totalEl.textContent = total;
+
+  // Update modal title dengan kategori
+  document.getElementById(
+    "modalDetailKalungLabel"
+  ).textContent = `Detail Stok KALUNG - ${reverseCategoryMapping[category]}`;
+
+  modal.show();
+}
+
+// === Fungsi untuk menampilkan detail LIONTIN ===
+function showLiontinDetail(category, mainCat) {
+  const modal = new bootstrap.Modal(document.getElementById("modalDetailLiontin"));
+  const tbody = document.getElementById("liontin-detail-table-body");
+  const totalEl = document.getElementById("liontin-detail-total");
+
+  tbody.innerHTML = "";
+
+  if (!stockData[category] || !stockData[category][mainCat] || !stockData[category][mainCat].details) {
+    tbody.innerHTML = `<tr><td colspan="4" class="text-center text-muted">Tidak ada data detail</td></tr>`;
+    totalEl.textContent = "0";
+    return modal.show();
+  }
+
+  const details = stockData[category][mainCat].details;
+  let total = 0;
+
+  liontinColorTypes.forEach((type, index) => {
+    const quantity = parseInt(details[type] || 0);
+    total += quantity;
+
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td>${index + 1}</td>
+      <td>${liontinColorMapping[type]}</td>
+      <td><span class="badge bg-primary">${type}</span></td>
+      <td class="text-center"><strong>${quantity}</strong></td>
+    `;
+    tbody.appendChild(tr);
+  });
+
+  totalEl.textContent = total;
+
+  document.getElementById(
+    "modalDetailLiontinLabel"
+  ).textContent = `Detail Stok LIONTIN - ${reverseCategoryMapping[category]}`;
   modal.show();
 }
 
@@ -1123,7 +1398,10 @@ document.body.addEventListener("click", function (e) {
   if (
     e.target.classList.contains("add-stock-btn") &&
     (e.target.dataset.main === "HALA" ||
-      ((e.target.dataset.main === "KENDARI" || e.target.dataset.main === "BERLIAN" || e.target.dataset.main === "SDW" || e.target.dataset.main === "EMAS_BALI") &&
+      ((e.target.dataset.main === "KENDARI" ||
+        e.target.dataset.main === "BERLIAN" ||
+        e.target.dataset.main === "SDW" ||
+        e.target.dataset.main === "EMAS_BALI") &&
         ["brankas", "posting"].includes(e.target.dataset.category)))
   ) {
     e.preventDefault();
@@ -1164,7 +1442,10 @@ document.body.addEventListener("click", function (e) {
   if (
     e.target.classList.contains("reduce-stock-btn") &&
     (e.target.dataset.main === "HALA" ||
-      ((e.target.dataset.main === "KENDARI" || e.target.dataset.main === "BERLIAN" || e.target.dataset.main === "SDW" || e.target.dataset.main === "EMAS_BALI") &&
+      ((e.target.dataset.main === "KENDARI" ||
+        e.target.dataset.main === "BERLIAN" ||
+        e.target.dataset.main === "SDW" ||
+        e.target.dataset.main === "EMAS_BALI") &&
         ["brankas", "posting"].includes(e.target.dataset.category)))
   ) {
     e.preventDefault();
@@ -1226,8 +1507,78 @@ document.body.addEventListener("click", function (e) {
     return;
   }
 
+  // Detail KALUNG
+  if (e.target.classList.contains("detail-kalung-btn") || e.target.closest(".detail-kalung-btn")) {
+    e.preventDefault();
+    const btn = e.target.classList.contains("detail-kalung-btn") ? e.target : e.target.closest(".detail-kalung-btn");
+    const mainCat = btn.dataset.main; // "KALUNG"
+    const categoryKey = btn.dataset.category;
+    (async () => {
+      try {
+        await fetchStockData();
+        if (!stockData[categoryKey]) stockData[categoryKey] = {};
+        ensureTypedStructure(stockData[categoryKey], mainCat, kalungColorTypes);
+      } catch {}
+      showKalungDetail(categoryKey, mainCat);
+    })();
+    return;
+  }
+
   // Tambah stok (umum, bukan HALA)
   if (e.target.classList.contains("add-stock-btn")) {
+    // LIONTIN: gunakan modal bulk
+    if (e.target.dataset.main === "LIONTIN") {
+      e.preventDefault();
+      currentMainCat = "LIONTIN";
+      currentCategory = e.target.dataset.category;
+      const form = document.getElementById("formTambahStokLiontinBulk");
+      if (form) form.reset();
+      document.querySelectorAll(".liontin-add-qty-input").forEach((inp) => (inp.value = ""));
+      const jenisDisplay = `${currentMainCat} - ${reverseCategoryMapping[currentCategory] || currentCategory}`;
+      document.getElementById("jenisTambahLiontinDisplay").value = jenisDisplay;
+      document.getElementById("jenisTambahLiontin").value = currentCategory;
+      document.getElementById("modalTambahStokLiontinLabel").textContent = `Tambah Stok ${jenisDisplay}`;
+      (async () => {
+        try {
+          await fetchStockData();
+          if (!stockData[currentCategory]) stockData[currentCategory] = {};
+          ensureTypedStructure(stockData[currentCategory], currentMainCat, liontinColorTypes);
+        } catch {}
+      })();
+      $("#modalTambahStokLiontin").modal("show");
+      return;
+    }
+    // KALUNG: gunakan modal bulk kalung
+    if (e.target.dataset.main === "KALUNG") {
+      e.preventDefault();
+      currentMainCat = "KALUNG";
+      currentCategory = e.target.dataset.category;
+
+      // Reset form KALUNG bulk add
+      const form = document.getElementById("formTambahStokKalungBulk");
+      if (form) form.reset();
+      document.querySelectorAll(".kalung-add-qty-input").forEach((inp) => (inp.value = ""));
+
+      const jenisDisplay = `${currentMainCat} - ${reverseCategoryMapping[currentCategory] || currentCategory}`;
+      const disp = document.getElementById("jenisTambahKalungDisplay");
+      const hid = document.getElementById("jenisTambahKalung");
+      const title = document.getElementById("modalTambahStokKalungLabel");
+      if (disp) disp.value = jenisDisplay;
+      if (hid) hid.value = currentCategory;
+      if (title) title.textContent = `Tambah Stok ${jenisDisplay}`;
+
+      // Pastikan struktur details siap (agar konsisten)
+      (async () => {
+        try {
+          await fetchStockData();
+          if (!stockData[currentCategory]) stockData[currentCategory] = {};
+          ensureTypedStructure(stockData[currentCategory], currentMainCat, kalungColorTypes);
+        } catch {}
+      })();
+
+      $("#modalTambahStokKalung").modal("show");
+      return;
+    }
     e.preventDefault();
     currentMainCat = e.target.dataset.main;
     currentCategory = e.target.dataset.category;
@@ -1247,6 +1598,67 @@ document.body.addEventListener("click", function (e) {
   }
   // Kurangi stok (umum, bukan HALA)
   if (e.target.classList.contains("reduce-stock-btn")) {
+    // LIONTIN
+    if (e.target.dataset.main === "LIONTIN") {
+      e.preventDefault();
+      currentMainCat = "LIONTIN";
+      currentCategory = e.target.dataset.category;
+      const form = document.getElementById("formKurangiStokLiontinBulk");
+      if (form) form.reset();
+      document.querySelectorAll(".liontin-reduce-qty-input").forEach((inp) => (inp.value = ""));
+      (async () => {
+        try {
+          await fetchStockData();
+          if (!stockData[currentCategory]) stockData[currentCategory] = {};
+          const node = ensureTypedStructure(stockData[currentCategory], currentMainCat, liontinColorTypes);
+          liontinColorTypes.forEach((t) => {
+            const span = document.querySelector(`#modalKurangiStokLiontin .current-stock[data-type="${t}"]`);
+            if (span) span.textContent = node.details && node.details[t] !== undefined ? node.details[t] : 0;
+          });
+          const jenisDisplay = `${currentMainCat} - ${reverseCategoryMapping[currentCategory] || currentCategory}`;
+          document.getElementById("jenisKurangiLiontinDisplay").value = jenisDisplay;
+          document.getElementById("jenisKurangiLiontin").value = currentCategory;
+          document.getElementById("modalKurangiStokLiontinLabel").textContent = `Kurangi Stok ${jenisDisplay}`;
+          $("#modalKurangiStokLiontin").modal("show");
+        } catch {
+          showErrorNotification("Gagal memuat stok LIONTIN.");
+        }
+      })();
+      return;
+    }
+    // KALUNG: gunakan modal bulk kalung dan muat stok saat ini
+    if (e.target.dataset.main === "KALUNG") {
+      e.preventDefault();
+      currentMainCat = "KALUNG";
+      currentCategory = e.target.dataset.category;
+
+      const form = document.getElementById("formKurangiStokKalungBulk");
+      if (form) form.reset();
+      document.querySelectorAll(".kalung-reduce-qty-input").forEach((inp) => (inp.value = ""));
+
+      (async () => {
+        try {
+          await fetchStockData();
+          if (!stockData[currentCategory]) stockData[currentCategory] = {};
+          const node = ensureTypedStructure(stockData[currentCategory], currentMainCat, kalungColorTypes);
+          kalungColorTypes.forEach((t) => {
+            const span = document.querySelector(`#modalKurangiStokKalung .current-stock[data-type="${t}"]`);
+            if (span) span.textContent = node.details && node.details[t] !== undefined ? node.details[t] : 0;
+          });
+          const jenisDisplay = `${currentMainCat} - ${reverseCategoryMapping[currentCategory] || currentCategory}`;
+          const disp = document.getElementById("jenisKurangiKalungDisplay");
+          const hid = document.getElementById("jenisKurangiKalung");
+          const title = document.getElementById("modalKurangiStokKalungLabel");
+          if (disp) disp.value = jenisDisplay;
+          if (hid) hid.value = currentCategory;
+          if (title) title.textContent = `Kurangi Stok ${jenisDisplay}`;
+          $("#modalKurangiStokKalung").modal("show");
+        } catch (err) {
+          showErrorNotification("Gagal memuat stok KALUNG.");
+        }
+      })();
+      return;
+    }
     e.preventDefault();
     currentMainCat = e.target.dataset.main;
     currentCategory = e.target.dataset.category;
@@ -1271,6 +1683,73 @@ document.body.addEventListener("click", function (e) {
     const mainCat = btn.dataset.main;
     const categoryKey = btn.dataset.category;
     const subCategory = btn.dataset.subcategory;
+
+    // KALUNG: gunakan modal update bulk warna
+    if (mainCat === "KALUNG") {
+      currentMainCat = "KALUNG";
+      currentCategory = categoryKey;
+      (async () => {
+        try {
+          await fetchStockData();
+          if (!stockData[currentCategory]) stockData[currentCategory] = {};
+          const node = ensureTypedStructure(stockData[currentCategory], currentMainCat, kalungColorTypes);
+          kalungColorTypes.forEach((t) => {
+            const span = document.querySelector(`#modalUpdateStokKalung .current-stock[data-type="${t}"]`);
+            const input = document.querySelector(`#modalUpdateStokKalung .kalung-update-qty-input[data-type="${t}"]`);
+            const cur = node.details && node.details[t] !== undefined ? node.details[t] : 0;
+            if (span) span.textContent = cur;
+            if (input) input.value = ""; // kosong berarti tidak diubah
+            if (input) input.placeholder = `(${cur})`;
+          });
+          const jenisDisplay = `${currentMainCat} - ${reverseCategoryMapping[currentCategory] || currentCategory}`;
+          const disp = document.getElementById("jenisUpdateKalungDisplay");
+          const hid = document.getElementById("jenisUpdateKalung");
+          const title = document.getElementById("modalUpdateStokKalungLabel");
+          if (disp) disp.value = jenisDisplay;
+          if (hid) hid.value = currentCategory;
+          if (title) title.textContent = `Update Stok ${jenisDisplay}`;
+          document.getElementById("petugasUpdateStokKalungBulk").value = "";
+          const ket = document.getElementById("keteranganUpdateKalungBulk");
+          if (ket) ket.value = "";
+          $("#modalUpdateStokKalung").modal("show");
+        } catch (err) {
+          showErrorNotification("Gagal memuat stok KALUNG.");
+        }
+      })();
+      return;
+    }
+
+    // LIONTIN: gunakan modal update bulk warna
+    if (mainCat === "LIONTIN") {
+      currentMainCat = "LIONTIN";
+      currentCategory = categoryKey;
+      (async () => {
+        try {
+          await fetchStockData();
+          if (!stockData[currentCategory]) stockData[currentCategory] = {};
+          const node = ensureTypedStructure(stockData[currentCategory], currentMainCat, liontinColorTypes);
+          liontinColorTypes.forEach((t) => {
+            const span = document.querySelector(`#modalUpdateStokLiontin .current-stock[data-type="${t}"]`);
+            const input = document.querySelector(`#modalUpdateStokLiontin .liontin-update-qty-input[data-type="${t}"]`);
+            const cur = node.details && node.details[t] !== undefined ? node.details[t] : 0;
+            if (span) span.textContent = cur;
+            if (input) input.value = "";
+            if (input) input.placeholder = `(${cur})`;
+          });
+          const jenisDisplay = `${currentMainCat} - ${reverseCategoryMapping[currentCategory] || currentCategory}`;
+          document.getElementById("jenisUpdateLiontinDisplay").value = jenisDisplay;
+          document.getElementById("jenisUpdateLiontin").value = currentCategory;
+          document.getElementById("modalUpdateStokLiontinLabel").textContent = `Update Stok ${jenisDisplay}`;
+          document.getElementById("petugasUpdateStokLiontinBulk").value = "";
+          const ket = document.getElementById("keteranganUpdateLiontinBulk");
+          if (ket) ket.value = "";
+          $("#modalUpdateStokLiontin").modal("show");
+        } catch {
+          showErrorNotification("Gagal memuat stok LIONTIN.");
+        }
+      })();
+      return;
+    }
 
     // Populate modal with current data
     const stockItem =
@@ -1394,6 +1873,273 @@ if (formBulkReduce) {
       document.querySelectorAll(".hala-reduce-qty-input").forEach((i) => (i.value = ""));
     });
   }
+}
+
+// === Handler Submit Modal KALUNG (Bulk) ===
+const formTambahKalung = document.getElementById("formTambahStokKalungBulk");
+if (formTambahKalung) {
+  formTambahKalung.onsubmit = async function (e) {
+    e.preventDefault();
+    const submitBtn = document.getElementById("submitBulkKalungAddBtn");
+    const originalText = submitBtn ? submitBtn.innerHTML : "";
+    try {
+      if (submitBtn) {
+        submitBtn.disabled = true;
+        submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Menyimpan...';
+      }
+      const adder = document.getElementById("penambahStokKalungBulk").value.trim();
+      if (!adder || !currentCategory) throw new Error("Data belum lengkap");
+      const inputs = Array.from(document.querySelectorAll(".kalung-add-qty-input"));
+      const items = inputs
+        .map((inp) => ({ type: inp.dataset.type, qty: parseInt(inp.value || "0") }))
+        .filter((it) => it.qty > 0);
+      if (!items.length) throw new Error("Isi minimal satu jumlah > 0");
+      await addStockKalungBulk(currentCategory, items, adder);
+      showSuccessNotification(
+        `Berhasil menambah ${items.length} warna (total ${items.reduce((a, b) => a + b.qty, 0)})`
+      );
+      $("#modalTambahStokKalung").modal("hide");
+    } catch (err) {
+      console.error("Bulk KALUNG add error", err);
+      showErrorNotification(err.message || "Gagal simpan bulk KALUNG");
+    } finally {
+      if (submitBtn) {
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = originalText;
+      }
+    }
+  };
+  const resetBtn = document.getElementById("resetBulkKalungAddBtn");
+  if (resetBtn)
+    resetBtn.addEventListener("click", () => {
+      document.querySelectorAll(".kalung-add-qty-input").forEach((i) => (i.value = ""));
+    });
+}
+
+// === Handler Submit Modal LIONTIN (Bulk) ===
+const formTambahLiontin = document.getElementById("formTambahStokLiontinBulk");
+if (formTambahLiontin) {
+  formTambahLiontin.onsubmit = async function (e) {
+    e.preventDefault();
+    const submitBtn = document.getElementById("submitBulkLiontinAddBtn");
+    const originalText = submitBtn ? submitBtn.innerHTML : "";
+    try {
+      if (submitBtn) {
+        submitBtn.disabled = true;
+        submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Menyimpan...';
+      }
+      const adder = document.getElementById("penambahStokLiontinBulk").value.trim();
+      if (!adder || !currentCategory) throw new Error("Data belum lengkap");
+      const items = Array.from(document.querySelectorAll(".liontin-add-qty-input"))
+        .map((inp) => ({ type: inp.dataset.type, qty: parseInt(inp.value || "0") }))
+        .filter((it) => it.qty > 0);
+      if (!items.length) throw new Error("Isi minimal satu jumlah > 0");
+      await addStockLiontinBulk(currentCategory, items, adder);
+      showSuccessNotification(
+        `Berhasil menambah ${items.length} warna (total ${items.reduce((a, b) => a + b.qty, 0)})`
+      );
+      $("#modalTambahStokLiontin").modal("hide");
+    } catch (err) {
+      console.error("Bulk LIONTIN add error", err);
+      showErrorNotification(err.message || "Gagal simpan bulk LIONTIN");
+    } finally {
+      if (submitBtn) {
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = originalText;
+      }
+    }
+  };
+  const resetBtn = document.getElementById("resetBulkLiontinAddBtn");
+  if (resetBtn)
+    resetBtn.addEventListener("click", () => {
+      document.querySelectorAll(".liontin-add-qty-input").forEach((i) => (i.value = ""));
+    });
+}
+
+const formKurangiLiontin = document.getElementById("formKurangiStokLiontinBulk");
+if (formKurangiLiontin) {
+  formKurangiLiontin.onsubmit = async function (e) {
+    e.preventDefault();
+    const submitBtn = document.getElementById("submitBulkLiontinReduceBtn");
+    const originalText = submitBtn ? submitBtn.innerHTML : "";
+    try {
+      if (submitBtn) {
+        submitBtn.disabled = true;
+        submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Menyimpan...';
+      }
+      const pengurang = document.getElementById("pengurangStokLiontinBulk").value.trim();
+      const keterangan = document.getElementById("keteranganKurangiLiontinBulk").value.trim();
+      if (!pengurang || !currentCategory) throw new Error("Data belum lengkap");
+      const items = Array.from(document.querySelectorAll(".liontin-reduce-qty-input"))
+        .map((inp) => ({ type: inp.dataset.type, qty: parseInt(inp.value || "0") }))
+        .filter((it) => it.qty > 0);
+      if (!items.length) throw new Error("Isi minimal satu jumlah > 0");
+      await reduceStockLiontinBulk(currentCategory, items, pengurang, keterangan);
+      showSuccessNotification(
+        `Berhasil mengurangi ${items.length} warna (total ${items.reduce((a, b) => a + b.qty, 0)})`
+      );
+      $("#modalKurangiStokLiontin").modal("hide");
+    } catch (err) {
+      console.error("Bulk LIONTIN reduce error", err);
+      showErrorNotification(err.message || "Gagal simpan pengurangan LIONTIN");
+    } finally {
+      if (submitBtn) {
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = originalText;
+      }
+    }
+  };
+  const resetBtn = document.getElementById("resetBulkLiontinReduceBtn");
+  if (resetBtn)
+    resetBtn.addEventListener("click", () => {
+      document.querySelectorAll(".liontin-reduce-qty-input").forEach((i) => (i.value = ""));
+    });
+}
+
+const formUpdateLiontin = document.getElementById("formUpdateStokLiontinBulk");
+if (formUpdateLiontin) {
+  formUpdateLiontin.onsubmit = async function (e) {
+    e.preventDefault();
+    const submitBtn = document.getElementById("submitBulkLiontinUpdateBtn");
+    const originalText = submitBtn ? submitBtn.innerHTML : "";
+    try {
+      if (submitBtn) {
+        submitBtn.disabled = true;
+        submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Menyimpan...';
+      }
+      const petugas = document.getElementById("petugasUpdateStokLiontinBulk").value.trim();
+      const keterangan = document.getElementById("keteranganUpdateLiontinBulk").value.trim();
+      if (!petugas || !currentCategory) throw new Error("Data belum lengkap");
+      const updates = [];
+      document.querySelectorAll(".liontin-update-qty-input").forEach((inp) => {
+        const val = inp.value;
+        if (val === "" || val === null || val === undefined) return;
+        const newQty = parseInt(val);
+        if (isNaN(newQty) || newQty < 0) return;
+        updates.push({ type: inp.dataset.type, newQty });
+      });
+      if (!updates.length) throw new Error("Kosongkan kolom jika tidak ingin mengubah, atau isi minimal satu warna.");
+      await updateStockLiontinBulk(currentCategory, updates, petugas, keterangan);
+      showSuccessNotification("Update LIONTIN berhasil");
+      $("#modalUpdateStokLiontin").modal("hide");
+    } catch (err) {
+      console.error("Bulk LIONTIN update error", err);
+      showErrorNotification(err.message || "Gagal update LIONTIN");
+    } finally {
+      if (submitBtn) {
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = originalText;
+      }
+    }
+  };
+  const resetBtn = document.getElementById("resetBulkLiontinUpdateBtn");
+  if (resetBtn)
+    resetBtn.addEventListener("click", () => {
+      document.querySelectorAll(".liontin-update-qty-input").forEach((i) => (i.value = ""));
+    });
+}
+
+// Detail LIONTIN
+document.body.addEventListener("click", function (e) {
+  if (e.target.classList.contains("detail-liontin-btn") || e.target.closest(".detail-liontin-btn")) {
+    e.preventDefault();
+    const btn = e.target.classList.contains("detail-liontin-btn") ? e.target : e.target.closest(".detail-liontin-btn");
+    const mainCat = btn.dataset.main; // "LIONTIN"
+    const categoryKey = btn.dataset.category;
+    (async () => {
+      try {
+        await fetchStockData();
+        if (!stockData[categoryKey]) stockData[categoryKey] = {};
+        ensureTypedStructure(stockData[categoryKey], mainCat, liontinColorTypes);
+      } catch {}
+      showLiontinDetail(categoryKey, mainCat);
+    })();
+  }
+});
+
+const formKurangiKalung = document.getElementById("formKurangiStokKalungBulk");
+if (formKurangiKalung) {
+  formKurangiKalung.onsubmit = async function (e) {
+    e.preventDefault();
+    const submitBtn = document.getElementById("submitBulkKalungReduceBtn");
+    const originalText = submitBtn ? submitBtn.innerHTML : "";
+    try {
+      if (submitBtn) {
+        submitBtn.disabled = true;
+        submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Menyimpan...';
+      }
+      const pengurang = document.getElementById("pengurangStokKalungBulk").value.trim();
+      const keterangan = document.getElementById("keteranganKurangiKalungBulk").value.trim();
+      if (!pengurang || !currentCategory) throw new Error("Data belum lengkap");
+      const inputs = Array.from(document.querySelectorAll(".kalung-reduce-qty-input"));
+      const items = inputs
+        .map((inp) => ({ type: inp.dataset.type, qty: parseInt(inp.value || "0") }))
+        .filter((it) => it.qty > 0);
+      if (!items.length) throw new Error("Isi minimal satu jumlah > 0");
+      await reduceStockKalungBulk(currentCategory, items, pengurang, keterangan);
+      showSuccessNotification(
+        `Berhasil mengurangi ${items.length} warna (total ${items.reduce((a, b) => a + b.qty, 0)})`
+      );
+      $("#modalKurangiStokKalung").modal("hide");
+    } catch (err) {
+      console.error("Bulk KALUNG reduce error", err);
+      showErrorNotification(err.message || "Gagal simpan pengurangan KALUNG");
+    } finally {
+      if (submitBtn) {
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = originalText;
+      }
+    }
+  };
+  const resetBtn = document.getElementById("resetBulkKalungReduceBtn");
+  if (resetBtn)
+    resetBtn.addEventListener("click", () => {
+      document.querySelectorAll(".kalung-reduce-qty-input").forEach((i) => (i.value = ""));
+    });
+}
+
+const formUpdateKalung = document.getElementById("formUpdateStokKalungBulk");
+if (formUpdateKalung) {
+  formUpdateKalung.onsubmit = async function (e) {
+    e.preventDefault();
+    const submitBtn = document.getElementById("submitBulkKalungUpdateBtn");
+    const originalText = submitBtn ? submitBtn.innerHTML : "";
+    try {
+      if (submitBtn) {
+        submitBtn.disabled = true;
+        submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Menyimpan...';
+      }
+      const petugas = document.getElementById("petugasUpdateStokKalungBulk").value.trim();
+      const keterangan = document.getElementById("keteranganUpdateKalungBulk").value.trim();
+      if (!petugas || !currentCategory) throw new Error("Data belum lengkap");
+      // Kumpulkan input: kosong = tidak diubah
+      const updates = [];
+      document.querySelectorAll(".kalung-update-qty-input").forEach((inp) => {
+        const val = inp.value;
+        if (val === "" || val === null || val === undefined) return;
+        const newQty = parseInt(val);
+        if (isNaN(newQty) || newQty < 0) return;
+        updates.push({ type: inp.dataset.type, newQty });
+      });
+      if (!updates.length) throw new Error("Kosongkan kolom jika tidak ingin mengubah, atau isi minimal satu warna.");
+      await updateStockKalungBulk(currentCategory, updates, petugas, keterangan);
+      showSuccessNotification("Update KALUNG berhasil");
+      $("#modalUpdateStokKalung").modal("hide");
+    } catch (err) {
+      console.error("Bulk KALUNG update error", err);
+      showErrorNotification(err.message || "Gagal update KALUNG");
+    } finally {
+      if (submitBtn) {
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = originalText;
+      }
+    }
+  };
+  const resetBtn = document.getElementById("resetBulkKalungUpdateBtn");
+  if (resetBtn)
+    resetBtn.addEventListener("click", () => {
+      document.querySelectorAll(".kalung-update-qty-input").forEach((i) => (i.value = ""));
+    });
 }
 
 function showErrorNotification(message) {

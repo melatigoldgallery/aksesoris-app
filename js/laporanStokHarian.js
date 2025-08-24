@@ -16,6 +16,8 @@ const mainCategories = [
   "SDW",
   "EMAS_BALI",
 ];
+const colorTypes = ["HIJAU", "BIRU", "PUTIH", "PINK", "KUNING"]; // mengikuti manajemenStok untuk KALUNG/LIONTIN
+const colorMapping = { HIJAU: "Hijau", BIRU: "Biru", PUTIH: "Putih", PINK: "Pink", KUNING: "Kuning" };
 const summaryCategories = ["brankas", "posting", "barang-display", "barang-rusak", "batu-lepas", "manual", "admin"];
 
 // Cache ringan untuk stok agar tidak fetch berulang via window.stockData jika halaman ini dibuka terpisah
@@ -168,9 +170,16 @@ function renderDailyReportTable(dataObj) {
 
       const tr = document.createElement("tr");
       tr.style.height = "auto";
+      const canDetail = mainCat === "KALUNG" || mainCat === "LIONTIN";
       tr.innerHTML = `
         <td class="text-center fw-bold text-muted">${i++}</td>
-        <td class="fw-semibold">${mainCat}</td>
+        <td class="fw-semibold">${mainCat} ${
+        canDetail
+          ? `<button class="btn btn-outline-primary btn-sm ms-2 daily-detail-warna-btn" data-main="${mainCat}">
+                 <i class="fas fa-eye"></i>
+               </button>`
+          : ""
+      }</td>
         <td class="text-center">
           <span class="badge bg-success position-relative">
             ${rowData.total}
@@ -201,6 +210,84 @@ function renderDailyReportTable(dataObj) {
     }
   }, 300); // Small delay for better UX
 }
+
+// Show per-warna breakdown for KALUNG/LIONTIN using current snapshot
+function showWarnaDetailFor(mainCat) {
+  const modal = new bootstrap.Modal(document.getElementById("modalDetailWarna"));
+  const tbody = document.getElementById("warna-detail-table-body");
+  const totalEl = document.getElementById("warna-detail-total");
+  const title = document.getElementById("modalDetailWarnaLabel");
+  const statusEl = document.getElementById("warna-detail-status");
+  tbody.innerHTML = "";
+  totalEl.textContent = "0";
+  title.textContent = `Detail Stok ${mainCat}`;
+  if (!stockDataSnapshot) return modal.show();
+
+  // Hitung total per warna dari semua kategori ringkasan untuk mainCat
+  const totalsByColor = { HIJAU: 0, BIRU: 0, PUTIH: 0, PINK: 0, KUNING: 0 };
+  summaryCategories.forEach((cat) => {
+    const node = stockDataSnapshot[cat] && stockDataSnapshot[cat][mainCat];
+    if (node && node.details) {
+      colorTypes.forEach((t) => {
+        totalsByColor[t] += parseInt(node.details[t] || 0);
+      });
+    }
+  });
+
+  // Ambil stok komputer: total dan (jika ada) rincian per-warna
+  const komputerNode =
+    stockDataSnapshot["stok-komputer"] && stockDataSnapshot["stok-komputer"][mainCat]
+      ? stockDataSnapshot["stok-komputer"][mainCat]
+      : null;
+  const komputerTotal = komputerNode ? parseInt(komputerNode.quantity) || 0 : 0;
+  const komputerPerWarna = { HIJAU: 0, BIRU: 0, PUTIH: 0, PINK: 0, KUNING: 0 };
+  if (komputerNode && komputerNode.details) {
+    colorTypes.forEach((t) => {
+      komputerPerWarna[t] = parseInt(komputerNode.details[t] || 0) || 0;
+    });
+  }
+  const physicalTotal = Object.values(totalsByColor).reduce((a, b) => a + b, 0);
+
+  // Render baris per warna
+  let idx = 1;
+  colorTypes.forEach((t) => {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td>${idx++}</td>
+      <td>${colorMapping[t]}</td>
+      <td>${komputerPerWarna[t]}</td>
+      <td class="text-center"><strong>${totalsByColor[t]}</strong></td>
+    `;
+    tbody.appendChild(tr);
+  });
+
+  totalEl.textContent = physicalTotal;
+
+  // Tampilkan status klop/kurang di header modal menggunakan pembanding total vs komputer
+  let statusHtml = "";
+  if (physicalTotal === komputerTotal) {
+    statusHtml = '<span class="badge bg-success">Klop</span>';
+  } else if (physicalTotal < komputerTotal) {
+    statusHtml = `<span class="badge bg-danger">Kurang ${komputerTotal - physicalTotal}</span>`;
+  } else {
+    statusHtml = `<span class="badge bg-primary">Lebih ${physicalTotal - komputerTotal}</span>`;
+  }
+  statusEl.innerHTML = statusHtml;
+
+  modal.show();
+}
+
+// Delegate click on eye buttons
+document.addEventListener("click", (e) => {
+  const btn = e.target.closest(".daily-detail-warna-btn");
+  if (!btn) return;
+  const mainCat = btn.dataset.main;
+  if (mainCat === "KALUNG" || mainCat === "LIONTIN") {
+    e.preventDefault();
+    // Ensure we have latest snapshot in this page context before showing
+    fetchStockSnapshot().then(() => showWarnaDetailFor(mainCat));
+  }
+});
 
 function exportTableToCSV() {
   const rows = Array.from(document.querySelectorAll("#daily-report-table tr"));
