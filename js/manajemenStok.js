@@ -2298,7 +2298,7 @@ document.addEventListener("DOMContentLoaded", async function () {
     initializeCache();
     await populateTables();
     setupRealtimeListener();
-  setupCrossTabSync();
+    setupCrossTabSync();
 
     // Initialize tooltips and smooth transitions
     initializeUIEnhancements();
