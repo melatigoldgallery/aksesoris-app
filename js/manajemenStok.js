@@ -33,6 +33,7 @@ const subCategories = [
   "Batu Lepas",
   "Manual",
   "Admin",
+  "DP",
   "Contoh Custom",
 ];
 // Tambah 'contoh-custom' agar ikut dimuat & (opsional) dihitung dalam ringkasan
@@ -44,6 +45,7 @@ const summaryCategories = [
   "batu-lepas",
   "manual",
   "admin",
+  "DP",
   "contoh-custom",
 ];
 
@@ -84,6 +86,7 @@ const categoryMapping = {
   "Batu Lepas": "batu-lepas",
   Manual: "manual",
   Admin: "admin",
+  DP: "DP",
   "Contoh Custom": "contoh-custom",
 };
 
@@ -96,6 +99,7 @@ const reverseCategoryMapping = {
   "batu-lepas": "Batu Lepas",
   manual: "Manual",
   admin: "Admin",
+  DP: "DP",
   "contoh-custom": "Contoh Custom",
 };
 const mainCategoryToId = {
@@ -194,6 +198,7 @@ async function fetchStockData(forceRefresh = false) {
     "batu-lepas",
     "manual",
     "admin",
+    "DP",
     "contoh-custom", // pastikan dokumen custom ikut dimuat
     "stok-komputer",
   ];
@@ -219,8 +224,8 @@ async function fetchStockData(forceRefresh = false) {
         await setDoc(categoryRef, categoryData);
       }
 
-      // Inisialisasi khusus untuk HALA di semua kategori
-      if (categoryData.HALA) {
+      // Inisialisasi khusus untuk HALA (jangan terapkan pada 'stok-komputer' karena di sana HALA adalah total manual)
+      if (category !== "stok-komputer" && categoryData.HALA) {
         initializeHalaStructure(categoryData, "HALA");
         // Update quantity total untuk HALA
         categoryData.HALA.quantity = calculateHalaTotal(categoryData, "HALA");
@@ -245,19 +250,34 @@ async function fetchStockData(forceRefresh = false) {
 async function saveData(category, type) {
   try {
     const categoryRef = doc(firestore, "stocks", category);
-    const updateData = {};
-    updateData[type] = stockData[category][type];
-    await updateDoc(categoryRef, updateData);
+    const payload = {};
+    payload[type] = stockData[category][type];
+    // Sanitize payload to remove any undefined fields (Firestore does not allow undefined)
+    const sanitized = sanitizeUndefined(payload);
+    // Merge write to avoid overwriting other fields in the document
+    await setDoc(categoryRef, sanitized, { merge: true });
+    // Mark this category as fresh so fetchStockData returns current in-memory state without refetching immediately
     stockCacheMeta.set(category, Date.now());
     updateCache();
   } catch (error) {
-    // Try create
-    try {
-      await setDoc(doc(firestore, "stocks", category), stockData[category]);
-      stockCacheMeta.set(category, Date.now());
-      updateCache();
-    } catch (e) {}
+    console.error("Error saving data:", error);
   }
+}
+
+// Recursively remove undefined in objects and convert undefined array items to null
+function sanitizeUndefined(value) {
+  if (Array.isArray(value)) {
+    return value.map((v) => sanitizeUndefined(v));
+  }
+  if (value && typeof value === "object") {
+    const result = {};
+    for (const [k, v] of Object.entries(value)) {
+      const sv = sanitizeUndefined(v);
+      if (sv !== undefined) result[k] = sv;
+    }
+    return result;
+  }
+  return value === undefined ? null : value;
 }
 
 // === Helper ===
@@ -525,7 +545,7 @@ export async function populateTables() {
               subCat === "Manual" ||
               subCat === "Admin" ||
               (halaLikeUpdateMains.includes(mainCat) &&
-                (subCat === "Rusak" || subCat === "Batu Lepas" || subCat === "Contoh Custom"))) &&
+                (subCat === "Rusak" || subCat === "Batu Lepas" || subCat === "Contoh Custom" || subCat === "DP"))) &&
             mainCat !== "HALA";
 
           actionColumn = showUpdateButton
@@ -2188,15 +2208,83 @@ function setupRealtimeListener() {
     let updated = false;
     snapshot.docChanges().forEach((change) => {
       const cat = change.doc.id;
-      if (stockData[cat]) {
-        stockData[cat] = change.doc.data();
-        stockCache.set(cat, stockData[cat]);
-        stockCacheMeta.set(cat, Date.now());
+      const incoming = change.doc.data();
+      if (!incoming) return;
+      if (!stockData[cat]) {
+        stockData[cat] = incoming;
         updated = true;
+      } else {
+        // Merge by comparing lastUpdated on each main category node, keep the newest
+        const merged = { ...stockData[cat] };
+        Object.keys(incoming).forEach((mainCat) => {
+          const localNode = stockData[cat][mainCat];
+          const remoteNode = incoming[mainCat];
+          if (!localNode) {
+            merged[mainCat] = remoteNode;
+            updated = true;
+          } else if (!remoteNode) {
+            // keep local
+          } else {
+            const localTime = localNode.lastUpdated ? Date.parse(localNode.lastUpdated) : 0;
+            const remoteTime = remoteNode.lastUpdated ? Date.parse(remoteNode.lastUpdated) : 0;
+            // For stok-komputer, HALA is manual; no recalculation, so keep the newer by timestamp
+            merged[mainCat] = remoteTime >= localTime ? remoteNode : localNode;
+            if (remoteTime >= localTime) updated = true;
+          }
+        });
+        stockData[cat] = merged;
       }
+      // Invalidate per-category cache timestamp to force re-validation
+      stockCache.set(cat, stockData[cat]);
+      stockCacheMeta.delete(cat);
     });
     if (updated) {
       populateTables();
+    }
+  });
+}
+
+// Cross-tab synchronization via localStorage `storage` event
+function setupCrossTabSync() {
+  window.addEventListener("storage", (e) => {
+    if (e.key !== CACHE_KEY || !e.newValue) return;
+    try {
+      const parsed = JSON.parse(e.newValue);
+      const incomingAll = parsed?.data || {};
+      let updated = false;
+      Object.keys(incomingAll).forEach((cat) => {
+        const incoming = incomingAll[cat];
+        if (!incoming) return;
+        if (!stockData[cat]) {
+          stockData[cat] = incoming;
+          updated = true;
+        } else {
+          const merged = { ...stockData[cat] };
+          Object.keys(incoming).forEach((mainCat) => {
+            const localNode = stockData[cat][mainCat];
+            const remoteNode = incoming[mainCat];
+            if (!localNode) {
+              merged[mainCat] = remoteNode;
+              updated = true;
+            } else if (!remoteNode) {
+              // keep local
+            } else {
+              const localTime = localNode.lastUpdated ? Date.parse(localNode.lastUpdated) : 0;
+              const remoteTime = remoteNode.lastUpdated ? Date.parse(remoteNode.lastUpdated) : 0;
+              merged[mainCat] = remoteTime >= localTime ? remoteNode : localNode;
+              if (remoteTime >= localTime) updated = true;
+            }
+          });
+          stockData[cat] = merged;
+        }
+        stockCache.set(cat, stockData[cat]);
+        stockCacheMeta.set(cat, Date.now());
+      });
+      if (updated) {
+        populateTables();
+      }
+    } catch (_) {
+      // ignore malformed cache
     }
   });
 }
@@ -2210,6 +2298,7 @@ document.addEventListener("DOMContentLoaded", async function () {
     initializeCache();
     await populateTables();
     setupRealtimeListener();
+  setupCrossTabSync();
 
     // Initialize tooltips and smooth transitions
     initializeUIEnhancements();

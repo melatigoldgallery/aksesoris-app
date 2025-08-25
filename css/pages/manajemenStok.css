@@ -379,8 +379,9 @@
 }
 
 .stock-card {
-  width: 240px;
-  height: 140px;
+  width: 100%;
+  min-height: 140px;
+  height: auto;
   border-radius: 15px;
   padding: 15px 10px;
   margin-bottom: 10px;
@@ -751,8 +752,7 @@
 #modalUpdateStokLiontin .form-control,
 #modalTambahStokLiontin .form-control,
 #modalUpdateKomputerWarna .form-control,
-#modalTambahStokKomputerWarna .form-control
-{
+#modalTambahStokKomputerWarna .form-control {
   padding: 8px 10px;
   font-size: 0.88rem;
 }
@@ -783,5 +783,5 @@
 
 /* Table dalam modal tidak memunculkan scrollbar horizontal */
 .modal .table-responsive {
-  overflow: visible !important;      /* matikan overflow-x:auto bawaan */
+  overflow: visible !important; /* matikan overflow-x:auto bawaan */
 }
