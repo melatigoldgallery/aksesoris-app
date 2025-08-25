@@ -355,28 +355,51 @@
               </a>
             </li>
             <li class="nav-item">
-              <a class="nav-link active" href="#">
-                <i class="fas fa-shopping-cart"></i>
-                <span class="menu-text">Buyback</span>
-              </a>
-            </li>
-            <li class="nav-item">
-              <a class="nav-link" href="manajemenStok.html">
-                <i class="fa-solid fa-boxes-stacked"></i>
-                <span class="menu-text">Manajemen Stok</span>
-              </a>
-            </li>
-            <li class="nav-item">
-              <a class="nav-link" href="mutasiKode.html">
-                <i class="fa-solid fa-calendar-xmark"></i>
-                <span class="menu-text">Mutasi Kode</span>
-              </a>
-            </li>
-            <li class="nav-item">
-              <a class="nav-link" href="maintenance.html">
+              <a class="nav-link active" href="maintenance.html">
                 <i class="fas fa-tools"></i>
                 <span class="menu-text">Maintenance</span>
               </a>
+            </li>
+            <li class="nav-item">
+              <a
+                class="nav-link collapsed"
+                href="#"
+                data-bs-toggle="collapse"
+                data-bs-target="#barangSubmenu"
+                aria-expanded="false"
+              >
+                <i class="fa-solid fa-cubes"></i>
+                <span class="menu-text">Inventory Barang</span>
+                <i class="fas fa-angle-down ms-auto submenu-icon"></i>
+              </a>
+              <div class="collapse" id="barangSubmenu" data-bs-parent="#sidebarAccordion">
+                <ul class="nav flex-column ms-3">
+                  <li class="nav-item">
+                    <a class="nav-link" href="manajemenStok.html">
+                      <i class="fa-solid fa-boxes-stacked"></i>
+                      <span class="menu-text">Manajemen Stok</span>
+                    </a>
+                  </li>
+                  <li class="nav-item">
+                    <a class="nav-link" href="laporanStokHarian.html">
+                      <i class="fa-solid fa-calendar-days"></i>
+                      <span class="menu-text">Laporan Stok Harian</span>
+                    </a>
+                  </li>
+                  <li class="nav-item">
+                    <a class="nav-link" href="mutasiKode.html">
+                      <i class="fa-solid fa-calendar-xmark"></i>
+                      <span class="menu-text">Mutasi Kode</span>
+                    </a>
+                  </li>
+                  <li class="nav-item d-none">
+                    <a class="nav-link" href="buyback.html">
+                      <i class="fas fa-exchange-alt"></i>
+                      <span class="menu-text">Buyback</span>
+                    </a>
+                  </li>
+                </ul>
+              </div>
             </li>
             <li class="nav-item">
               <a
