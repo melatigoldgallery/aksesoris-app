@@ -1,6 +1,6 @@
 // Laporan Stok Harian
 import { firestore } from "./configFirebase.js";
-import { doc, getDoc, setDoc } from "https://www.gstatic.com/firebasejs/10.4.0/firebase-firestore.js";
+import { doc, getDoc, setDoc, collection } from "https://www.gstatic.com/firebasejs/10.4.0/firebase-firestore.js";
 
 // Copy subset constants (pastikan sinkron dengan manajemenStok.js)
 const mainCategories = [
@@ -18,19 +18,44 @@ const mainCategories = [
 ];
 const colorTypes = ["HIJAU", "BIRU", "PUTIH", "PINK", "KUNING"]; // mengikuti manajemenStok untuk KALUNG/LIONTIN
 const colorMapping = { HIJAU: "Hijau", BIRU: "Biru", PUTIH: "Putih", PINK: "Pink", KUNING: "Kuning" };
-const summaryCategories = ["brankas", "posting", "barang-display", "barang-rusak", "batu-lepas", "manual", "admin"];
+const summaryCategories = [
+  "brankas",
+  "posting",
+  "barang-display",
+  "barang-rusak",
+  "batu-lepas",
+  "manual",
+  "admin",
+  "contoh-custom",
+  "DP",
+];
 
 // Cache ringan untuk stok agar tidak fetch berulang via window.stockData jika halaman ini dibuka terpisah
 let stockDataSnapshot = {};
 
 async function fetchStockSnapshot() {
   // Ambil dokumen-dokumen kategori di koleksi 'stocks'
-  for (const cat of [...summaryCategories, "stok-komputer"]) {
-    const ref = doc(firestore, "stocks", cat);
-    const snap = await getDoc(ref);
-    if (snap.exists()) {
-      stockDataSnapshot[cat] = snap.data();
-    } else {
+  const cats = [...summaryCategories, "stok-komputer"];
+  for (const cat of cats) {
+    // Defensive: ensure cat is a non-empty string to avoid calling doc() with missing segments
+    if (!cat || typeof cat !== "string" || cat.trim() === "") {
+      console.warn("Skipping invalid stock category while fetching snapshot:", cat);
+      continue;
+    }
+
+    try {
+      // Use explicit collection->doc pattern for clarity
+      const stocksCol = collection(firestore, "stocks");
+      const ref = doc(stocksCol, cat);
+      const snap = await getDoc(ref);
+      if (snap.exists()) {
+        stockDataSnapshot[cat] = snap.data();
+      } else {
+        stockDataSnapshot[cat] = {};
+      }
+    } catch (err) {
+      console.error("Error fetching stock category", cat, err);
+      // Ensure we still have a defined entry so callers don't break
       stockDataSnapshot[cat] = {};
     }
   }

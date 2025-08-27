@@ -589,23 +589,42 @@ export async function populateTables() {
 
         tr.innerHTML = `
           <td class="fw-bold">${idx + 1}</td>
-          <td class="fw-medium jenis-column d-flex justify-content-between">${subCat} ${
-          mainCat === "HALA" ||
-          mainCat === "KENDARI" ||
-          mainCat === "BERLIAN" ||
-          mainCat === "SDW" ||
-          mainCat === "EMAS_BALI"
-            ? `<button class="btn btn-outline-primary btn-sm detail-hala-btn btn-hala" data-main="${mainCat}" data-category="${categoryKey}" title="Detail ${mainCat}"><i class="fas fa-eye"></i></button>`
-            : ""
-        } ${
-          mainCat === "KALUNG"
-            ? `<button class="btn btn-outline-primary btn-sm detail-kalung-btn ms-1" data-main="KALUNG" data-category="${categoryKey}" title="Detail Kalung"><i class="fas fa-eye"></i></button>`
-            : ""
-        } ${
-          mainCat === "LIONTIN"
-            ? `<button class="btn btn-outline-primary btn-sm detail-liontin-btn ms-1" data-main="LIONTIN" data-category="${categoryKey}" title="Detail Liontin"><i class="fas fa-eye"></i></button>`
-            : ""
-        }</td>
+          <td class="fw-medium jenis-column">
+          <div class="d-flex justify-content-between align-items-center w-100">
+            ${subCat} 
+            ${
+              mainCat === "HALA" ||
+              mainCat === "KENDARI" ||
+              mainCat === "BERLIAN" ||
+              mainCat === "SDW" ||
+              mainCat === "EMAS_BALI"
+                ? `<button class="btn btn-outline-primary btn-sm detail-hala-btn btn-hala" 
+                            data-main="${mainCat}" data-category="${categoryKey}" 
+                            title="Detail ${mainCat}">
+                    <i class="fas fa-eye"></i>
+                  </button>`
+                : ""
+            }
+            ${
+              mainCat === "KALUNG"
+                ? `<button class="btn btn-outline-primary btn-sm detail-kalung-btn ms-1" 
+                            data-main="KALUNG" data-category="${categoryKey}" 
+                            title="Detail Kalung">
+                    <i class="fas fa-eye"></i>
+                  </button>`
+                : ""
+            }
+            ${
+              mainCat === "LIONTIN"
+                ? `<button class="btn btn-outline-primary btn-sm detail-liontin-btn ms-1" 
+                            data-main="LIONTIN" data-category="${categoryKey}" 
+                            title="Detail Liontin">
+                    <i class="fas fa-eye"></i>
+                  </button>`
+                : ""
+            }
+          </div>
+          </td>
           <td class="text-center">
             <span class="badge bg-success fs-6 px-2 py-2">${stockItem.quantity}</span>
           </td>
