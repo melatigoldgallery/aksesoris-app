@@ -515,8 +515,17 @@ export async function populateTables() {
 
         const tr = document.createElement("tr");
 
-        // Untuk HALA dan KENDARI: tampilkan tombol Update multi-jenis pada baris tertentu
-        const halaUpdateSubcats = ["Display", "Rusak", "Batu Lepas", "Manual", "Admin", "Contoh Custom"];
+        // Untuk HALA/KENDARI/BERLIAN/SDW/EMAS_BALI: tampilkan tombol Update multi-jenis pada baris tertentu
+        // Termasuk DP agar baris DP juga memakai tombol Update (alih-alih dropdown Tambah/Kurangi)
+        const halaUpdateSubcats = [
+          "Display",
+          "Rusak",
+          "Batu Lepas",
+          "Manual",
+          "Admin",
+          "DP",
+          "Contoh Custom",
+        ];
         let actionColumn = "";
         if (
           (mainCat === "HALA" ||
@@ -780,8 +789,9 @@ function showSuccessNotification(message) {
 let komputerEditMainCat = "";
 
 document.body.addEventListener("click", function (e) {
-  if (e.target.classList.contains("edit-komputer-btn")) {
-    komputerEditMainCat = e.target.dataset.main;
+  const btn = e.target.closest && e.target.closest(".edit-komputer-btn");
+  if (btn) {
+    komputerEditMainCat = btn.dataset.main;
     if (komputerEditMainCat === "KALUNG" || komputerEditMainCat === "LIONTIN") {
       const disp = document.getElementById("jenisUpdateKomputerWarnaDisplay");
       const hid = document.getElementById("jenisUpdateKomputerWarna");
@@ -1747,7 +1757,19 @@ document.body.addEventListener("click", function (e) {
           if (disp) disp.value = jenisDisplay;
           if (hid) hid.value = currentCategory;
           if (title) title.textContent = `Update Stok ${jenisDisplay}`;
-          document.getElementById("petugasUpdateStokKalungBulk").value = "";
+          // Toggle field petugas (hanya wajib untuk brankas/posting)
+          const petugasInput = document.getElementById("petugasUpdateStokKalungBulk");
+          const petugasWrap = petugasInput
+            ? petugasInput.closest(".form-group") || petugasInput.closest(".mb-3") || petugasInput.parentElement
+            : null;
+          const needsStaff = currentCategory === "brankas" || currentCategory === "posting";
+          if (petugasInput) {
+            petugasInput.value = "";
+            petugasInput.required = !!needsStaff;
+          }
+          if (petugasWrap) {
+            petugasWrap.style.display = needsStaff ? "" : "none";
+          }
           const ket = document.getElementById("keteranganUpdateKalungBulk");
           if (ket) ket.value = "";
           $("#modalUpdateStokKalung").modal("show");
@@ -1779,7 +1801,19 @@ document.body.addEventListener("click", function (e) {
           document.getElementById("jenisUpdateLiontinDisplay").value = jenisDisplay;
           document.getElementById("jenisUpdateLiontin").value = currentCategory;
           document.getElementById("modalUpdateStokLiontinLabel").textContent = `Update Stok ${jenisDisplay}`;
-          document.getElementById("petugasUpdateStokLiontinBulk").value = "";
+          // Toggle field petugas (hanya wajib untuk brankas/posting)
+          const petugasInput = document.getElementById("petugasUpdateStokLiontinBulk");
+          const petugasWrap = petugasInput
+            ? petugasInput.closest(".form-group") || petugasInput.closest(".mb-3") || petugasInput.parentElement
+            : null;
+          const needsStaff = currentCategory === "brankas" || currentCategory === "posting";
+          if (petugasInput) {
+            petugasInput.value = "";
+            petugasInput.required = !!needsStaff;
+          }
+          if (petugasWrap) {
+            petugasWrap.style.display = needsStaff ? "" : "none";
+          }
           const ket = document.getElementById("keteranganUpdateLiontinBulk");
           if (ket) ket.value = "";
           $("#modalUpdateStokLiontin").modal("show");
@@ -1798,7 +1832,19 @@ document.body.addEventListener("click", function (e) {
     document.getElementById("updateStokCategory").value = categoryKey;
     document.getElementById("updateStokJenis").value = `${mainCat} - ${subCategory}`;
     document.getElementById("updateStokJumlah").value = stockItem.quantity;
-    document.getElementById("updateStokPetugas").value = "";
+    // Tampilkan/sematkan field Nama Staf hanya untuk brankas & posting
+    const petugasInput = document.getElementById("updateStokPetugas");
+    const petugasWrap = petugasInput
+      ? petugasInput.closest(".form-group") || petugasInput.closest(".mb-3") || petugasInput.parentElement
+      : null;
+    const needsStaff = categoryKey === "brankas" || categoryKey === "posting";
+    if (petugasInput) {
+      petugasInput.value = "";
+      petugasInput.required = !!needsStaff;
+    }
+    if (petugasWrap) {
+      petugasWrap.style.display = needsStaff ? "" : "none";
+    }
     const ketFieldUpdate = document.querySelector("#modalUpdateStok #keteranganKurangi");
     if (ketFieldUpdate) ketFieldUpdate.value = "";
 
@@ -2046,9 +2092,13 @@ if (formUpdateLiontin) {
         submitBtn.disabled = true;
         submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Menyimpan...';
       }
-      const petugas = document.getElementById("petugasUpdateStokLiontinBulk").value.trim();
+      const petugasInput = document.getElementById("petugasUpdateStokLiontinBulk");
+      const category = document.getElementById("jenisUpdateLiontin").value;
+      const needsStaff = category === "brankas" || category === "posting";
+      const petugas = petugasInput ? petugasInput.value.trim() : "";
       const keterangan = document.getElementById("keteranganUpdateLiontinBulk").value.trim();
-      if (!petugas || !currentCategory) throw new Error("Data belum lengkap");
+      if (needsStaff && !petugas) throw new Error("Nama staf harus diisi");
+      if (!currentCategory) throw new Error("Data belum lengkap");
       const updates = [];
       document.querySelectorAll(".liontin-update-qty-input").forEach((inp) => {
         const val = inp.value;
@@ -2058,7 +2108,7 @@ if (formUpdateLiontin) {
         updates.push({ type: inp.dataset.type, newQty });
       });
       if (!updates.length) throw new Error("Kosongkan kolom jika tidak ingin mengubah, atau isi minimal satu warna.");
-      await updateStockLiontinBulk(currentCategory, updates, petugas, keterangan);
+      await updateStockLiontinBulk(currentCategory, updates, needsStaff ? petugas : undefined, keterangan);
       showSuccessNotification("Update LIONTIN berhasil");
       $("#modalUpdateStokLiontin").modal("hide");
     } catch (err) {
@@ -2148,9 +2198,13 @@ if (formUpdateKalung) {
         submitBtn.disabled = true;
         submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Menyimpan...';
       }
-      const petugas = document.getElementById("petugasUpdateStokKalungBulk").value.trim();
+      const petugasInput = document.getElementById("petugasUpdateStokKalungBulk");
+      const category = document.getElementById("jenisUpdateKalung").value;
+      const needsStaff = category === "brankas" || category === "posting";
+      const petugas = petugasInput ? petugasInput.value.trim() : "";
       const keterangan = document.getElementById("keteranganUpdateKalungBulk").value.trim();
-      if (!petugas || !currentCategory) throw new Error("Data belum lengkap");
+      if (needsStaff && !petugas) throw new Error("Nama staf harus diisi");
+      if (!currentCategory) throw new Error("Data belum lengkap");
       // Kumpulkan input: kosong = tidak diubah
       const updates = [];
       document.querySelectorAll(".kalung-update-qty-input").forEach((inp) => {
@@ -2161,7 +2215,7 @@ if (formUpdateKalung) {
         updates.push({ type: inp.dataset.type, newQty });
       });
       if (!updates.length) throw new Error("Kosongkan kolom jika tidak ingin mengubah, atau isi minimal satu warna.");
-      await updateStockKalungBulk(currentCategory, updates, petugas, keterangan);
+      await updateStockKalungBulk(currentCategory, updates, needsStaff ? petugas : undefined, keterangan);
       showSuccessNotification("Update KALUNG berhasil");
       $("#modalUpdateStokKalung").modal("hide");
     } catch (err) {
@@ -2210,13 +2264,15 @@ document.getElementById("formUpdateStok").onsubmit = async function (e) {
   const jumlah = document.getElementById("updateStokJumlah").value;
   const petugas = document.getElementById("updateStokPetugas").value;
   const keterangan = this.querySelector("#keteranganKurangi")?.value?.trim() || "";
+  const needsStaff = category === "brankas" || category === "posting";
 
-  if (!mainCat || !category || jumlah === "" || !petugas) {
+  if (!mainCat || !category || jumlah === "" || (needsStaff && !petugas)) {
     alert("Semua field yang wajib harus diisi.");
     return;
   }
 
-  await updateStokDisplayManual(category, mainCat, jumlah, petugas, keterangan);
+  const petugasFinal = needsStaff ? petugas : undefined;
+  await updateStokDisplayManual(category, mainCat, jumlah, petugasFinal, keterangan);
   $("#modalUpdateStok").modal("hide");
 };
 
@@ -2357,6 +2413,19 @@ document.body.addEventListener("click", async function (e) {
       document.getElementById("jenisUpdateHalaDisplay").value = jenisDisplay;
       document.getElementById("jenisUpdateHala").value = currentCategory;
       document.getElementById("modalUpdateStokHalaLabel").textContent = `Update Stok ${jenisDisplay}`;
+      // Toggle field petugas (hanya wajib untuk brankas/posting)
+      const petugasInput = document.getElementById("petugasUpdateStokHalaBulk");
+      const petugasWrap = petugasInput
+        ? petugasInput.closest(".form-group") || petugasInput.closest(".mb-3") || petugasInput.parentElement
+        : null;
+      const needsStaff = currentCategory === "brankas" || currentCategory === "posting";
+      if (petugasInput) {
+        petugasInput.value = "";
+        petugasInput.required = !!needsStaff;
+      }
+      if (petugasWrap) {
+        petugasWrap.style.display = needsStaff ? "" : "none";
+      }
       $("#modalUpdateStokHala").modal("show");
     } catch (err) {
       console.error("Gagal buka modal update HALA", err);
@@ -2377,8 +2446,11 @@ if (formUpdateHala) {
         submitBtn.disabled = true;
         submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Menyimpan...';
       }
-      const petugas = document.getElementById("petugasUpdateStokHalaBulk").value.trim();
-      if (!petugas) throw new Error("Nama staf harus diisi");
+      const petugasInput = document.getElementById("petugasUpdateStokHalaBulk");
+      const categoryNeeds = document.getElementById("jenisUpdateHala").value;
+      const needsStaff = categoryNeeds === "brankas" || categoryNeeds === "posting";
+      const petugas = petugasInput ? petugasInput.value.trim() : "";
+      if (needsStaff && !petugas) throw new Error("Nama staf harus diisi");
       const category = document.getElementById("jenisUpdateHala").value;
       const mainCat = document.getElementById("jenisUpdateHalaDisplay").value.split(" - ")[0] || "HALA";
 
@@ -2416,7 +2488,7 @@ if (formUpdateHala) {
         date: item.lastUpdated,
         action: "Update Bulk",
         quantity: updates.reduce((s, it) => s + it.qty, 0),
-        petugas,
+        petugas: needsStaff ? petugas : undefined,
         items: updates.map((it) => ({
           jewelryType: it.type,
           jewelryName: halaJewelryMapping[it.type],
