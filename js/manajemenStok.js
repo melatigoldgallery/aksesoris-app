@@ -517,15 +517,7 @@ export async function populateTables() {
 
         // Untuk HALA/KENDARI/BERLIAN/SDW/EMAS_BALI: tampilkan tombol Update multi-jenis pada baris tertentu
         // Termasuk DP agar baris DP juga memakai tombol Update (alih-alih dropdown Tambah/Kurangi)
-        const halaUpdateSubcats = [
-          "Display",
-          "Rusak",
-          "Batu Lepas",
-          "Manual",
-          "Admin",
-          "DP",
-          "Contoh Custom",
-        ];
+        const halaUpdateSubcats = ["Display", "Rusak", "Batu Lepas", "Manual", "Admin", "DP", "Contoh Custom"];
         let actionColumn = "";
         if (
           (mainCat === "HALA" ||
