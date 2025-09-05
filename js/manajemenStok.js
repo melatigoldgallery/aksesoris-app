@@ -189,7 +189,10 @@ function isCacheValid(category) {
 }
 
 // === Firestore Fetch/Save ===
+// GANTI fungsi fetchStockData: hanya fetch kategori yang cache-nya invalid,
+// dan JANGAN memaksa re-fetch bila tidak perlu.
 async function fetchStockData(forceRefresh = false) {
+  // Daftar dokumen yang dikelola
   const categories = [
     "brankas",
     "posting",
@@ -199,21 +202,34 @@ async function fetchStockData(forceRefresh = false) {
     "manual",
     "admin",
     "DP",
-    "contoh-custom", // pastikan dokumen custom ikut dimuat
+    "contoh-custom",
     "stok-komputer",
   ];
+
   try {
+    // Jika tidak force dan semua kategori masih valid di cache, langsung pakai in-memory
     if (!forceRefresh && Object.keys(stockData).length > 0 && categories.every(isCacheValid)) {
       return stockData;
     }
-    const fetchPromises = categories.map(async (category) => {
+
+    // Tentukan kategori yang perlu di-fetch (invalid atau force)
+    const toFetch = forceRefresh ? categories : categories.filter((c) => !isCacheValid(c));
+    if (toFetch.length === 0) {
+      // Tidak ada yang perlu dibaca ulang
+      return stockData;
+    }
+
+    // Ambil hanya dokumen yang perlu
+    const fetchPromises = toFetch.map(async (category) => {
       const categoryRef = doc(firestore, "stocks", category);
       const categoryDoc = await getDoc(categoryRef);
       let categoryData = {};
+
       if (categoryDoc.exists()) {
         categoryData = categoryDoc.data();
       } else {
-        // Inisialisasi kosong per mainCategories
+        // Inisialisasi objek kosong di memori (agar UI bisa render),
+        // lalu simpan ke Firestore (tetap dilakukan agar konsisten dengan perilaku sebelumnya).
         mainCategories.forEach((mc) => {
           categoryData[mc] = {
             quantity: 0,
@@ -224,18 +240,19 @@ async function fetchStockData(forceRefresh = false) {
         await setDoc(categoryRef, categoryData);
       }
 
-      // Inisialisasi khusus untuk HALA (jangan terapkan pada 'stok-komputer' karena di sana HALA adalah total manual)
+      // Inisialisasi struktur HALA (kecuali dokumen 'stok-komputer')
       if (category !== "stok-komputer" && categoryData.HALA) {
         initializeHalaStructure(categoryData, "HALA");
-        // Update quantity total untuk HALA
         categoryData.HALA.quantity = calculateHalaTotal(categoryData, "HALA");
       }
 
+      // Simpan ke in-memory + cache meta
       stockData[category] = categoryData;
       stockCache.set(category, categoryData);
       stockCacheMeta.set(category, Date.now());
       return { category, data: categoryData };
     });
+
     await Promise.all(fetchPromises);
     updateCache();
     return stockData;
@@ -472,9 +489,9 @@ function populateStokKomputerTable() {
     const item = stockData["stok-komputer"][mainCat] || { quantity: 0, lastUpdated: null };
     const tr = document.createElement("tr");
     tr.innerHTML = `
-      <td>${idx + 1}</td>
-      <td>${mainCat}</td>
-      <td class="text-center">${item.quantity}</td>
+      <td class="fw-bold" style="font-size:0.91rem;">${idx + 1}</td>
+      <td class="fw-bold" style="font-size:0.91rem;">${mainCat}</td>
+      <td class="text-center fw-bold" style="font-size:0.91rem;">${item.quantity}</td>
       <td class="text-center">
         <button class="btn btn-sm btn-primary edit-komputer-btn" data-main="${mainCat}"><i class="fas fa-edit"></i> Update</button>
       </td>
@@ -484,26 +501,32 @@ function populateStokKomputerTable() {
   });
 }
 
-// === Populate Table (FIXED) ===
-export async function populateTables() {
+// GANTI fungsi populateTables: tambahkan opsi { skipFetch } agar ketika dipanggil dari onSnapshot
+// tidak memicu read ulang. Hindari showTableLoading berulang (hanya saat render pertama).
+export async function populateTables(options = {}) {
+  const { skipFetch = false } = options;
+
   try {
     // CSS pelindung (disuntik sekali)
     injectDropdownFixCssOnce();
 
-    // Tampilkan skeleton/loading khusus tabel
-    showTableLoading();
+    // Hanya tampilkan loading saat render pertama dan saat memang melakukan fetch
+    if (!skipFetch && !populateTables._hasRendered) {
+      showTableLoading();
+    }
 
-    // Ambil data stok (gunakan cache jika valid)
-    await fetchStockData();
+    // Ambil data stok (gunakan cache jika valid) KECUALI jika skipFetch diinstruksikan
+    if (!skipFetch) {
+      await fetchStockData();
+    }
 
-    // Render setiap main category
+    // Render setiap main category dari in-memory stockData
     mainCategories.forEach((mainCat) => {
       const tbody = document.getElementById(mainCategoryToId[mainCat]);
       if (!tbody) return;
 
       // pastikan kontainer tabel tidak memotong dropdown
       tbody.style.overflow = "visible";
-
       tbody.innerHTML = "";
 
       subCategories.forEach((subCat, idx) => {
@@ -515,8 +538,6 @@ export async function populateTables() {
 
         const tr = document.createElement("tr");
 
-        // Untuk HALA/KENDARI/BERLIAN/SDW/EMAS_BALI: tampilkan tombol Update multi-jenis pada baris tertentu
-        // Termasuk DP agar baris DP juga memakai tombol Update (alih-alih dropdown Tambah/Kurangi)
         const halaUpdateSubcats = ["Display", "Rusak", "Batu Lepas", "Manual", "Admin", "DP", "Contoh Custom"];
         let actionColumn = "";
         if (
@@ -538,8 +559,6 @@ export async function populateTables() {
             </td>
           `;
         } else {
-          // Kondisi untuk menampilkan tombol Update pada tab lain (sebelumnya)
-          // Tambahkan pengecualian untuk KALUNG agar baris Rusak, Batu Lepas, Contoh Custom juga menjadi Update
           const halaLikeUpdateMains = ["KALUNG", "LIONTIN", "ANTING", "CINCIN", "GELANG", "GIWANG"];
           const showUpdateButton =
             (subCat === "Display" ||
@@ -590,41 +609,41 @@ export async function populateTables() {
 
         tr.innerHTML = `
           <td class="fw-bold">${idx + 1}</td>
-          <td class="fw-medium jenis-column">
-          <div class="d-flex justify-content-between align-items-center w-100">
-            ${subCat} 
-            ${
-              mainCat === "HALA" ||
-              mainCat === "KENDARI" ||
-              mainCat === "BERLIAN" ||
-              mainCat === "SDW" ||
-              mainCat === "EMAS_BALI"
-                ? `<button class="btn btn-outline-primary btn-sm detail-hala-btn btn-hala" 
-                            data-main="${mainCat}" data-category="${categoryKey}" 
-                            title="Detail ${mainCat}">
-                    <i class="fas fa-eye"></i>
-                  </button>`
-                : ""
-            }
-            ${
-              mainCat === "KALUNG"
-                ? `<button class="btn btn-outline-primary btn-sm detail-kalung-btn ms-1" 
-                            data-main="KALUNG" data-category="${categoryKey}" 
-                            title="Detail Kalung">
-                    <i class="fas fa-eye"></i>
-                  </button>`
-                : ""
-            }
-            ${
-              mainCat === "LIONTIN"
-                ? `<button class="btn btn-outline-primary btn-sm detail-liontin-btn ms-1" 
-                            data-main="LIONTIN" data-category="${categoryKey}" 
-                            title="Detail Liontin">
-                    <i class="fas fa-eye"></i>
-                  </button>`
-                : ""
-            }
-          </div>
+          <td class="fw-bold jenis-column" style="font-size: 0.9rem; color: #35393d;">
+            <div class="d-flex justify-content-between align-items-center w-100">
+              ${subCat} 
+              ${
+                mainCat === "HALA" ||
+                mainCat === "KENDARI" ||
+                mainCat === "BERLIAN" ||
+                mainCat === "SDW" ||
+                mainCat === "EMAS_BALI"
+                  ? `<button class="btn btn-outline-primary btn-sm detail-hala-btn btn-hala" 
+                              data-main="${mainCat}" data-category="${categoryKey}" 
+                              title="Detail ${mainCat}">
+                      <i class="fas fa-eye"></i>
+                    </button>`
+                  : ""
+              }
+              ${
+                mainCat === "KALUNG"
+                  ? `<button class="btn btn-outline-primary btn-sm detail-kalung-btn ms-1" 
+                              data-main="KALUNG" data-category="${categoryKey}" 
+                              title="Detail Kalung">
+                      <i class="fas fa-eye"></i>
+                    </button>`
+                  : ""
+              }
+              ${
+                mainCat === "LIONTIN"
+                  ? `<button class="btn btn-outline-primary btn-sm detail-liontin-btn ms-1" 
+                              data-main="LIONTIN" data-category="${categoryKey}" 
+                              title="Detail Liontin">
+                      <i class="fas fa-eye"></i>
+                    </button>`
+                  : ""
+              }
+            </div>
           </td>
           <td class="text-center">
             <span class="badge bg-success fs-6 px-2 py-2">${stockItem.quantity}</span>
@@ -641,10 +660,11 @@ export async function populateTables() {
           <td class="text-center text-muted small">${formatDate(stockItem.lastUpdated)}</td>
         `;
 
-        // Animasi masuk: opacity saja (tanpa transform → tidak bikin stacking context)
+        // Animasi masuk: opacity saja
         tr.style.opacity = "0";
         tr.style.transition = "opacity .25s ease";
-        tbody.appendChild(tr);
+        const parent = tbody;
+        parent.appendChild(tr);
         requestAnimationFrame(() => {
           tr.style.opacity = "1";
         });
@@ -655,13 +675,13 @@ export async function populateTables() {
     populateStokKomputerTable();
     updateSummaryTotals();
 
-    // Listener sekali untuk mengangkat z-index baris yang dropdown-nya dibuka
+    // Listener sekali untuk mengangkat z-index
     if (!populateTables._dropdownRowElevatorBound) {
       document.body.addEventListener("shown.bs.dropdown", (ev) => {
         const row = ev.target.closest("tr");
         if (row) {
           row.style.position = "relative";
-          row.style.zIndex = "3000"; // di atas baris lain & card
+          row.style.zIndex = "3000";
         }
       });
       document.body.addEventListener("hidden.bs.dropdown", (ev) => {
@@ -674,16 +694,18 @@ export async function populateTables() {
       populateTables._dropdownRowElevatorBound = true;
     }
 
+    // Tandai sudah pernah render (agar loading tidak ditampilkan lagi)
+    populateTables._hasRendered = true;
+
     // Sembunyikan loading + notifikasi
     hideTableLoading();
-    showSuccessNotification("Data berhasil dimuat");
   } catch (error) {
     console.error("Error populating tables (fixed):", error);
     hideTableLoading();
     showErrorMessage("Gagal memuat data tabel");
   }
 
-  // ---- helper local: inject CSS sekali ---
+  // ---- helper lokal: injeksi CSS sekali ---
   function injectDropdownFixCssOnce() {
     if (document.getElementById("dropdown-fix-css")) return;
     const style = document.createElement("style");
@@ -2268,20 +2290,23 @@ document.getElementById("formUpdateStok").onsubmit = async function (e) {
   $("#modalUpdateStok").modal("hide");
 };
 
-// === Real-time listener (optional) ===
+// GANTI setupRealtimeListener: gunakan data snapshot langsung,
+// tandai cache valid (set timestamp), lalu render tanpa fetch ulang.
 function setupRealtimeListener() {
   const stocksRef = collection(firestore, "stocks");
   return onSnapshot(stocksRef, (snapshot) => {
     let updated = false;
+
     snapshot.docChanges().forEach((change) => {
       const cat = change.doc.id;
       const incoming = change.doc.data();
       if (!incoming) return;
+
       if (!stockData[cat]) {
         stockData[cat] = incoming;
         updated = true;
       } else {
-        // Merge by comparing lastUpdated on each main category node, keep the newest
+        // Merge per main category, pilih node dengan lastUpdated terbaru
         const merged = { ...stockData[cat] };
         Object.keys(incoming).forEach((mainCat) => {
           const localNode = stockData[cat][mainCat];
@@ -2294,19 +2319,23 @@ function setupRealtimeListener() {
           } else {
             const localTime = localNode.lastUpdated ? Date.parse(localNode.lastUpdated) : 0;
             const remoteTime = remoteNode.lastUpdated ? Date.parse(remoteNode.lastUpdated) : 0;
-            // For stok-komputer, HALA is manual; no recalculation, so keep the newer by timestamp
             merged[mainCat] = remoteTime >= localTime ? remoteNode : localNode;
             if (remoteTime >= localTime) updated = true;
           }
         });
         stockData[cat] = merged;
       }
-      // Invalidate per-category cache timestamp to force re-validation
+
+      // Perbaikan penting: TANDAI cache valid, JANGAN dihapus agar fetch berikutnya tidak baca ulang
       stockCache.set(cat, stockData[cat]);
-      stockCacheMeta.delete(cat);
+      stockCacheMeta.set(cat, Date.now());
     });
+
     if (updated) {
-      populateTables();
+      // Render ulang dari in-memory TANPA fetch (performa lebih baik, no extra reads)
+      populateTables({ skipFetch: true });
+      // Persist cache ke localStorage
+      updateCache();
     }
   });
 }
@@ -2639,17 +2668,39 @@ async function loadDailySnapshotDoc(dateObj) {
   }
 }
 
+// GANTI saveDailySnapshotDoc: jangan paksa forceRefresh bila cache masih valid.
+// Tetap jaga akurasi snapshot, tapi hindari read ekstra saat UI baru dibuka.
 async function saveDailySnapshotDoc(dateObj, { backfilled = false } = {}) {
   const dateKey = formatDateKeySnapshot(dateObj);
   if (!dateKey) return;
-  // Pastikan data stok mutakhir
-  await fetchStockData(true);
+
+  // Tentukan apakah semua dokumen masih valid di cache
+  const needed = [
+    "brankas",
+    "posting",
+    "barang-display",
+    "barang-rusak",
+    "batu-lepas",
+    "manual",
+    "admin",
+    "DP",
+    "contoh-custom",
+    "stok-komputer",
+  ];
+  const allValid = needed.every(isCacheValid);
+
+  if (!allValid || Object.keys(stockData).length === 0) {
+    // Ambil secukupnya dari Firestore (fetchStockData filter sendiri kategori invalid)
+    await fetchStockData(false);
+  }
+
   const payload = {
     date: dateKey,
     createdAt: new Date().toISOString(),
     items: computeCurrentSummarySnapshotForDaily(),
   };
   if (backfilled) payload.backfilled = true;
+
   const ref = doc(firestore, "daily_stock_reports", dateKey);
   await setDoc(ref, payload, { merge: true });
   return payload;

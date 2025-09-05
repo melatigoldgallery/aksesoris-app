@@ -85,7 +85,7 @@
 .nav-tabs {
   border-bottom: 3px solid #e9ecef;
   margin-bottom: 30px;
-  background: linear-gradient(135deg, #f8f9fa 0%, #ffffff 100%);
+  background: linear-gradient(135deg, #bcdaf5 0%, #dbe9fc 100%);
   border-radius: 15px 15px 0 0;
   padding: 15px 15px 0 15px;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
@@ -101,13 +101,13 @@
   border-radius: 12px 12px 0 0;
   padding: 10px 10px;
   font-weight: 600;
-  color: #6c757d;
+  color: #35393d;
   background: transparent;
   transition: all 0.3s ease;
   position: relative;
   overflow: hidden;
   text-transform: uppercase;
-  font-size: 0.85rem;
+  font-size: 0.95rem;
   letter-spacing: 0.5px;
 }
 
@@ -240,11 +240,11 @@
 .table thead th {
   background: #e2e2e2;
   border: none;
-  color: #495057;
-  font-weight: 600;
+  color: #35393d;
+  font-weight: bold;
   padding: 18px 15px;
   text-transform: uppercase;
-  font-size: 0.8rem;
+  font-size: 1rem;
   letter-spacing: 0.5px;
   position: sticky;
   top: 0;
@@ -302,12 +302,12 @@
 }
 
 .btn-success {
-  background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
+  background: linear-gradient(135deg, #24973f 0%, #075840 100%);
   color: white;
 }
 
 .btn-success:hover {
-  background: linear-gradient(135deg, #20c997 0%, #17a2b8 100%);
+  background: linear-gradient(135deg, #24973f 0%, #096e50 100%);
   box-shadow: 0 6px 16px rgba(40, 167, 69, 0.3);
 }
 
@@ -524,42 +524,6 @@
   }
 }
 
-/* Responsive Design */
-@media (max-width: 768px) {
-  .nav-tabs {
-    padding: 10px;
-    flex-wrap: wrap;
-  }
-
-  .nav-tabs .nav-link {
-    padding: 10px 15px;
-    font-size: 0.75rem;
-    margin-right: 5px;
-    margin-bottom: 5px;
-  }
-
-  .tab-pane {
-    padding: 15px;
-  }
-
-  .stock-card {
-    margin-bottom: 15px;
-    padding: 20px 15px;
-  }
-
-  .stock-card .number {
-    font-size: 1.8rem;
-  }
-
-  .table-container {
-    max-height: 400px;
-  }
-
-  .card-body {
-    padding: 15px;
-  }
-}
-
 /* Accessibility */
 .btn:focus,
 .nav-link:focus,
@@ -603,13 +567,13 @@
 /* Saat active tetap proporsional */
 .nav-tabs .nav-link.active {
   padding: 0px 10px;
-  font-size: 0.92rem;
+  font-size: 0.95rem;
 }
 
 /* Table header & cell compact */
 .tab-content .table thead th {
   padding: 10px 8px !important;
-  font-size: 0.8rem;
+  font-size: 0.91rem;
 }
 .tab-content .table tbody td {
   padding: 10px 8px !important;
@@ -784,4 +748,7 @@
 /* Table dalam modal tidak memunculkan scrollbar horizontal */
 .modal .table-responsive {
   overflow: visible !important; /* matikan overflow-x:auto bawaan */
+}
+.jenis-column {
+font-size: 1.8rem;
 }

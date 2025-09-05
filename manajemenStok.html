@@ -42,6 +42,9 @@
         right: 8px;
         margin: 0;
       }
+      thead>tr>th {
+        font-weight: bold;
+      }
     </style>
   </head>
   <body>
@@ -464,8 +467,7 @@
             </div>
 
             <!-- Tab Navigation -->
-            <ul class="nav nav-tabs compact overflow-auto m-0" id="stockTab" role="tablist">
-              <!-- compact class uses existing CSS to reduce padding; overflow-auto enables horizontal scroll on small screens -->
+            <ul class="nav nav-tabs compact overflow-auto m-0 d-flex justify-content-center" id="stockTab" role="tablist">
 
               <li class="nav-item" role="presentation">
                 <button
