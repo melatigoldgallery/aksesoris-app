@@ -641,7 +641,7 @@
 #modalUpdateStokLiontin .modal-dialog,
 #modalUpdateKomputerWarna .modal-dialog,
 #modalDetailWarna .modal-dialog {
-  max-width: 400px;
+  max-width: 450px;
 }
 
 #modalRiwayat .modal-dialog {

@@ -395,6 +395,7 @@
                         <tr>
                           <th style="width: 60px">No</th>
                           <th>Jenis</th>
+                          <th style="width: 140px">Aksi</th>
                           <th class="text-center" style="width: 140px">Jumlah Barang</th>
                           <th class="text-center" style="width: 140px">Data Komputer</th>
                           <th class="text-center" style="width: 200px">Status Akhir</th>
@@ -461,3 +462,37 @@
     <script type="module" src="js/laporanStokHarian.js"></script>
   </body>
 </html>
+
+  <!-- Modal Edit Item -->
+  <div class="modal fade" id="modalEditItem" tabindex="-1" aria-labelledby="modalEditItemLabel" aria-hidden="true">
+    <div class="modal-dialog">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title" id="modalEditItemLabel">Edit Jumlah - <span id="editItemName"></span></h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Tutup"></button>
+        </div>
+        <div class="modal-body">
+          <div class="mb-3">
+            <label class="form-label">Jumlah Barang (fisik)</label>
+            <input type="number" id="editJumlahBarang" class="form-control" />
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Data Komputer</label>
+            <input type="number" id="editDataKomputer" class="form-control" />
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Status Akhir</label>
+            <select id="editStatusAkhir" class="form-select">
+              <option value="Klop">Klop</option>
+              <option value="Kurang">Kurang</option>
+              <option value="Lebih">Lebih</option>
+            </select>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Batal</button>
+          <button type="button" class="btn btn-primary" id="saveEditBtn">Simpan</button>
+        </div>
+      </div>
+    </div>
+  </div>
