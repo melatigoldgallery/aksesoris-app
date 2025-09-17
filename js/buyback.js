@@ -283,7 +283,7 @@ function showResults(results) {
         ? "Sedikit Kusam / Sedikit Baret"
         : result.kondisiBarang === "3"
         ? "Kusam / Banyak Baret"
-        : "Ada Reject / Butterfly Hilang / Lock Rusak)";
+        : "Ada Reject (ditoleransi) / Butterfly Hilang / Lock Rusak)";
 
     // Tentukan persentase potongan berdasarkan kondisi
     const getDiscountPercentage = (kondisi) => {
