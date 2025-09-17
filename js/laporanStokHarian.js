@@ -1,6 +1,6 @@
 // Laporan Stok Harian
 import { firestore } from "./configFirebase.js";
-import { doc, getDoc, setDoc, collection } from "https://www.gstatic.com/firebasejs/10.4.0/firebase-firestore.js";
+import { doc, getDoc, setDoc, collection, updateDoc } from "https://www.gstatic.com/firebasejs/10.4.0/firebase-firestore.js";
 
 // Copy subset constants (pastikan sinkron dengan manajemenStok.js)
 const mainCategories = [
@@ -159,14 +159,14 @@ function renderDailyReportTable(dataObj) {
 
   // Add loading animation
   tbody.innerHTML =
-    '<tr><td colspan="5" class="text-center py-4"><i class="fas fa-spinner fa-spin me-2"></i>Memuat data...</td></tr>';
+    '<tr><td colspan="6" class="text-center py-4"><i class="fas fa-spinner fa-spin me-2"></i>Memuat data...</td></tr>';
 
   setTimeout(() => {
     tbody.innerHTML = "";
     if (!dataObj || !dataObj.items) {
       tbody.innerHTML = `
         <tr>
-          <td colspan="5" class="text-center text-muted py-4">
+          <td colspan="6" class="text-center text-muted py-4">
             <i class="fas fa-inbox fa-2x mb-2 d-block text-muted"></i>
             <span>Tidak ada data untuk tanggal ini</span>
           </td>
@@ -178,8 +178,12 @@ function renderDailyReportTable(dataObj) {
     const items = dataObj.items;
     let i = 1;
 
+    // cache globally so edit/save handlers can reference and mutate it
+    window.latestDailyData = dataObj;
+
     mainCategories.forEach((mainCat) => {
-      const rowData = items[mainCat] || { total: 0, komputer: 0, status: "-" };
+      // prefer authoritative value from window.latestDailyData when present
+      const rowData = (window.latestDailyData && window.latestDailyData.items && window.latestDailyData.items[mainCat]) || items[mainCat] || { total: 0, komputer: 0, status: "-" };
       let statusClass = "text-primary";
       let statusIcon = "fas fa-info-circle";
 
@@ -196,15 +200,20 @@ function renderDailyReportTable(dataObj) {
       const tr = document.createElement("tr");
       tr.style.height = "auto";
       const canDetail = mainCat === "KALUNG" || mainCat === "LIONTIN";
-      tr.innerHTML = `
+        tr.innerHTML = `
         <td class="text-center fw-bold text-muted">${i++}</td>
-        <td class="fw-semibold">${mainCat} ${
+          <td class="fw-semibold">${mainCat} ${
         canDetail
           ? `<button class="btn btn-outline-primary btn-sm ms-2 daily-detail-warna-btn" data-main="${mainCat}">
                  <i class="fas fa-eye"></i>
                </button>`
           : ""
       }</td>
+          <td class="text-center">
+            <button class="btn btn-sm btn-outline-secondary edit-item-btn" data-main="${mainCat}">
+              <i class="fas fa-edit"></i>
+            </button>
+          </td>
         <td class="text-center">
           <span class="badge bg-success position-relative">
             ${rowData.total}
@@ -300,6 +309,81 @@ function showWarnaDetailFor(mainCat) {
   statusEl.innerHTML = statusHtml;
 
   modal.show();
+}
+
+// Edit modal handling
+let currentEditMain = null;
+const editModalEl = document.getElementById("modalEditItem");
+const editModal = editModalEl ? new bootstrap.Modal(editModalEl) : null;
+const editItemNameEl = document.getElementById("editItemName");
+const editJumlahBarangEl = document.getElementById("editJumlahBarang");
+const editDataKomputerEl = document.getElementById("editDataKomputer");
+const editStatusAkhirEl = document.getElementById("editStatusAkhir");
+const saveEditBtn = document.getElementById("saveEditBtn");
+
+// Delegate click for edit buttons
+document.addEventListener("click", (e) => {
+  const btn = e.target.closest(".edit-item-btn");
+  if (!btn) return;
+  const main = btn.dataset.main;
+  currentEditMain = main;
+  // populate modal with current values from snapshot (if available)
+  const data = (window.latestDailyData && window.latestDailyData.items && window.latestDailyData.items[main]) ||
+    computeCurrentSummarySnapshot()[main] || { total: 0, komputer: 0, status: "-" };
+  if (editItemNameEl) editItemNameEl.textContent = main;
+  if (editJumlahBarangEl) editJumlahBarangEl.value = data.total || 0;
+  if (editDataKomputerEl) editDataKomputerEl.value = data.komputer || 0;
+  if (editStatusAkhirEl) {
+    const st = data.status || "-";
+    if (st.startsWith("Kurang")) editStatusAkhirEl.value = "Kurang";
+    else if (st.startsWith("Lebih")) editStatusAkhirEl.value = "Lebih";
+    else editStatusAkhirEl.value = "Klop";
+  }
+  if (editModal) editModal.show();
+});
+
+// Save edited values back to Firestore (daily_stock_reports/{date}) and local snapshot
+if (saveEditBtn) {
+  saveEditBtn.addEventListener("click", async () => {
+    if (!currentEditMain) return;
+    const jumlah = parseInt(editJumlahBarangEl.value || "0", 10) || 0;
+    const komputer = parseInt(editDataKomputerEl.value || "0", 10) || 0;
+    const statusSel = editStatusAkhirEl.value || "Klop";
+
+    // Update local snapshot representation
+    const dateKey = document.getElementById("dailyReportDate").value || formatDateKey(new Date());
+    // ensure we have latest data in window.latestDailyData
+    if (!window.latestDailyData) window.latestDailyData = { items: computeCurrentSummarySnapshot() };
+    if (!window.latestDailyData.items) window.latestDailyData.items = {};
+    window.latestDailyData.items[currentEditMain] = { total: jumlah, komputer: komputer, status: statusSel === "Klop" ? "Klop" : statusSel === "Kurang" ? `Kurang ${komputer - jumlah}` : `Lebih ${jumlah - komputer}` };
+
+    // Persist to Firestore: update the daily_stock_reports/{dateKey} document's items.{main}
+    try {
+      const docRef = doc(firestore, "daily_stock_reports", dateKey);
+      // Build update payload to set items.<main> = { ... }
+      const payload = {};
+      payload[`items.${currentEditMain}`] = window.latestDailyData.items[currentEditMain];
+      payload["createdAt"] = new Date().toISOString();
+      await updateDoc(docRef, payload).catch(async (e) => {
+        // If document doesn't exist, fallback to setDoc
+        if (e && e.code && e.code === "not-found") {
+          await setDoc(docRef, { date: dateKey, createdAt: new Date().toISOString(), items: { [currentEditMain]: window.latestDailyData.items[currentEditMain] } }, { merge: true });
+        } else {
+          throw e;
+        }
+      });
+
+      // Re-render table with updated data
+      renderDailyReportTable(window.latestDailyData);
+      showToast("Perubahan tersimpan", "success");
+    } catch (err) {
+      console.error("Gagal menyimpan perubahan", err);
+      showToast("Gagal menyimpan perubahan", "error");
+    } finally {
+      if (editModal) editModal.hide();
+      currentEditMain = null;
+    }
+  });
 }
 
 // Delegate click on eye buttons

@@ -14,36 +14,58 @@
 /* Enhanced colors */
 .kalung-card {
   background: linear-gradient(135deg, #fff8e1 0%, #fd907c 100%);
+  --line-start: #fb5a5a;
+  --line-end: #fec3b9;
 }
 .liontin-card {
   background: linear-gradient(135deg, #f1f8e9 0%, #b3fc60 100%);
+  --line-start: #b3ff3a;
+  --line-end: #d0f7a3;
 }
 .anting-card {
   background: linear-gradient(135deg, #fff3e0 0%, #ffcc02 100%);
+  --line-start: #ffcc02;
+  --line-end: #f4dc7b;
 }
 .cincin-card {
   background: linear-gradient(135deg, #eef7ff 0%, #9fd4ff 100%);
+  --line-start: #1c9cff;
+  --line-end: #9fd4ff;
 }
 .hala-card {
   background: linear-gradient(135deg, #fff3e0 0%, #ffcc02 100%);
+  --line-start: #ffcc02;
+  --line-end: #f4dc7b;
 }
 .gelang-card {
   background: linear-gradient(135deg, #fff8e1 0%, #fd907c 100%);
+  --line-start: #fb5a5a;
+  --line-end: #fec3b9;
 }
 .giwang-card {
   background: linear-gradient(135deg, #f1f8e9 0%, #b3fc60 100%);
+  --line-start: #b3ff3a;
+  --line-end: #d0f7a3;
 }
 .kendari-card {
   background: linear-gradient(135deg, #fff8e1 0%, #fd907c 100%);
+  --line-start: #fb5a5a;
+  --line-end: #fec3b9;
 }
 .berlian-card {
   background: linear-gradient(135deg, #eef7ff 0%, #9fd4ff 100%);
+  --line-start: #1c9cff;
+  --line-end: #9fd4ff;
 }
 .sdw-card {
   background: linear-gradient(135deg, #f1f8e9 0%, #b3fc60 100%);
+  --line-start: #b3ff3a;
+  --line-end: #d0f7a3;
 }
 .emas-bali-card {
   background: linear-gradient(135deg, #fff3e0 0%, #ffcc02 100%);
+  --line-start: #ffcc02;
+  --line-end: #f4dc7b;
 }
 /* Styling untuk status perbandingan */
 .number.text-success {
@@ -399,7 +421,10 @@
   left: 0;
   right: 0;
   height: 4px;
-  background: linear-gradient(90deg, rgba(255, 255, 255, 0.8) 0%, rgba(255, 255, 255, 0.2) 100%);
+  background: linear-gradient(90deg, var(--line-start, #5966e0) 0%, var(--line-end, #4c63d2) 100%);
+  z-index: 2;
+  pointer-events: none;
+  box-shadow: 0 3px 8px rgba(0, 0, 11, 0.18);
 }
 
 .stock-card:hover {
@@ -616,7 +641,7 @@
 #modalUpdateStokLiontin .modal-dialog,
 #modalUpdateKomputerWarna .modal-dialog,
 #modalDetailWarna .modal-dialog {
-  max-width: 400px;
+  max-width: 450px;
 }
 
 #modalRiwayat .modal-dialog {
