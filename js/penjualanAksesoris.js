@@ -2179,7 +2179,7 @@ const penjualanHandler = {
             <div class="item-details">
               <div class="item-data">
                 <span>${kode}</span>
-                <span>1pcs</span>
+                <span> pcs</span>
                 <span>${nama}</span>
                 <span>${kadar}</span>
                 <span>${berat}gr</span>
