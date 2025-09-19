@@ -2113,6 +2113,150 @@ const penjualanHandler = {
     printWindow.document.close();
   },
 
+  // Print separate invoices per item for manual sales
+  printInvoicePerItem() {
+    if (!currentTransactionData) {
+      utils.showAlert("Tidak ada data transaksi untuk dicetak!");
+      return;
+    }
+
+    const tx = currentTransactionData;
+    const items = Array.isArray(tx.items) ? tx.items : [];
+
+    // Fallback jika bukan manual atau hanya 1 item
+    if ((tx.salesType || tx.jenisPenjualan) !== "manual" || items.length <= 1) {
+      this.printInvoice();
+      return;
+    }
+
+    const parseHarga = (val) => {
+      if (val == null) return 0;
+      if (typeof val === "number") return val;
+      const s = String(val);
+      return parseInt(s.replace(/\./g, "")) || 0;
+    };
+
+    const fmt = (n) => utils.formatRupiah(parseInt(n) || 0);
+
+    const getField = (obj, keys, def = "-") => {
+      for (const k of keys) {
+        const v = obj[k];
+        if (v !== undefined && v !== null && String(v) !== "") return v;
+      }
+      return def;
+    };
+
+    const buildItemHTML = (item) => {
+      const kode = getField(item, ["kode", "kodeText", "kodeLock"], "-");
+      const nama = getField(item, ["nama", "namaBarang"], "-");
+      const kadar = getField(item, ["kadar"], "-");
+      const berat = getField(item, ["berat", "gr"], 0);
+      const total = parseHarga(getField(item, ["totalHarga"], 0));
+      const keterangan = getField(item, ["keterangan"], "");
+
+      return `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <title>Invoice Customer</title>
+          <style>
+            @page { size: 10cm 20cm; margin: 0; }
+            body { font-family: Arial, sans-serif; font-size: 12px; margin: 0; padding: 5mm; width: 20cm; box-sizing: border-box; }
+            .invoice { width: 100%; }
+            .header-info { text-align: right; margin-bottom: 2cm; margin-right: 3cm; margin-top: 0.8cm; }
+            .total-row { margin-top: 0.7cm; text-align: right; font-weight: bold; margin-right: 3cm; }
+            .sales { text-align: right; margin-top: 0.6cm; margin-right: 2cm; }
+            .item-details { display: flex; flex-wrap: wrap; }
+            .item-data { display: grid; grid-template-columns: 2cm 1.8cm 5cm 2cm 2cm 2cm; width: 100%; column-gap: 0.2cm; margin-left: 0.5cm; margin-top: 1cm; margin-right: 3cm; }
+            .item-data span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+            .keterangan { font-style: italic; font-size: 10px; margin-top: 1cm; margin-bottom: 0.5cm; padding-top: 2mm; text-align: left; margin-left: 0.5cm; margin-right: 3cm; }
+          </style>
+        </head>
+        <body>
+          <div class="invoice">
+            <div class="header-info"><p>${tx.tanggal || ""}</p></div>
+            <hr>
+            <div class="item-details">
+              <div class="item-data">
+                <span>${kode}</span>
+                <span>1pcs</span>
+                <span>${nama}</span>
+                <span>${kadar}</span>
+                <span>${berat}gr</span>
+                <span>${fmt(total)}</span>
+              </div>
+            </div>
+            ${keterangan ? `<div class="keterangan"><strong>Keterangan:</strong><br>${keterangan}</div>` : ""}
+            <div class="total-row">Rp ${fmt(total)}</div>
+            <div class="sales">${tx.sales || "-"}</div>
+          </div>
+        </body>
+        </html>
+      `;
+    };
+
+    const printViaIframe = (html) =>
+      new Promise((resolve) => {
+        const iframe = document.createElement("iframe");
+        iframe.style.position = "fixed";
+        iframe.style.right = "0";
+        iframe.style.bottom = "0";
+        iframe.style.width = "0";
+        iframe.style.height = "0";
+        iframe.style.border = "0";
+        document.body.appendChild(iframe);
+
+        const w = iframe.contentWindow;
+        const d = w.document;
+        d.open();
+        d.write(html);
+        d.close();
+
+        const cleanup = () => {
+          setTimeout(() => {
+            if (iframe.parentNode) iframe.parentNode.removeChild(iframe);
+            resolve();
+          }, 150);
+        };
+
+        const onAfterPrint = () => {
+          try {
+            w.removeEventListener && w.removeEventListener("afterprint", onAfterPrint);
+          } catch (e) {}
+          cleanup();
+        };
+        try {
+          w.addEventListener && w.addEventListener("afterprint", onAfterPrint);
+        } catch (e) {}
+
+        // Wait for content to fully load before printing to avoid duplicate triggers
+        const tryPrint = () => {
+          try {
+            w.focus();
+            w.print();
+            // Fallback cleanup if afterprint not fired
+            setTimeout(cleanup, 1000);
+          } catch (e) {
+            // Retry once shortly if print isn't ready
+            setTimeout(tryPrint, 100);
+          }
+        };
+        // Ensure styles applied before printing
+        if (d.readyState === "complete") {
+          setTimeout(tryPrint, 50);
+        } else {
+          w.onload = () => setTimeout(tryPrint, 50);
+        }
+      });
+
+    (async () => {
+      for (const item of items) {
+        const html = buildItemHTML(item);
+        await printViaIframe(html);
+      }
+    })();
+  },
+
   // Reset form
   resetForm() {
     try {
@@ -2152,7 +2296,17 @@ const penjualanHandler = {
     if (type === "receipt") {
       this.printReceipt();
     } else if (type === "invoice") {
-      this.printInvoice();
+      // Jika penjualan manual dan item > 1, cetak terpisah per item
+      if (
+        currentTransactionData &&
+        (currentTransactionData.salesType || currentTransactionData.jenisPenjualan) === "manual" &&
+        Array.isArray(currentTransactionData.items) &&
+        currentTransactionData.items.length > 1
+      ) {
+        this.printInvoicePerItem();
+      } else {
+        this.printInvoice();
+      }
     }
   },
 
@@ -2499,10 +2653,12 @@ penjualanHandler.saveTransaction = async function () {
     const result = await originalSaveTransaction.call(this);
 
     // Pastikan handler resetForm pada printModal tidak terduplikasi
-    $("#printModal").off("hidden.bs.modal").on("hidden.bs.modal", () => {
-      this.resetForm();
-      $("#sales").focus();
-    });
+    $("#printModal")
+      .off("hidden.bs.modal")
+      .on("hidden.bs.modal", () => {
+        this.resetForm();
+        $("#sales").focus();
+      });
 
     return result;
   } catch (error) {
