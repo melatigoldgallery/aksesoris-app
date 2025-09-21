@@ -1782,13 +1782,14 @@ class OptimizedDataPenjualanApp {
         @page { size: 10cm 20cm; margin: 0; }
         body { font-family: Arial, sans-serif; font-size: 12px; margin: 0; padding: 5mm; width: 20cm; box-sizing: border-box; }
         .invoice { width: 100%; }
-        .header-info { text-align: right; margin-bottom: 2cm; margin-right: 3cm; margin-top: 0.8cm; }
+        .header-info { text-align: right; margin-bottom: 0.5cm; margin-right: 3cm; margin-top: 0.8cm; }
+        .customer-info { text-align: right; margin-bottom: 1.1cm; margin-right: 3cm; font-size: 11px; line-height: 1.2; }
         .total-row { margin-top: 0.7cm; text-align: right; font-weight: bold; margin-right: 3cm; }
         .sales { text-align: right; margin-top: 0.6cm; margin-right: 2cm; }
-        .keterangan { font-style: italic; font-size: 10px; margin-top: 1cm; margin-bottom: 0.5cm; padding-top: 2mm; text-align: left; margin-left: 0.5cm; margin-right: 3cm; }
+        .keterangan { font-style: italic; font-size: 10px; margin-top: 1.2cm; margin-bottom: 0.5cm; padding-top: 2mm; text-align: left; margin-left: 0.5cm; margin-right: 3cm; }
         .keterangan-spacer { height: 1.6cm; }
         .item-details { display: flex; flex-wrap: wrap; }
-        .item-data { display: grid; grid-template-columns: 2cm 1.8cm 5cm 2cm 2cm 2cm; width: 100%; column-gap: 0.2cm; margin-left: 0.5cm; margin-top: 1cm; margin-right: 3cm; }
+        .item-data { display: grid; grid-template-columns: 2cm 2.7cm 4.6cm 1.8cm 1.8cm 2cm; width: 100%; column-gap: 0.2cm; margin-left: 0.5cm; margin-top: 1cm; margin-right: 3cm; }
         .item-data span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
       </style>
     </head>
@@ -1797,7 +1798,10 @@ class OptimizedDataPenjualanApp {
         <div class="header-info">
           <p>${tanggal}</p>
         </div>
-        <hr>
+        <div class="customer-info">
+          <div>${transaction.customerName || "-"}</div>
+          <div>${transaction.customerPhone || ""}</div>
+        </div>
   `;
 
     let hasKeterangan = false;
@@ -1813,7 +1817,7 @@ class OptimizedDataPenjualanApp {
       <div class="item-details">
         <div class="item-data">
           <span>${item.kodeText || "-"}</span>
-          <span>${item.jumlah || "1"}pcs</span>
+          <span>${item.jumlah || " "}pcs</span>
           <span>${item.nama || "-"}</span>
           <span>${item.kadar || "-"}</span>
           <span>${item.berat || "-"}gr</span>
@@ -1905,13 +1909,14 @@ class OptimizedDataPenjualanApp {
         @page { size: 10cm 20cm; margin: 0; }
         body { font-family: Arial, sans-serif; font-size: 12px; margin: 0; padding: 5mm; width: 20cm; box-sizing: border-box; }
         .invoice { width: 100%; }
-        .header-info { text-align: right; margin-bottom: 2cm; margin-right: 3cm; margin-top: 0.8cm; }
+        .header-info { text-align: right; margin-bottom: 0.5cm; margin-right: 3cm; margin-top: 0.8cm; }
+        .customer-info { text-align: right; margin-bottom: 1.1cm; margin-right: 3cm; font-size: 11px; line-height: 1.2; }
         .total-row { margin-top: 0.7cm; text-align: right; font-weight: bold; margin-right: 3cm; }
         .sales { text-align: right; margin-top: 0.6cm; margin-right: 2cm; }
-        .keterangan { font-style: italic; font-size: 10px; margin-top: 1cm; margin-bottom: 0.5cm; padding-top: 2mm; text-align: left; margin-left: 0.5cm; margin-right: 3cm; }
+        .keterangan { font-style: italic; font-size: 10px; margin-top: 1.2cm; margin-bottom: 0.5cm; padding-top: 2mm; text-align: left; margin-left: 0.5cm; margin-right: 3cm; }
         .keterangan-spacer { height: 1.6cm; }
         .item-details { display: flex; flex-wrap: wrap; }
-        .item-data { display: grid; grid-template-columns: 2cm 1.8cm 5cm 2cm 2cm 2cm; width: 100%; column-gap: 0.2cm; margin-left: 0.5cm; margin-top: 1cm; margin-right: 3cm; }
+        .item-data { display: grid; grid-template-columns: 2cm 2.7cm 4.6cm 1.8cm 1.8cm 2cm; width: 100%; column-gap: 0.2cm; margin-left: 0.5cm; margin-top: 1cm; margin-right: 3cm; }
         .item-data span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
       </style>
     </head>
@@ -1920,11 +1925,14 @@ class OptimizedDataPenjualanApp {
         <div class="header-info">
           <p>${tanggal}</p>
         </div>
-        <hr>
+        <div class="customer-info">
+          <div>${transaction.customerName || "-"}</div>
+          <div>${transaction.customerPhone || ""}</div>
+        </div>
         <div class="item-details">
           <div class="item-data">
             <span>${item?.kodeText || "-"}</span>
-            <span>${item?.jumlah || "1"}pcs</span>
+            <span>${item?.jumlah || " "}pcs</span>
             <span>${item?.nama || "-"}</span>
             <span>${item?.kadar || "-"}</span>
             <span>${item?.berat || "-"}gr</span>

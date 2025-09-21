@@ -1370,6 +1370,8 @@ const penjualanHandler = {
         jenisPenjualan: salesType,
         tanggal: $("#tanggal").val(),
         sales: salesName,
+        customerName: ($("#customerName").val() || "").trim(),
+        customerPhone: ($("#customerPhone").val() || "").trim(),
         metodeBayar: paymentMethod,
         totalHarga: total,
         timestamp: serverTimestamp(),
@@ -1433,6 +1435,8 @@ const penjualanHandler = {
         salesType: salesType,
         tanggal: $("#tanggal").val(),
         sales: salesName,
+        customerName: ($("#customerName").val() || "").trim(),
+        customerPhone: ($("#customerPhone").val() || "").trim(),
         totalHarga: $("#totalOngkos").val(),
         items: items,
         metodeBayar: paymentMethod,
@@ -1989,18 +1993,8 @@ const penjualanHandler = {
             .invoice {
               width: 100%;
             }
-            .header-info {
-              text-align: right;
-              margin-bottom: 2cm;
-              margin-right: 3cm;
-              margin-top: 0.8cm;
-            }         
-            .total-row {
-              margin-top: 0.7cm;
-              text-align: right;
-              font-weight: bold;
-              margin-right: 3cm;
-            }
+            .header-info { text-align: right; margin-bottom: 0.5cm; margin-right: 3cm; margin-top: 0.8cm; }
+            .customer-info { text-align: right; margin-bottom: 1.2cm; margin-right: 3cm; font-size: 11px; line-height: 1.2; }
             .sales {
               text-align: right;
               margin-top: 0.6cm;
@@ -2009,7 +2003,7 @@ const penjualanHandler = {
             .keterangan {
               font-style: italic;
               font-size: 10px;
-              margin-top: 1cm;
+              margin-top: 1.2cm;
               margin-bottom: 0.5cm;
               padding-top: 2mm;
               text-align: left;
@@ -2021,15 +2015,7 @@ const penjualanHandler = {
               display: flex;
               flex-wrap: wrap;
             }
-            .item-data {
-              display: grid;
-              grid-template-columns: 2cm 1.8cm 5cm 2cm 2cm 2cm;
-              width: 100%;
-              column-gap: 0.2cm;
-              margin-left: 0.5cm;
-              margin-top: 1cm;
-              margin-right: 3cm;
-            }
+            .item-data { display: grid; grid-template-columns: 2cm 2.7cm 4.6cm 1.8cm 1.8cm 2cm; width: 100%; column-gap: 0.2cm; margin-left: 0.5cm; margin-top: 1cm; margin-right: 3cm; }
             .item-data span {
               white-space: nowrap;
               overflow: hidden;
@@ -2039,10 +2025,12 @@ const penjualanHandler = {
         </head>
         <body>
           <div class="invoice">
-            <div class="header-info">
-              <p>${transaction.tanggal}</p>
+            <div class="header-info"><p>${transaction.tanggal}</p></div>
+            <div class="customer-info">
+              <div>${transaction.customerName || "-"}</div>
+              <div>${transaction.customerPhone || ""}</div>
             </div>
-            <hr>
+            
       `;
 
     let hasKeterangan = false;
@@ -2058,11 +2046,11 @@ const penjualanHandler = {
           <div class="item-details">
             <div class="item-data">
               <span>${item.kodeText || "-"}</span>
-              <span>${item.jumlah || "1"}pcs</span>
+              <span>${item.jumlah || " "}pcs</span>
               <span>${item.nama || "-"}</span>
               <span>${item.kadar || "-"}</span>
               <span>${item.berat || "-"}gr</span>
-              <span>${utils.formatRupiah(itemHarga)}</span>
+              <span>${utils.formatRupiah(itemHarga)}</span> 
         </div>
       </div>
     `;
@@ -2163,19 +2151,24 @@ const penjualanHandler = {
             @page { size: 10cm 20cm; margin: 0; }
             body { font-family: Arial, sans-serif; font-size: 12px; margin: 0; padding: 5mm; width: 20cm; box-sizing: border-box; }
             .invoice { width: 100%; }
-            .header-info { text-align: right; margin-bottom: 2cm; margin-right: 3cm; margin-top: 0.8cm; }
+            .header-info { text-align: right; margin-bottom: 0.5cm; margin-right: 3cm; margin-top: 0.8cm; }
+            .customer-info { text-align: right; margin-bottom: 1.2cm; margin-right: 3cm; font-size: 11px; line-height: 1.2; } 
             .total-row { margin-top: 0.7cm; text-align: right; font-weight: bold; margin-right: 3cm; }
             .sales { text-align: right; margin-top: 0.6cm; margin-right: 2cm; }
             .item-details { display: flex; flex-wrap: wrap; }
-            .item-data { display: grid; grid-template-columns: 2cm 1.8cm 5cm 2cm 2cm 2cm; width: 100%; column-gap: 0.2cm; margin-left: 0.5cm; margin-top: 1cm; margin-right: 3cm; }
+            .item-data { display: grid; grid-template-columns: 2cm 2.7cm 4.6cm 1.8cm 1.8cm 2cm; width: 100%; column-gap: 0.2cm; margin-left: 0.5cm; margin-top: 1cm; margin-right: 3cm; }
             .item-data span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-            .keterangan { font-style: italic; font-size: 10px; margin-top: 1cm; margin-bottom: 0.5cm; padding-top: 2mm; text-align: left; margin-left: 0.5cm; margin-right: 3cm; }
+            .keterangan { font-style: italic; font-size: 10px; margin-top: 1.2cm; margin-bottom: 0.5cm; padding-top: 2mm; text-align: left; margin-left: 0.5cm; margin-right: 3cm; }
           </style>
         </head>
         <body>
           <div class="invoice">
             <div class="header-info"><p>${tx.tanggal || ""}</p></div>
-            <hr>
+            <div class="customer-info">
+              <div>${tx.customerName || "-"}</div>
+              <div>${tx.customerPhone || ""}</div>
+            </div>
+            
             <div class="item-details">
               <div class="item-data">
                 <span>${kode}</span>
@@ -2268,6 +2261,8 @@ const penjualanHandler = {
 
       // Reset sales name field
       $("#sales").val("").removeClass("is-valid is-invalid");
+      $("#customerName").val("");
+      $("#customerPhone").val("");
 
       // Clear all tables
       $("#tableAksesorisDetail tbody, #tableKotakDetail tbody, #tableManualDetail tbody").empty();
