@@ -1016,8 +1016,10 @@ function formatTimestamp(timestamp) {
 
 // Fungsi untuk update tampilan (menggunakan fungsi yang sudah ada)
 function updateKodeDisplay() {
-  const filteredActive = filterKodeData(kodeData.active);
-  const filteredMutated = filterKodeData(kodeData.mutated);
+  const mutatedIds = new Set((kodeData.mutated || []).map((i) => i.id));
+  const activeBase = (kodeData.active || []).filter((i) => !mutatedIds.has(i.id) && !i.isMutated);
+  const filteredActive = filterKodeData(activeBase);
+  const filteredMutated = filterKodeData(kodeData.mutated || []);
   renderKodeTable(filteredActive, "active");
   renderKodeTable(filteredMutated, "mutated");
   updateCounters();
@@ -1044,11 +1046,13 @@ function renderKodeTable(data, type) {
   tableBody.empty();
 
   if (data.length === 0) {
-    tableBody.html(`<tr><td colspan="7" class="text-center">Tidak ada data kode</td></tr>`);
+    const colCount = type === "active" ? 8 : 9;
+    tableBody.html(`<tr><td colspan="${colCount}" class="text-center">Tidak ada data kode</td></tr>`);
     return;
   }
 
   data.forEach((item) => {
+    const keteranganValue = type === "active" ? item.keterangan || "-" : item.keterangan || "-";
     const row = `
       <tr data-id="${item.id}">
         <td>
@@ -1058,7 +1062,9 @@ function renderKodeTable(data, type) {
         <td>${item.nama}</td>
         <td>${item.kadar}</td>
         <td>${item.berat}</td>
+        ${type === "mutated" ? `<td>${item.tanggalInput || "-"}</td>` : ""}
         <td>${type === "active" ? item.tanggalInput : item.tanggalMutasi || "-"}</td>
+        <td>${keteranganValue}</td>
         <td>
           <button class="btn btn-sm btn-info btn-detail" data-id="${item.id}" data-type="${type}">
             <i class="fas fa-info-circle"></i>
@@ -1155,8 +1161,10 @@ function updateButtonStatus(type) {
 }
 
 function updateCounters() {
-  const filteredActive = filterKodeData(kodeData.active);
-  const filteredMutated = filterKodeData(kodeData.mutated);
+  const mutatedIds = new Set((kodeData.mutated || []).map((i) => i.id));
+  const activeBase = (kodeData.active || []).filter((i) => !mutatedIds.has(i.id) && !i.isMutated);
+  const filteredActive = filterKodeData(activeBase);
+  const filteredMutated = filterKodeData(kodeData.mutated || []);
   $("#activeKodeCount").text(filteredActive.length);
   $("#mutatedKodeCount").text(filteredMutated.length);
 }
@@ -1470,7 +1478,7 @@ function initializeEventHandlers() {
 function showValidasiError(message) {
   $("#validasiErrorText").text(message);
   $("#validasiError").removeClass("d-none");
-  
+
   // Auto hide error setelah 5 detik
   setTimeout(() => {
     $("#validasiError").addClass("d-none");

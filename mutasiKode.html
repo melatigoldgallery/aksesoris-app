@@ -76,7 +76,8 @@
                 data-bs-target="#barangSubmenu"
                 aria-expanded="false"
               >
-                <<i class="fa-solid fa-cubes"></i>
+                <
+                <i class="fa-solid fa-cubes"></i>
                 <span class="menu-text">Inventory Barang</span>
                 <i class="fas fa-angle-down ms-auto submenu-icon"></i>
               </a>
@@ -100,7 +101,13 @@
                       <span class="menu-text">Mutasi Kode</span>
                     </a>
                   </li>
-                  <li class="nav-item d-none">
+                  <li class="nav-item">
+                    <a class="nav-link active" href="restokBarang.html">
+                      <i class="fa-solid fa-box-open"></i>
+                      <span class="menu-text">Restok Barang</span>
+                    </a>
+                  </li>
+                  <li class="nav-item">
                     <a class="nav-link" href="buyback.html">
                       <i class="fas fa-exchange-alt"></i>
                       <span class="menu-text">Buyback</span>
@@ -319,11 +326,12 @@
                             <th style="width: 5%">
                               <input type="checkbox" class="form-check-input" id="selectAllActive" />
                             </th>
-                            <th style="width: 15%">Kode</th>
-                            <th style="width: 30%">Nama Barang</th>
-                            <th style="width: 15%">Kadar</th>
+                            <th style="width: 10%">Kode</th>
+                            <th style="width: 20%">Nama Barang</th>
+                            <th style="width: 10%">Kadar</th>
                             <th style="width: 10%">Berat</th>
                             <th style="width: 15%">Tanggal Input</th>
+                            <th style="width: 20%">Keterangan</th>
                             <th style="width: 10%">Aksi</th>
                           </tr>
                         </thead>
@@ -380,11 +388,13 @@
                             <th style="width: 5%">
                               <input type="checkbox" class="form-check-input" id="selectAllMutated" />
                             </th>
-                            <th style="width: 15%">Kode</th>
-                            <th style="width: 30%">Nama Barang</th>
-                            <th style="width: 15%">Kadar</th>
-                            <th style="width: 10%">Berat</th>
-                            <th style="width: 15%">Tanggal Mutasi</th>
+                            <th style="width: 10%">Kode</th>
+                            <th style="width: 25%">Nama Barang</th>
+                            <th style="width: 5%">Kadar</th>
+                            <th style="width: 5%">Berat</th>
+                            <th style="width: 12%">Tanggal Input</th>
+                            <th style="width: 12">Tanggal Mutasi</th>
+                            <th style="width: 21%">Keterangan</th>
                             <th style="width: 10%">Aksi</th>
                           </tr>
                         </thead>

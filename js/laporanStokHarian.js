@@ -1,8 +1,13 @@
-// Laporan Stok Harian
 import { firestore } from "./configFirebase.js";
-import { doc, getDoc, setDoc, collection, updateDoc } from "https://www.gstatic.com/firebasejs/10.4.0/firebase-firestore.js";
+import {
+  doc,
+  getDoc,
+  setDoc,
+  collection,
+  updateDoc,
+  getDocs,
+} from "https://www.gstatic.com/firebasejs/10.4.0/firebase-firestore.js";
 
-// Copy subset constants (pastikan sinkron dengan manajemenStok.js)
 const mainCategories = [
   "KALUNG",
   "LIONTIN",
@@ -16,7 +21,7 @@ const mainCategories = [
   "SDW",
   "EMAS_BALI",
 ];
-const colorTypes = ["HIJAU", "BIRU", "PUTIH", "PINK", "KUNING"]; // mengikuti manajemenStok untuk KALUNG/LIONTIN
+const colorTypes = ["HIJAU", "BIRU", "PUTIH", "PINK", "KUNING"];
 const colorMapping = { HIJAU: "Hijau", BIRU: "Biru", PUTIH: "Putih", PINK: "Pink", KUNING: "Kuning" };
 const summaryCategories = [
   "brankas",
@@ -30,36 +35,47 @@ const summaryCategories = [
   "DP",
 ];
 
-// Cache ringan untuk stok agar tidak fetch berulang via window.stockData jika halaman ini dibuka terpisah
 let stockDataSnapshot = {};
+let lastStockFetchAt = 0;
+let stockFetchPromise = null;
+const STOCK_SNAPSHOT_TTL = 60000;
 
-async function fetchStockSnapshot() {
-  // Ambil dokumen-dokumen kategori di koleksi 'stocks'
-  const cats = [...summaryCategories, "stok-komputer"];
-  for (const cat of cats) {
-    // Defensive: ensure cat is a non-empty string to avoid calling doc() with missing segments
-    if (!cat || typeof cat !== "string" || cat.trim() === "") {
-      console.warn("Skipping invalid stock category while fetching snapshot:", cat);
-      continue;
-    }
-
-    try {
-      // Use explicit collection->doc pattern for clarity
-      const stocksCol = collection(firestore, "stocks");
-      const ref = doc(stocksCol, cat);
-      const snap = await getDoc(ref);
-      if (snap.exists()) {
-        stockDataSnapshot[cat] = snap.data();
-      } else {
-        stockDataSnapshot[cat] = {};
-      }
-    } catch (err) {
-      console.error("Error fetching stock category", cat, err);
-      // Ensure we still have a defined entry so callers don't break
-      stockDataSnapshot[cat] = {};
-    }
+async function getStockSnapshot({ force = false } = {}) {
+  const now = Date.now();
+  const hasCache = Object.keys(stockDataSnapshot).length > 0;
+  if (!force && hasCache && now - lastStockFetchAt < STOCK_SNAPSHOT_TTL) {
+    return stockDataSnapshot;
   }
-  return stockDataSnapshot;
+  if (stockFetchPromise) return stockFetchPromise;
+
+  stockFetchPromise = (async () => {
+    try {
+      const stocksCol = collection(firestore, "stocks");
+      const snap = await getDocs(stocksCol);
+      const needed = new Set([...summaryCategories, "stok-komputer"]);
+      const data = {};
+      snap.forEach((docSnap) => {
+        const id = docSnap.id;
+        if (needed.has(id)) {
+          data[id] = docSnap.data() || {};
+        }
+      });
+      needed.forEach((id) => {
+        if (!data[id]) data[id] = {};
+      });
+      stockDataSnapshot = data;
+      lastStockFetchAt = Date.now();
+      return stockDataSnapshot;
+    } catch (err) {
+      console.error("Error fetching stocks collection", err);
+      // Gagal fetch: tetap kembalikan cache lama jika ada
+      return stockDataSnapshot;
+    } finally {
+      stockFetchPromise = null;
+    }
+  })();
+
+  return stockFetchPromise;
 }
 
 function formatDate(date) {
@@ -104,7 +120,7 @@ function computeCurrentSummarySnapshot() {
 async function saveDailyStockSnapshot(selectedDate) {
   const dateKey = formatDateKey(selectedDate);
   if (!dateKey) throw new Error("Tanggal tidak valid");
-  await fetchStockSnapshot();
+  await getStockSnapshot();
   const data = computeCurrentSummarySnapshot();
   const docRef = doc(firestore, "daily_stock_reports", dateKey);
   const existing = await getDoc(docRef);
@@ -127,19 +143,14 @@ async function loadDailyStockSnapshot(selectedDate) {
 }
 
 async function ensureYesterdaySnapshotIfMissing() {
-  // Dipanggil saat halaman dibuka: jika hari ini (WITA) belum lewat 23:00, cek apakah kemarin tidak ada snapshot dan buatkan.
   const nowWita = getNowInWita();
   const todayKey = formatDateKey(nowWita);
-  // Dapatkan tanggal kemarin (WITA)
   const yesterday = new Date(getNowInWita().getTime() - 24 * 60 * 60 * 1000);
   const yesterdayKey = formatDateKey(yesterday);
-  // Jika snapshot kemarin tidak ada, buat.
   const ref = doc(firestore, "daily_stock_reports", yesterdayKey);
   const snap = await getDoc(ref);
   if (!snap.exists()) {
-    // Ambil data live untuk kemarin TIDAK bisa persis (karena tidak punya histori). Jadi fallback: dibuat saat ini sebagai penutup gap.
-    // Tandai dengan flag backfilled true.
-    await fetchStockSnapshot();
+    await getStockSnapshot();
     const data = computeCurrentSummarySnapshot();
     await setDoc(
       ref,
@@ -157,7 +168,6 @@ function renderDailyReportTable(dataObj) {
   const meta = document.getElementById("dailyReportMeta");
   if (!tbody) return;
 
-  // Add loading animation
   tbody.innerHTML =
     '<tr><td colspan="6" class="text-center py-4"><i class="fas fa-spinner fa-spin me-2"></i>Memuat data...</td></tr>';
 
@@ -178,16 +188,16 @@ function renderDailyReportTable(dataObj) {
     const items = dataObj.items;
     let i = 1;
 
-    // cache globally so edit/save handlers can reference and mutate it
     window.latestDailyData = dataObj;
 
     mainCategories.forEach((mainCat) => {
-      // prefer authoritative value from window.latestDailyData when present
-      const rowData = (window.latestDailyData && window.latestDailyData.items && window.latestDailyData.items[mainCat]) || items[mainCat] || { total: 0, komputer: 0, status: "-" };
+      const rowData = (window.latestDailyData &&
+        window.latestDailyData.items &&
+        window.latestDailyData.items[mainCat]) ||
+        items[mainCat] || { total: 0, komputer: 0, status: "-" };
       let statusClass = "text-primary";
       let statusIcon = "fas fa-info-circle";
 
-      // Enhanced status styling
       if (rowData.status.startsWith("Kurang")) {
         statusClass = "status-kurang";
       } else if (rowData.status.startsWith("Lebih")) {
@@ -199,21 +209,14 @@ function renderDailyReportTable(dataObj) {
 
       const tr = document.createElement("tr");
       tr.style.height = "auto";
-      const canDetail = mainCat === "KALUNG" || mainCat === "LIONTIN";
-        tr.innerHTML = `
+      tr.innerHTML = `
         <td class="text-center fw-bold text-muted">${i++}</td>
-          <td class="fw-semibold">${mainCat} ${
-        canDetail
-          ? `<button class="btn btn-outline-primary btn-sm ms-2 daily-detail-warna-btn" data-main="${mainCat}">
-                 <i class="fas fa-eye"></i>
-               </button>`
-          : ""
-      }</td>
-          <td class="text-center">
-            <button class="btn btn-sm btn-outline-secondary edit-item-btn" data-main="${mainCat}">
-              <i class="fas fa-edit"></i>
-            </button>
-          </td>
+        <td class="fw-semibold">${mainCat}</td>
+        <td class="text-center">
+          <button class="btn btn-outline-primary btn-sm lihat-detail-btn" data-main="${mainCat}">
+            <i class="fas fa-eye"></i>
+          </button>
+        </td>
         <td class="text-center">
           <span class="badge bg-success position-relative">
             ${rowData.total}
@@ -229,12 +232,10 @@ function renderDailyReportTable(dataObj) {
         <td class="text-center ${statusClass}">
           <i class="${statusIcon} me-1"></i>
           <strong>${rowData.status}</strong>
-        </td>
-      `;
+        </td>`;
       tbody.appendChild(tr);
     });
 
-    // Add animation class
     table.classList.add("table-animate");
     setTimeout(() => table.classList.remove("table-animate"), 500);
 
@@ -242,161 +243,9 @@ function renderDailyReportTable(dataObj) {
       const createdDate = dataObj.createdAt ? formatDate(dataObj.createdAt) : "-";
       meta.innerHTML = `<i class="fas fa-clock me-1"></i>Snapshot: ${createdDate}`;
     }
-  }, 300); // Small delay for better UX
+  }, 300); 
 }
 
-// Show per-warna breakdown for KALUNG/LIONTIN using current snapshot
-function showWarnaDetailFor(mainCat) {
-  const modal = new bootstrap.Modal(document.getElementById("modalDetailWarna"));
-  const tbody = document.getElementById("warna-detail-table-body");
-  const totalEl = document.getElementById("warna-detail-total");
-  const title = document.getElementById("modalDetailWarnaLabel");
-  const statusEl = document.getElementById("warna-detail-status");
-  tbody.innerHTML = "";
-  totalEl.textContent = "0";
-  title.textContent = `Detail Stok ${mainCat}`;
-  if (!stockDataSnapshot) return modal.show();
-
-  // Hitung total per warna dari semua kategori ringkasan untuk mainCat
-  const totalsByColor = { HIJAU: 0, BIRU: 0, PUTIH: 0, PINK: 0, KUNING: 0 };
-  summaryCategories.forEach((cat) => {
-    const node = stockDataSnapshot[cat] && stockDataSnapshot[cat][mainCat];
-    if (node && node.details) {
-      colorTypes.forEach((t) => {
-        totalsByColor[t] += parseInt(node.details[t] || 0);
-      });
-    }
-  });
-
-  // Ambil stok komputer: total dan (jika ada) rincian per-warna
-  const komputerNode =
-    stockDataSnapshot["stok-komputer"] && stockDataSnapshot["stok-komputer"][mainCat]
-      ? stockDataSnapshot["stok-komputer"][mainCat]
-      : null;
-  const komputerTotal = komputerNode ? parseInt(komputerNode.quantity) || 0 : 0;
-  const komputerPerWarna = { HIJAU: 0, BIRU: 0, PUTIH: 0, PINK: 0, KUNING: 0 };
-  if (komputerNode && komputerNode.details) {
-    colorTypes.forEach((t) => {
-      komputerPerWarna[t] = parseInt(komputerNode.details[t] || 0) || 0;
-    });
-  }
-  const physicalTotal = Object.values(totalsByColor).reduce((a, b) => a + b, 0);
-
-  // Render baris per warna
-  let idx = 1;
-  colorTypes.forEach((t) => {
-    const tr = document.createElement("tr");
-    tr.innerHTML = `
-      <td>${idx++}</td>
-      <td>${colorMapping[t]}</td>
-      <td>${komputerPerWarna[t]}</td>
-      <td class="text-center"><strong>${totalsByColor[t]}</strong></td>
-    `;
-    tbody.appendChild(tr);
-  });
-
-  totalEl.textContent = physicalTotal;
-
-  // Tampilkan status klop/kurang di header modal menggunakan pembanding total vs komputer
-  let statusHtml = "";
-  if (physicalTotal === komputerTotal) {
-    statusHtml = '<span class="badge bg-success">Klop</span>';
-  } else if (physicalTotal < komputerTotal) {
-    statusHtml = `<span class="badge bg-danger">Kurang ${komputerTotal - physicalTotal}</span>`;
-  } else {
-    statusHtml = `<span class="badge bg-primary">Lebih ${physicalTotal - komputerTotal}</span>`;
-  }
-  statusEl.innerHTML = statusHtml;
-
-  modal.show();
-}
-
-// Edit modal handling
-let currentEditMain = null;
-const editModalEl = document.getElementById("modalEditItem");
-const editModal = editModalEl ? new bootstrap.Modal(editModalEl) : null;
-const editItemNameEl = document.getElementById("editItemName");
-const editJumlahBarangEl = document.getElementById("editJumlahBarang");
-const editDataKomputerEl = document.getElementById("editDataKomputer");
-const editStatusAkhirEl = document.getElementById("editStatusAkhir");
-const saveEditBtn = document.getElementById("saveEditBtn");
-
-// Delegate click for edit buttons
-document.addEventListener("click", (e) => {
-  const btn = e.target.closest(".edit-item-btn");
-  if (!btn) return;
-  const main = btn.dataset.main;
-  currentEditMain = main;
-  // populate modal with current values from snapshot (if available)
-  const data = (window.latestDailyData && window.latestDailyData.items && window.latestDailyData.items[main]) ||
-    computeCurrentSummarySnapshot()[main] || { total: 0, komputer: 0, status: "-" };
-  if (editItemNameEl) editItemNameEl.textContent = main;
-  if (editJumlahBarangEl) editJumlahBarangEl.value = data.total || 0;
-  if (editDataKomputerEl) editDataKomputerEl.value = data.komputer || 0;
-  if (editStatusAkhirEl) {
-    const st = data.status || "-";
-    if (st.startsWith("Kurang")) editStatusAkhirEl.value = "Kurang";
-    else if (st.startsWith("Lebih")) editStatusAkhirEl.value = "Lebih";
-    else editStatusAkhirEl.value = "Klop";
-  }
-  if (editModal) editModal.show();
-});
-
-// Save edited values back to Firestore (daily_stock_reports/{date}) and local snapshot
-if (saveEditBtn) {
-  saveEditBtn.addEventListener("click", async () => {
-    if (!currentEditMain) return;
-    const jumlah = parseInt(editJumlahBarangEl.value || "0", 10) || 0;
-    const komputer = parseInt(editDataKomputerEl.value || "0", 10) || 0;
-    const statusSel = editStatusAkhirEl.value || "Klop";
-
-    // Update local snapshot representation
-    const dateKey = document.getElementById("dailyReportDate").value || formatDateKey(new Date());
-    // ensure we have latest data in window.latestDailyData
-    if (!window.latestDailyData) window.latestDailyData = { items: computeCurrentSummarySnapshot() };
-    if (!window.latestDailyData.items) window.latestDailyData.items = {};
-    window.latestDailyData.items[currentEditMain] = { total: jumlah, komputer: komputer, status: statusSel === "Klop" ? "Klop" : statusSel === "Kurang" ? `Kurang ${komputer - jumlah}` : `Lebih ${jumlah - komputer}` };
-
-    // Persist to Firestore: update the daily_stock_reports/{dateKey} document's items.{main}
-    try {
-      const docRef = doc(firestore, "daily_stock_reports", dateKey);
-      // Build update payload to set items.<main> = { ... }
-      const payload = {};
-      payload[`items.${currentEditMain}`] = window.latestDailyData.items[currentEditMain];
-      payload["createdAt"] = new Date().toISOString();
-      await updateDoc(docRef, payload).catch(async (e) => {
-        // If document doesn't exist, fallback to setDoc
-        if (e && e.code && e.code === "not-found") {
-          await setDoc(docRef, { date: dateKey, createdAt: new Date().toISOString(), items: { [currentEditMain]: window.latestDailyData.items[currentEditMain] } }, { merge: true });
-        } else {
-          throw e;
-        }
-      });
-
-      // Re-render table with updated data
-      renderDailyReportTable(window.latestDailyData);
-      showToast("Perubahan tersimpan", "success");
-    } catch (err) {
-      console.error("Gagal menyimpan perubahan", err);
-      showToast("Gagal menyimpan perubahan", "error");
-    } finally {
-      if (editModal) editModal.hide();
-      currentEditMain = null;
-    }
-  });
-}
-
-// Delegate click on eye buttons
-document.addEventListener("click", (e) => {
-  const btn = e.target.closest(".daily-detail-warna-btn");
-  if (!btn) return;
-  const mainCat = btn.dataset.main;
-  if (mainCat === "KALUNG" || mainCat === "LIONTIN") {
-    e.preventDefault();
-    // Ensure we have latest snapshot in this page context before showing
-    fetchStockSnapshot().then(() => showWarnaDetailFor(mainCat));
-  }
-});
 
 function exportTableToCSV() {
   const rows = Array.from(document.querySelectorAll("#daily-report-table tr"));
@@ -416,10 +265,8 @@ function exportTableToCSV() {
   URL.revokeObjectURL(url);
 }
 
-// Convert current local time to WITA (UTC+8). Browser local assumed maybe different timezone.
 function getNowInWita() {
   const now = new Date();
-  // Get UTC ms then add 8 hours
   const utc = now.getTime() + now.getTimezoneOffset() * 60000;
   return new Date(utc + 8 * 60 * 60000);
 }
@@ -427,15 +274,14 @@ function getNowInWita() {
 function millisUntilNextSnapshot() {
   const nowWita = getNowInWita();
   const target = new Date(nowWita);
-  target.setHours(23, 0, 0, 0); // 23:00:00 WITA
+  target.setHours(23, 0, 0, 0); 
   if (nowWita > target) {
-    target.setDate(target.getDate() + 1); // tomorrow
+    target.setDate(target.getDate() + 1); 
   }
   return target - nowWita;
 }
 
 async function ensureTodaySnapshotIfPassed() {
-  // Jika sudah lewat 23:00 WITA hari ini dan snapshot belum ada, buat.
   const nowWita = getNowInWita();
   const dateKey = formatDateKey(nowWita);
   const cutOff = new Date(nowWita);
@@ -460,7 +306,7 @@ function scheduleAutoSnapshot() {
       console.error(e);
       showToast("Gagal snapshot otomatis", "error");
     } finally {
-      scheduleAutoSnapshot(); // schedule next day
+      scheduleAutoSnapshot(); 
     }
   }, delay);
 }
@@ -469,22 +315,19 @@ function initDailyReportPage() {
   const dateInput = document.getElementById("dailyReportDate");
   if (!dateInput) return;
   const showBtn = document.getElementById("dailyReportShowBtn");
-  const exportBtn = document.getElementById("dailyReportExportBtn"); // may be null in some HTML variants
+  const exportBtn = document.getElementById("dailyReportExportBtn"); 
   const statusInfo = document.getElementById("dailyReportStatusInfo");
   const todayKey = formatDateKey(new Date());
   dateInput.value = todayKey;
-  // Disable future dates
-  const todayISO = todayKey; // already yyyy-mm-dd
+  const todayISO = todayKey; 
   dateInput.setAttribute("max", todayISO);
 
-  // Pastikan snapshot kemarin jika terlewat
   ensureYesterdaySnapshotIfMissing();
 
   if (showBtn) {
     showBtn.addEventListener("click", async () => {
       const val = dateInput.value;
       if (!val) {
-        // Enhanced validation feedback
         dateInput.focus();
         dateInput.style.borderColor = "#dc3545";
         setTimeout(() => {
@@ -503,7 +346,7 @@ function initDailyReportPage() {
         if (data) {
           renderDailyReportTable(data);
         } else {
-          await fetchStockSnapshot();
+          await getStockSnapshot();
           const current = { items: computeCurrentSummarySnapshot(), createdAt: null };
           renderDailyReportTable(current);
         }
@@ -526,10 +369,325 @@ function initDailyReportPage() {
     // export button is optional in the page; no-op if missing
   }
 
-  // Jalankan pengecekan apakah sudah lewat jam 23:00 dan snapshot belum ada.
   ensureTodaySnapshotIfPassed();
-  // Jadwalkan snapshot otomatis berikutnya.
   scheduleAutoSnapshot();
+
+  getStockSnapshot().catch(() => {});
+
+  document.addEventListener("click", async (e) => {
+    const btn = e.target.closest(".lihat-detail-btn");
+    if (!btn) return;
+    const mainCat = btn.dataset.main;
+    const dateInput = document.getElementById("dailyReportDate");
+    const dateVal = dateInput ? dateInput.value : null;
+
+    const modalEl = document.getElementById("modalDetailJenis");
+    if (!modalEl) return;
+    const modal = new bootstrap.Modal(modalEl);
+    document.getElementById("modalDetailJenisLabel").textContent = `Detail ${mainCat}`;
+    const jenisTitle = document.getElementById("detailJenisTitle");
+    const jenisTanggal = document.getElementById("detailJenisTanggal");
+    if (jenisTitle) jenisTitle.textContent = mainCat;
+    if (jenisTanggal) jenisTanggal.textContent = dateVal || "-";
+
+    const thead = document.getElementById("detailJenisThead");
+    const tfoot = document.getElementById("detailJenisTfoot");
+    const tbody = document.getElementById("detailJenisTableBody");
+    if (thead) thead.innerHTML = "";
+    if (tfoot) tfoot.innerHTML = "";
+    if (tbody) tbody.innerHTML = "";
+
+    const cats = [
+      "brankas",
+      "posting",
+      "barang-display",
+      "barang-rusak",
+      "batu-lepas",
+      "manual",
+      "admin",
+      "contoh-custom",
+      "DP",
+    ];
+
+    let totalFisik = 0;
+
+    // Header dinamis:
+    // - Kolom Detail (eye) hanya untuk KALUNG/LIONTIN
+    // - Kolom Aksi (Edit) hanya muncul jika tanggal ≠ hari ini
+    const isKalungLiontin = mainCat === "KALUNG" || mainCat === "LIONTIN";
+    const todayKey2 = formatDateKey(new Date());
+    const isToday = (dateVal || todayKey2) === todayKey2;
+    const showDetailEye = isKalungLiontin;
+    const showEditAction = !isToday;
+    if (thead) {
+      thead.innerHTML = `
+        <th>Kategori</th>
+        <th class="text-center" style="width:120px">Jumlah</th>
+        ${showDetailEye ? '<th class="text-center" style="width:120px">Detail</th>' : ""}
+        ${showEditAction ? '<th class="text-center" style="width:120px">Edit</th>' : ""}
+      `;
+    }
+
+    if (tbody) {
+      const baseCols = 2 + (showDetailEye ? 1 : 0) + (showEditAction ? 1 : 0);
+      const colspan = baseCols;
+      tbody.innerHTML = `<tr><td colspan="${colspan}" class="text-center py-3 text-muted"><i class=\"fas fa-spinner fa-spin me-2\"></i>Memuat detail...</td></tr>`;
+    }
+
+    modal.show();
+    await getStockSnapshot();
+
+    if (tbody) tbody.innerHTML = "";
+    cats.forEach((cat) => {
+      const node = stockDataSnapshot[cat] && stockDataSnapshot[cat][mainCat];
+      const qty = node ? parseInt(node.quantity) || 0 : 0;
+      totalFisik += qty;
+      const tr = document.createElement("tr");
+      tr.innerHTML = `
+        <td>${(window.reverseCategoryMapping && window.reverseCategoryMapping[cat]) || cat}</td>
+        <td class="text-center">${qty}</td>
+        ${
+          showDetailEye
+            ? `<td class="text-center"><button class="btn btn-outline-secondary btn-sm lihat-warna-btn" data-main="${mainCat}" data-cat="${cat}"><i class="fas fa-eye"></i></button></td>`
+            : ""
+        }
+        ${
+          showEditAction
+            ? `<td class="text-center"><button class="btn btn-outline-primary btn-sm edit-kategori-btn" data-main="${mainCat}" data-cat="${cat}"><i class="fas fa-pen"></i></button></td>`
+            : ""
+        }
+      `;
+      tbody.appendChild(tr);
+    });
+
+    if (tfoot) {
+      const extraEmptyCols = (showDetailEye ? 1 : 0) + (showEditAction ? 1 : 0);
+      tfoot.innerHTML = `
+        <th>Total</th>
+        <th class="text-center">${totalFisik}</th>
+        ${extraEmptyCols ? `<th colspan="${extraEmptyCols}"></th>` : ""}
+      `;
+    }
+
+    // Simpan edit snapshot
+    const saveBtn = document.getElementById("btnSimpanEdit");
+    if (saveBtn) {
+      saveBtn.onclick = async () => {
+        if (isToday) return; // guard
+        const dateKey = dateVal || todayKey;
+        const docRef = doc(firestore, "daily_stock_reports", dateKey);
+        const total = Math.max(0, parseInt((jumlahEl && jumlahEl.value) || "0", 10) || 0);
+        const komputer = Math.max(0, parseInt((komputerEl && komputerEl.value) || "0", 10) || 0);
+        let status = "Klop";
+        if (total > komputer) status = `Lebih ${total - komputer}`;
+        else if (total < komputer) status = `Kurang ${komputer - total}`;
+        try {
+          await updateDoc(docRef, {
+            [`items.${mainCat}`]: { total, komputer, status },
+            createdAt: new Date().toISOString(),
+          }).catch(async (e) => {
+            // Jika dokumen belum ada, buat baru
+            await setDoc(
+              docRef,
+              { date: dateKey, createdAt: new Date().toISOString(), items: { [mainCat]: { total, komputer, status } } },
+              { merge: true }
+            );
+          });
+          // Update cache tampilan
+          if (!window.latestDailyData) window.latestDailyData = { items: {} };
+          if (!window.latestDailyData.items) window.latestDailyData.items = {};
+          window.latestDailyData.items[mainCat] = { total, komputer, status };
+          renderDailyReportTable(window.latestDailyData);
+          showToast("Perubahan tersimpan", "success");
+        } catch (err) {
+          console.error(err);
+          showToast("Gagal menyimpan perubahan", "error");
+        }
+      };
+    }
+
+    // Modal sudah ditampilkan lebih awal
+  });
+
+  // Delegasi klik: tombol detail warna
+  document.addEventListener("click", (e) => {
+    const btn = e.target.closest(".lihat-warna-btn");
+    if (!btn) return;
+    const mainCat = btn.dataset.main;
+    const cat = btn.dataset.cat;
+    const modalEl = document.getElementById("modalDetailWarna");
+    if (!modalEl) return;
+    const modal = new bootstrap.Modal(modalEl);
+    renderWarnaModal({ mainCat, cat, editable: false });
+    modal.show();
+  });
+
+  // Delegasi klik: tombol edit kategori (non-today)
+  document.addEventListener("click", async (e) => {
+    const btn = e.target.closest(".edit-kategori-btn");
+    if (!btn) return;
+    const mainCat = btn.dataset.main;
+    const cat = btn.dataset.cat;
+    const dateInput = document.getElementById("dailyReportDate");
+    const dateVal = dateInput ? dateInput.value : null;
+    const todayKey = formatDateKey(new Date());
+    const isToday = (dateVal || todayKey) === todayKey;
+    if (isToday) return; // safety guard
+    await getStockSnapshot();
+    const modalEl = document.getElementById("modalDetailWarna");
+    if (!modalEl) return;
+    const modal = new bootstrap.Modal(modalEl);
+    renderWarnaModal({ mainCat, cat, editable: true, dateKey: dateVal || todayKey });
+    modal.show();
+  });
+}
+
+// Render isi modal per-warna; jika editable=true maka tampilkan input dan tombol simpan
+function renderWarnaModal({ mainCat, cat, editable = false, dateKey = null }) {
+  const tbody = document.getElementById("warnaDetailTableBody");
+  const totalFisikEl = document.getElementById("warnaDetailTotalFisik");
+  if (!tbody) return;
+  tbody.innerHTML = "";
+  let totalF = 0;
+  const isKalungLiontin = mainCat === "KALUNG" || mainCat === "LIONTIN";
+
+  // Prefill: gunakan breakdown di window.latestDailyData jika ada (untuk tanggal non-hari ini), else fallback ke live
+  let details = {};
+  let existingTotal = 0;
+  try {
+    const breakdown =
+      window.latestDailyData && window.latestDailyData.breakdown && window.latestDailyData.breakdown[mainCat];
+    const bnode = breakdown && breakdown[cat];
+    if (bnode) {
+      existingTotal = parseInt(bnode.total) || 0;
+      details = { ...(bnode.details || {}) };
+    }
+  } catch {}
+
+  const liveNode = stockDataSnapshot[cat] && stockDataSnapshot[cat][mainCat];
+  const liveDetails = (liveNode && liveNode.details) || {};
+
+  if (isKalungLiontin) {
+    colorTypes.forEach((t) => {
+      const fis = parseInt(details[t] ?? liveDetails[t] ?? 0) || 0;
+      totalF += fis;
+      const tr = document.createElement("tr");
+      tr.innerHTML = editable
+        ? `<td>${colorMapping[t]}</td><td class="text-center"><input type="number" min="0" class="form-control form-control-sm warna-input" data-key="${t}" value="${fis}"></td>`
+        : `<td>${colorMapping[t]}</td><td class="text-center">${fis}</td>`;
+      tbody.appendChild(tr);
+    });
+  } else {
+    const fis = existingTotal || parseInt((liveNode && liveNode.quantity) || 0) || 0;
+    totalF = fis;
+    const tr = document.createElement("tr");
+    tr.innerHTML = editable
+      ? `<td>Total</td><td class="text-center"><input type="number" min="0" class="form-control form-control-sm" id="kategori-total-input" value="${fis}"></td>`
+      : `<td>Total</td><td class="text-center">${fis}</td>`;
+    tbody.appendChild(tr);
+  }
+  if (totalFisikEl) totalFisikEl.textContent = totalF;
+
+  // Tambahkan tombol Simpan saat editable
+  ensureWarnaModalFooter(editable, async () => {
+    try {
+      const docRef = doc(firestore, "daily_stock_reports", dateKey || formatDateKey(new Date()));
+      let payload = { total: 0 };
+      if (isKalungLiontin) {
+        const inputs = Array.from(document.querySelectorAll("#modalDetailWarna .warna-input"));
+        const det = {};
+        let sum = 0;
+        inputs.forEach((inp) => {
+          const k = inp.dataset.key;
+          const v = Math.max(0, parseInt(inp.value || "0", 10) || 0);
+          det[k] = v;
+          sum += v;
+        });
+        payload = { total: sum, details: det };
+      } else {
+        const input = document.getElementById("kategori-total-input");
+        const sum = Math.max(0, parseInt((input && input.value) || "0", 10) || 0);
+        payload = { total: sum };
+      }
+
+      // Update breakdown
+      await updateDoc(docRef, {
+        [`breakdown.${mainCat}.${cat}`]: payload,
+      }).catch(async () => {
+        await setDoc(
+          docRef,
+          { date: dateKey, createdAt: new Date().toISOString(), breakdown: { [mainCat]: { [cat]: payload } } },
+          { merge: true }
+        );
+      });
+
+      // Recompute aggregate items[mainCat]
+      const aggregate = await recomputeAggregateForMainCat(docRef, mainCat);
+      // Refresh UI cache
+      if (!window.latestDailyData) window.latestDailyData = { items: {}, breakdown: {} };
+      if (!window.latestDailyData.breakdown) window.latestDailyData.breakdown = {};
+      if (!window.latestDailyData.breakdown[mainCat]) window.latestDailyData.breakdown[mainCat] = {};
+      window.latestDailyData.breakdown[mainCat][cat] = payload;
+      if (!window.latestDailyData.items) window.latestDailyData.items = {};
+      window.latestDailyData.items[mainCat] = aggregate;
+      renderDailyReportTable(window.latestDailyData);
+      showToast("Perubahan tersimpan", "success");
+    } catch (err) {
+      console.error(err);
+      showToast("Gagal menyimpan perubahan", "error");
+    }
+  });
+}
+
+function ensureWarnaModalFooter(editable, onSave) {
+  // Add a minimal footer with Save button when editable
+  const modalEl = document.getElementById("modalDetailWarna");
+  if (!modalEl) return;
+  // Create footer if not exists
+  let footer = modalEl.querySelector(".modal-footer");
+  if (!footer) {
+    footer = document.createElement("div");
+    footer.className = "modal-footer";
+    modalEl.querySelector(".modal-content").appendChild(footer);
+  }
+  footer.innerHTML = "";
+  if (editable) {
+    const btn = document.createElement("button");
+    btn.className = "btn btn-primary";
+    btn.innerHTML = '<i class="fas fa-save me-2"></i>Simpan';
+    btn.onclick = onSave;
+    footer.appendChild(btn);
+  }
+}
+
+async function recomputeAggregateForMainCat(docRef, mainCat) {
+  // Load latest snapshot doc (so we include any previous breakdown entries)
+  const snap = await getDoc(docRef);
+  const data = snap.exists() ? snap.data() : {};
+  const breakdown = (data.breakdown && data.breakdown[mainCat]) || {};
+  let total = 0;
+  Object.values(breakdown).forEach((node) => {
+    total += Math.max(0, parseInt((node && node.total) || 0) || 0);
+  });
+  // komputer: prefer existing items.komputer else live
+  let komputer = 0;
+  const existingItem = data.items && data.items[mainCat];
+  if (existingItem && typeof existingItem.komputer === "number") {
+    komputer = existingItem.komputer;
+  } else {
+    const komputerNode = stockDataSnapshot["stok-komputer"] && stockDataSnapshot["stok-komputer"][mainCat];
+    komputer = komputerNode ? parseInt(komputerNode.quantity) || 0 : 0;
+  }
+  let status = "Klop";
+  if (total > komputer) status = `Lebih ${total - komputer}`;
+  else if (total < komputer) status = `Kurang ${komputer - total}`;
+
+  await setDoc(
+    docRef,
+    { items: { [mainCat]: { total, komputer, status } }, createdAt: new Date().toISOString() },
+    { merge: true }
+  );
+  return { total, komputer, status };
 }
 
 function showToast(message, type = "success") {

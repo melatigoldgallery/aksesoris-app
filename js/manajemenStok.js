@@ -367,7 +367,7 @@ async function addTypedBulk(category, mainCat, types, typeToName, items, adder) 
   node.lastUpdated = new Date().toISOString();
   node.history.unshift({
     date: node.lastUpdated,
-    action: "Tambah Bulk",
+    action: "Tambah",
     quantity: total,
     adder,
     items: items.map((it) => ({ jewelryType: it.type, jewelryName: typeToName[it.type], quantity: it.qty })),
@@ -399,7 +399,7 @@ async function reduceTypedBulk(category, mainCat, types, typeToName, items, peng
   node.lastUpdated = new Date().toISOString();
   node.history.unshift({
     date: node.lastUpdated,
-    action: "Kurangi Bulk",
+    action: "Kurangi",
     quantity: total,
     pengurang,
     keterangan,

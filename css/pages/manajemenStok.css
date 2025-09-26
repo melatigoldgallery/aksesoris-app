@@ -639,7 +639,8 @@
 #modalDetailLiontin .modal-dialog,
 #modalUpdateStokLiontin .modal-dialog,
 #modalUpdateKomputerWarna .modal-dialog,
-#modalDetailWarna .modal-dialog {
+#modalDetailWarna .modal-dialog,
+#modalDetailJenis .modal-dialog {
   max-width: 450px;
 }
 
