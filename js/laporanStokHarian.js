@@ -23,6 +23,18 @@ const mainCategories = [
 ];
 const colorTypes = ["HIJAU", "BIRU", "PUTIH", "PINK", "KUNING"];
 const colorMapping = { HIJAU: "Hijau", BIRU: "Biru", PUTIH: "Putih", PINK: "Pink", KUNING: "Kuning" };
+
+// Jenis perhiasan khusus untuk HALA
+const halaJewelryTypes = ["KA", "LA", "AN", "CA", "SA", "GA"];
+const halaJewelryMapping = {
+  KA: "Kalung",
+  LA: "Liontin",
+  AN: "Anting",
+  CA: "Cincin",
+  SA: "Giwang",
+  GA: "Gelang",
+};
+
 const summaryCategories = [
   "brankas",
   "posting",
@@ -34,6 +46,19 @@ const summaryCategories = [
   "contoh-custom",
   "DP",
 ];
+
+// Mapping terbalik untuk display nama kategori
+const reverseCategoryMapping = {
+  brankas: "Stok Brankas",
+  posting: "Belum Posting",
+  "barang-display": "Display",
+  "barang-rusak": "Rusak",
+  "batu-lepas": "Batu Lepas",
+  manual: "Manual",
+  admin: "Admin",
+  DP: "DP",
+  "contoh-custom": "Contoh Custom",
+};
 
 let stockDataSnapshot = {};
 let lastStockFetchAt = 0;
@@ -243,9 +268,8 @@ function renderDailyReportTable(dataObj) {
       const createdDate = dataObj.createdAt ? formatDate(dataObj.createdAt) : "-";
       meta.innerHTML = `<i class="fas fa-clock me-1"></i>Snapshot: ${createdDate}`;
     }
-  }, 300); 
+  }, 300);
 }
-
 
 function exportTableToCSV() {
   const rows = Array.from(document.querySelectorAll("#daily-report-table tr"));
@@ -274,9 +298,9 @@ function getNowInWita() {
 function millisUntilNextSnapshot() {
   const nowWita = getNowInWita();
   const target = new Date(nowWita);
-  target.setHours(23, 0, 0, 0); 
+  target.setHours(23, 0, 0, 0);
   if (nowWita > target) {
-    target.setDate(target.getDate() + 1); 
+    target.setDate(target.getDate() + 1);
   }
   return target - nowWita;
 }
@@ -306,7 +330,7 @@ function scheduleAutoSnapshot() {
       console.error(e);
       showToast("Gagal snapshot otomatis", "error");
     } finally {
-      scheduleAutoSnapshot(); 
+      scheduleAutoSnapshot();
     }
   }, delay);
 }
@@ -315,11 +339,11 @@ function initDailyReportPage() {
   const dateInput = document.getElementById("dailyReportDate");
   if (!dateInput) return;
   const showBtn = document.getElementById("dailyReportShowBtn");
-  const exportBtn = document.getElementById("dailyReportExportBtn"); 
+  const exportBtn = document.getElementById("dailyReportExportBtn");
   const statusInfo = document.getElementById("dailyReportStatusInfo");
   const todayKey = formatDateKey(new Date());
   dateInput.value = todayKey;
-  const todayISO = todayKey; 
+  const todayISO = todayKey;
   dateInput.setAttribute("max", todayISO);
 
   ensureYesterdaySnapshotIfMissing();
@@ -411,13 +435,10 @@ function initDailyReportPage() {
 
     let totalFisik = 0;
 
-    // Header dinamis:
-    // - Kolom Detail (eye) hanya untuk KALUNG/LIONTIN
-    // - Kolom Aksi (Edit) hanya muncul jika tanggal ≠ hari ini
-    const isKalungLiontin = mainCat === "KALUNG" || mainCat === "LIONTIN";
+    const isKalungLiontinHala = mainCat === "KALUNG" || mainCat === "LIONTIN" || mainCat === "HALA";
     const todayKey2 = formatDateKey(new Date());
     const isToday = (dateVal || todayKey2) === todayKey2;
-    const showDetailEye = isKalungLiontin;
+    const showDetailEye = isKalungLiontinHala;
     const showEditAction = !isToday;
     if (thead) {
       thead.innerHTML = `
@@ -438,14 +459,32 @@ function initDailyReportPage() {
     await getStockSnapshot();
 
     if (tbody) tbody.innerHTML = "";
+    totalFisik = 0;
     cats.forEach((cat) => {
-      const node = stockDataSnapshot[cat] && stockDataSnapshot[cat][mainCat];
-      const qty = node ? parseInt(node.quantity) || 0 : 0;
+      const breakdown =
+        window.latestDailyData && window.latestDailyData.breakdown && window.latestDailyData.breakdown[mainCat];
+      let qty = 0;
+      if (breakdown && breakdown[cat] && typeof breakdown[cat].total !== "undefined") {
+        qty = parseInt(breakdown[cat].total) || 0;
+      } else {
+        const node = stockDataSnapshot[cat] && stockDataSnapshot[cat][mainCat];
+        if (node) {
+          const isKalungLiontin = mainCat === "KALUNG" || mainCat === "LIONTIN";
+          const isHala = mainCat === "HALA";
+          if (isKalungLiontin && node.details) {
+            qty = colorTypes.reduce((sum, color) => sum + (parseInt(node.details[color]) || 0), 0);
+          } else if (isHala && node.details) {
+            qty = halaJewelryTypes.reduce((sum, type) => sum + (parseInt(node.details[type]) || 0), 0);
+          } else {
+            qty = parseInt(node.quantity) || 0;
+          }
+        }
+      }
       totalFisik += qty;
       const tr = document.createElement("tr");
       tr.innerHTML = `
-        <td>${(window.reverseCategoryMapping && window.reverseCategoryMapping[cat]) || cat}</td>
-        <td class="text-center">${qty}</td>
+        <td>${reverseCategoryMapping[cat] || cat}</td>
+        <td class="text-center qty-cell" data-cat="${cat}">${qty}</td>
         ${
           showDetailEye
             ? `<td class="text-center"><button class="btn btn-outline-secondary btn-sm lihat-warna-btn" data-main="${mainCat}" data-cat="${cat}"><i class="fas fa-eye"></i></button></td>`
@@ -464,7 +503,7 @@ function initDailyReportPage() {
       const extraEmptyCols = (showDetailEye ? 1 : 0) + (showEditAction ? 1 : 0);
       tfoot.innerHTML = `
         <th>Total</th>
-        <th class="text-center">${totalFisik}</th>
+        <th class="text-center" id="detailJenisTotal">${totalFisik}</th>
         ${extraEmptyCols ? `<th colspan="${extraEmptyCols}"></th>` : ""}
       `;
     }
@@ -505,8 +544,6 @@ function initDailyReportPage() {
         }
       };
     }
-
-    // Modal sudah ditampilkan lebih awal
   });
 
   // Delegasi klik: tombol detail warna
@@ -537,21 +574,47 @@ function initDailyReportPage() {
     const modalEl = document.getElementById("modalDetailWarna");
     if (!modalEl) return;
     const modal = new bootstrap.Modal(modalEl);
-    renderWarnaModal({ mainCat, cat, editable: true, dateKey: dateVal || todayKey });
+    const row = btn.closest("tr");
+    const qtyCellEl = row ? row.querySelector("td:nth-child(2)") : null;
+    const footerQtyEl = document.querySelector("#detailJenisTfoot th.text-center");
+    let prevCatTotal = 0;
+    const breakdown =
+      window.latestDailyData && window.latestDailyData.breakdown && window.latestDailyData.breakdown[mainCat];
+    if (breakdown && breakdown[cat] && typeof breakdown[cat].total !== "undefined") {
+      prevCatTotal = parseInt(breakdown[cat].total) || 0;
+    } else {
+      prevCatTotal = qtyCellEl ? parseInt(qtyCellEl.textContent) || 0 : 0;
+    }
+    renderWarnaModal({
+      mainCat,
+      cat,
+      editable: true,
+      dateKey: dateVal || todayKey,
+      prevCatTotal,
+      qtyCellEl,
+      footerQtyEl,
+    });
     modal.show();
   });
 }
 
-// Render isi modal per-warna; jika editable=true maka tampilkan input dan tombol simpan
-function renderWarnaModal({ mainCat, cat, editable = false, dateKey = null }) {
+function renderWarnaModal({
+  mainCat,
+  cat,
+  editable = false,
+  dateKey = null,
+  prevCatTotal = 0,
+  qtyCellEl = null,
+  footerQtyEl = null,
+}) {
   const tbody = document.getElementById("warnaDetailTableBody");
   const totalFisikEl = document.getElementById("warnaDetailTotalFisik");
   if (!tbody) return;
   tbody.innerHTML = "";
   let totalF = 0;
   const isKalungLiontin = mainCat === "KALUNG" || mainCat === "LIONTIN";
+  const isHala = mainCat === "HALA";
 
-  // Prefill: gunakan breakdown di window.latestDailyData jika ada (untuk tanggal non-hari ini), else fallback ke live
   let details = {};
   let existingTotal = 0;
   try {
@@ -577,6 +640,16 @@ function renderWarnaModal({ mainCat, cat, editable = false, dateKey = null }) {
         : `<td>${colorMapping[t]}</td><td class="text-center">${fis}</td>`;
       tbody.appendChild(tr);
     });
+  } else if (isHala) {
+    halaJewelryTypes.forEach((t) => {
+      const fis = parseInt(details[t] ?? liveDetails[t] ?? 0) || 0;
+      totalF += fis;
+      const tr = document.createElement("tr");
+      tr.innerHTML = editable
+        ? `<td>${halaJewelryMapping[t]}</td><td class="text-center"><input type="number" min="0" class="form-control form-control-sm warna-input" data-key="${t}" value="${fis}"></td>`
+        : `<td>${halaJewelryMapping[t]}</td><td class="text-center">${fis}</td>`;
+      tbody.appendChild(tr);
+    });
   } else {
     const fis = existingTotal || parseInt((liveNode && liveNode.quantity) || 0) || 0;
     totalF = fis;
@@ -588,12 +661,12 @@ function renderWarnaModal({ mainCat, cat, editable = false, dateKey = null }) {
   }
   if (totalFisikEl) totalFisikEl.textContent = totalF;
 
-  // Tambahkan tombol Simpan saat editable
   ensureWarnaModalFooter(editable, async () => {
     try {
-      const docRef = doc(firestore, "daily_stock_reports", dateKey || formatDateKey(new Date()));
+      const targetDateKey = dateKey || formatDateKey(new Date());
+      const docRef = doc(firestore, "daily_stock_reports", targetDateKey);
       let payload = { total: 0 };
-      if (isKalungLiontin) {
+      if (isKalungLiontin || isHala) {
         const inputs = Array.from(document.querySelectorAll("#modalDetailWarna .warna-input"));
         const det = {};
         let sum = 0;
@@ -610,26 +683,43 @@ function renderWarnaModal({ mainCat, cat, editable = false, dateKey = null }) {
         payload = { total: sum };
       }
 
-      // Update breakdown
-      await updateDoc(docRef, {
-        [`breakdown.${mainCat}.${cat}`]: payload,
-      }).catch(async () => {
-        await setDoc(
-          docRef,
-          { date: dateKey, createdAt: new Date().toISOString(), breakdown: { [mainCat]: { [cat]: payload } } },
-          { merge: true }
-        );
-      });
+      const newTotalCat = Math.max(0, parseInt(payload.total || 0) || 0);
 
-      // Recompute aggregate items[mainCat]
-      const aggregate = await recomputeAggregateForMainCat(docRef, mainCat);
-      // Refresh UI cache
       if (!window.latestDailyData) window.latestDailyData = { items: {}, breakdown: {} };
+      if (!window.latestDailyData.items) window.latestDailyData.items = {};
+      const prevItem = window.latestDailyData.items[mainCat] || { total: 0, komputer: 0, status: "-" };
+      let komputer = typeof prevItem.komputer === "number" ? prevItem.komputer : 0;
+      if (!komputer) {
+        const komputerNode = stockDataSnapshot["stok-komputer"] && stockDataSnapshot["stok-komputer"][mainCat];
+        komputer = komputerNode ? parseInt(komputerNode.quantity) || 0 : 0;
+      }
+
       if (!window.latestDailyData.breakdown) window.latestDailyData.breakdown = {};
       if (!window.latestDailyData.breakdown[mainCat]) window.latestDailyData.breakdown[mainCat] = {};
       window.latestDailyData.breakdown[mainCat][cat] = payload;
-      if (!window.latestDailyData.items) window.latestDailyData.items = {};
-      window.latestDailyData.items[mainCat] = aggregate;
+
+      if (qtyCellEl) qtyCellEl.textContent = String(newTotalCat);
+      const allQtyCells = document.querySelectorAll("#modalDetailJenis .qty-cell");
+      const newJenisTotal = Array.from(allQtyCells).reduce((sum, cell) => sum + (parseInt(cell.textContent) || 0), 0);
+      const footerTotalEl = document.getElementById("detailJenisTotal");
+      if (footerTotalEl) footerTotalEl.textContent = String(newJenisTotal);
+
+      let status = "Klop";
+      if (newJenisTotal > komputer) status = `Lebih ${newJenisTotal - komputer}`;
+      else if (newJenisTotal < komputer) status = `Kurang ${komputer - newJenisTotal}`;
+
+      await setDoc(
+        docRef,
+        {
+          date: targetDateKey,
+          createdAt: new Date().toISOString(),
+          breakdown: { [mainCat]: { [cat]: payload } },
+          items: { [mainCat]: { total: newJenisTotal, komputer, status } },
+        },
+        { merge: true }
+      );
+
+      window.latestDailyData.items[mainCat] = { total: newJenisTotal, komputer, status };
       renderDailyReportTable(window.latestDailyData);
       showToast("Perubahan tersimpan", "success");
     } catch (err) {
@@ -640,10 +730,8 @@ function renderWarnaModal({ mainCat, cat, editable = false, dateKey = null }) {
 }
 
 function ensureWarnaModalFooter(editable, onSave) {
-  // Add a minimal footer with Save button when editable
   const modalEl = document.getElementById("modalDetailWarna");
   if (!modalEl) return;
-  // Create footer if not exists
   let footer = modalEl.querySelector(".modal-footer");
   if (!footer) {
     footer = document.createElement("div");
@@ -661,7 +749,6 @@ function ensureWarnaModalFooter(editable, onSave) {
 }
 
 async function recomputeAggregateForMainCat(docRef, mainCat) {
-  // Load latest snapshot doc (so we include any previous breakdown entries)
   const snap = await getDoc(docRef);
   const data = snap.exists() ? snap.data() : {};
   const breakdown = (data.breakdown && data.breakdown[mainCat]) || {};
@@ -669,7 +756,6 @@ async function recomputeAggregateForMainCat(docRef, mainCat) {
   Object.values(breakdown).forEach((node) => {
     total += Math.max(0, parseInt((node && node.total) || 0) || 0);
   });
-  // komputer: prefer existing items.komputer else live
   let komputer = 0;
   const existingItem = data.items && data.items[mainCat];
   if (existingItem && typeof existingItem.komputer === "number") {
@@ -691,7 +777,6 @@ async function recomputeAggregateForMainCat(docRef, mainCat) {
 }
 
 function showToast(message, type = "success") {
-  // Remove existing toasts
   const existingToasts = document.querySelectorAll(".custom-toast");
   existingToasts.forEach((toast) => toast.remove());
 
@@ -716,12 +801,10 @@ function showToast(message, type = "success") {
 
   document.body.appendChild(toast);
 
-  // Animate in
   setTimeout(() => {
     toast.style.transform = "translateX(0)";
   }, 10);
 
-  // Auto remove after 4 seconds
   setTimeout(() => {
     toast.style.transform = "translateX(100%)";
     setTimeout(() => {
