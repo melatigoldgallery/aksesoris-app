@@ -19,7 +19,6 @@
     <link rel="stylesheet" href="css/pages/manajemenStok.css" />
     <link rel="shortcut icon" href="img/favicon.ico" type="image/x-icon" />
     <style>
-      /* Enhanced styles for daily stock report table */
       #daily-report-table {
         font-size: 0.9rem;
         box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
@@ -80,7 +79,6 @@
         background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
       }
 
-      /* Status styling */
       .status-klop {
         color: #28a745 !important;
         font-weight: bold;
@@ -99,7 +97,6 @@
         text-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
       }
 
-      /* Loading state */
       .table-loading {
         position: relative;
       }
@@ -118,7 +115,6 @@
         z-index: 999;
       }
 
-      /* Enhanced card styling */
       #daily-stock-report-card {
         border: none;
         border-radius: 12px;
@@ -135,7 +131,6 @@
         padding: 1.5rem;
       }
 
-      /* Button enhancements */
       #dailyReportShowBtn {
         border: none;
         border-radius: 8px;
@@ -156,7 +151,6 @@
         box-shadow: none;
       }
 
-      /* Date input styling */
       #dailyReportDate {
         border-radius: 8px;
         border: 2px solid #e9ecef;
@@ -168,7 +162,6 @@
         box-shadow: 0 0 0 0.2rem rgba(102, 126, 234, 0.25);
       }
 
-      /* Responsive improvements */
       @media (max-width: 768px) {
         #daily-report-table {
           font-size: 0.8rem;
@@ -185,7 +178,6 @@
         }
       }
 
-      /* Animation for table appearance */
       @keyframes fadeInUp {
         from {
           opacity: 0;
@@ -204,7 +196,6 @@
   </head>
   <body>
     <div class="app-container">
-      <!-- Sidebar -->
       <aside class="sidebar">
         <div class="sidebar-header">
           <img src="img/Melati.jfif" alt="Logo" class="logo" />
@@ -325,9 +316,7 @@
         </div>
       </aside>
 
-      <!-- Main Content -->
       <main class="main-content">
-        <!-- Top Navigation -->
         <header class="top-nav">
           <div class="menu-toggle d-md-flex d-none">
             <i class="fa-solid fa-minimize"></i>
@@ -401,7 +390,7 @@
                         <tr>
                           <th style="width: 60px">No</th>
                           <th>Jenis</th>
-                          <th style="width: 140px">Aksi</th>
+                          <th class="text-center" style="width: 120px">Lihat Detail</th>
                           <th class="text-center" style="width: 140px">Jumlah Barang</th>
                           <th class="text-center" style="width: 140px">Data Komputer</th>
                           <th class="text-center" style="width: 200px">Status Akhir</th>
@@ -409,7 +398,7 @@
                       </thead>
                       <tbody id="daily-report-table-body">
                         <tr>
-                          <td colspan="5" class="text-center text-muted py-3">Pilih tanggal lalu klik Tampilkan</td>
+                          <td colspan="6" class="text-center text-muted py-3">Pilih tanggal lalu klik Tampilkan</td>
                         </tr>
                       </tbody>
                     </table>
@@ -422,38 +411,35 @@
       </main>
     </div>
 
-    <!-- Modal Detail Warna (KALUNG/LIONTIN) -->
     <div
       class="modal fade"
-      id="modalDetailWarna"
+      id="modalDetailJenis"
       tabindex="-1"
-      aria-labelledby="modalDetailWarnaLabel"
+      aria-labelledby="modalDetailJenisLabel"
       aria-hidden="true"
     >
       <div class="modal-dialog modal-lg">
         <div class="modal-content">
-          <div class="modal-header">
-            <h5 class="modal-title" id="modalDetailWarnaLabel">Detail Stok</h5>
-            <span class="ms-3" id="warna-detail-status"></span>
+          <div class="modal-header py-2">
+            <h5 class="modal-title" id="modalDetailJenisLabel">Detail Jenis</h5>
             <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Tutup"></button>
           </div>
           <div class="modal-body">
+            <div class="d-flex justify-content-between align-items-center mb-2">
+              <div><strong id="detailJenisTitle">-</strong></div>
+              <div class="small text-muted">
+                Tanggal:
+                <span id="detailJenisTanggal">-</span>
+              </div>
+            </div>
             <div class="table-responsive">
-              <table class="table table-sm table-striped align-middle">
+              <table class="table table-sm align-middle">
                 <thead class="table-light">
-                  <tr>
-                    <th style="width: 10%">No</th>
-                    <th style="width: 40%">Warna</th>
-                    <th style="width: 20%">Stok Komputer</th>
-                    <th style="width: 30%" class="text-center">Jumlah</th>
-                  </tr>
+                  <tr id="detailJenisThead"></tr>
                 </thead>
-                <tbody id="warna-detail-table-body"></tbody>
+                <tbody id="detailJenisTableBody"></tbody>
                 <tfoot>
-                  <tr>
-                    <th colspan="3" class="text-end">Total</th>
-                    <th class="text-center" id="warna-detail-total">0</th>
-                  </tr>
+                  <tr id="detailJenisTfoot"></tr>
                 </tfoot>
               </table>
             </div>
@@ -462,43 +448,43 @@
       </div>
     </div>
 
-    <!-- Scripts -->
+    <div
+      class="modal fade"
+      id="modalDetailWarna"
+      tabindex="-1"
+      aria-labelledby="modalDetailWarnaLabel"
+      aria-hidden="true"
+    >
+      <div class="modal-dialog">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title" id="modalDetailWarnaLabel">Detail Per Warna</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Tutup"></button>
+          </div>
+          <div class="modal-body">
+            <div class="table-responsive">
+              <table class="table table-sm align-middle">
+                <thead class="table-light">
+                  <tr>
+                    <th>Warna</th>
+                    <th class="text-center" style="width: 140px">Jumlah</th>
+                  </tr>
+                </thead>
+                <tbody id="warnaDetailTableBody"></tbody>
+                <tfoot>
+                  <tr>
+                    <th>Total</th>
+                    <th class="text-center" id="warnaDetailTotalFisik">0</th>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
     <script type="module" src="js/main.js"></script>
     <script type="module" src="js/configFirebase.js"></script>
     <script type="module" src="js/laporanStokHarian.js"></script>
   </body>
 </html>
-
-  <!-- Modal Edit Item -->
-  <div class="modal fade" id="modalEditItem" tabindex="-1" aria-labelledby="modalEditItemLabel" aria-hidden="true">
-    <div class="modal-dialog">
-      <div class="modal-content">
-        <div class="modal-header">
-          <h5 class="modal-title" id="modalEditItemLabel">Edit Jumlah - <span id="editItemName"></span></h5>
-          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Tutup"></button>
-        </div>
-        <div class="modal-body">
-          <div class="mb-3">
-            <label class="form-label">Jumlah Barang (fisik)</label>
-            <input type="number" id="editJumlahBarang" class="form-control" />
-          </div>
-          <div class="mb-3">
-            <label class="form-label">Data Komputer</label>
-            <input type="number" id="editDataKomputer" class="form-control" />
-          </div>
-          <div class="mb-3">
-            <label class="form-label">Status Akhir</label>
-            <select id="editStatusAkhir" class="form-select">
-              <option value="Klop">Klop</option>
-              <option value="Kurang">Kurang</option>
-              <option value="Lebih">Lebih</option>
-            </select>
-          </div>
-        </div>
-        <div class="modal-footer">
-          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Batal</button>
-          <button type="button" class="btn btn-primary" id="saveEditBtn">Simpan</button>
-        </div>
-      </div>
-    </div>
-  </div>
