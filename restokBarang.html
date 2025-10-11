@@ -13,6 +13,36 @@
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.2.3/dist/css/bootstrap.min.css" rel="stylesheet" />
     <link rel="stylesheet" href="css/pages/absensi-modern.css"/>
     <link rel="stylesheet" href="css/pages/manajemenStok.css"/>
+    <link rel="shortcut icon" href="img/favicon.ico" type="image/x-icon" />
+        
+    <style>
+      .nav-tabs .nav-link {
+        border-top-left-radius: 0.375rem;
+        border-top-right-radius: 0.375rem;
+        border-bottom: 1px solid transparent;
+        transition: all 0.3s ease;
+      }
+      .nav-tabs .nav-link.active {
+        border-bottom: 1px solid #0d6efd;
+        background-color: white;
+        font-weight: 600;
+      }
+      .nav-tabs .nav-link:hover {
+        border-bottom: 1px solid #6c757d;
+      }
+      .status-cell .badge {
+        display: block;
+        margin: 0 auto 5px auto;
+        font-size: 0.75rem;
+      }
+      #jenisChart {
+        max-width: 300px;
+        max-height: 300px;
+      }
+      #chartSummary {
+        font-size: 0.9rem;
+      }
+    </style>
   </head>
   <body>
     <div class="app-container">
@@ -176,6 +206,31 @@
             </nav>
           </div>
           <div class="content-wrapper">
+            <!-- Section Statistik Jenis Barang -->
+            <div class="card mb-4">
+              <div class="card-header py-2">
+                <h2 class="h5 m-0 text-light">
+                  <i class="fa-solid fa-chart-pie me-2"></i>
+                  Statistik Jenis Barang Perlu Restok
+                </h2>
+              </div>
+              <div class="card-body">
+                <div class="row">
+                  <div class="col-8 d-flex justify-content-center">
+                    <canvas id="jenisChart" width="400" height="400"></canvas>
+                  </div>
+                  <div class="col-4">
+                    <div class="mb-3">
+                      <label class="form-label">Filter Bulan</label>
+                      <input type="month" id="chartBulan" class="form-control" />
+                    </div>
+                    <button id="btnUpdateChart" class="btn btn-primary mb-3">Update Chart</button>
+                    <div id="chartSummary"></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
             <div class="card mb-4">
               <div class="card-header d-flex justify-content-between align-items-center py-2">
                 <h2 class="h5 m-0 text-light">
@@ -198,61 +253,112 @@
                       </button>
                     </div>
                   </div>
-                  <div id="rowsContainer" class="table-responsive mb-3">
+                  <div id="rowsContainer" class="table-responsive mb-0">
                     <table class="table table-sm table-nowrap align-middle" id="inputTable">
                       <thead class="table-light">
                         <tr>
-                          <th style="width: 30%">Nama Barang</th>
-                          <th style="width: 15%">Kadar</th>
-                          <th style="width: 15%">Berat (gr)</th>
-                          <th style="width: 15%">Panjang (cm)</th>
-                          <th style="width: 10%">Aksi</th>
+                          <th style="width: 15%">Jenis</th>
+                          <th style="width: 25%">Nama Barang</th>
+                          <th style="width: 12%">Kadar</th>
+                          <th style="width: 12%">Berat (gr)</th>
+                          <th style="width: 12%">Panjang (cm)</th>
+                          <th style="width: 14%">Aksi</th>
                         </tr>
                       </thead>
                       <tbody></tbody>
                     </table>
                   </div>
-                  <button id="btnSave" type="submit" class="btn btn-outline-success">Simpan</button>
+                  <button id="btnSave" type="submit" class="btn btn-success">Simpan</button>
                 </form>
               </div>
             </div>
 
             <div class="card">
-              <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2 py-2">
+              <div class="card-header py-2">
                 <h2 class="h5 m-0 text-light">
                   <i class="fa-solid fa-database me-2"></i>
                   Data Restok Barang
                 </h2>
               </div>
 
-              <div class="d-flex mx-3 mt-3 align-items-end gap-2 flex-wrap">
-                <div>
-                  <label for="filterTanggal" class="form-label mb-0 small">Tanggal</label>
-                  <input type="date" id="filterTanggal" class="form-control" style="min-width: 180px" />
-                </div>
-                <button id="btnTampilkan" type="button" class="btn btn-outline-primary">Tampilkan</button>
-                <div class="">
-                  <button id="btnSendWA" class="btn btn-outline-success">
-                    <i class="fa-brands fa-whatsapp me-2"></i>
-                    Kirim Data
-                  </button>
-                </div>
+              <!-- Nav tabs di luar card-header -->
+              <div class="bg-light border-bottom mt-3 mb-0">
+                <ul class="nav nav-tabs nav-justified" id="restokTabs" style="border-bottom: none">
+                  <li class="nav-item">
+                    <a class="nav-link active fw-semibold" data-bs-toggle="tab" href="#perluRestok">
+                      <i class="fa-solid fa-exclamation-triangle me-1 text-warning"></i>
+                      Perlu Restok
+                    </a>
+                  </li>
+                  <li class="nav-item">
+                    <a class="nav-link fw-semibold" data-bs-toggle="tab" href="#sudahRestok">
+                      <i class="fa-solid fa-check-circle me-1 text-success"></i>
+                      Sudah Restok
+                    </a>
+                  </li>
+                </ul>
               </div>
-              <div class="card-body">
-                <div class="table-responsive">
-                  <table class="table table-hover table-sm table-nowrap align-middle" id="dataTable">
-                    <thead class="table-light">
-                      <tr>
-                        <th style="width: 12%">Tanggal</th>
-                        <th style="width: 30%">Nama Barang</th>
-                        <th style="width: 15%">Kadar</th>
-                        <th style="width: 15%">Berat</th>
-                        <th style="width: 15%">Panjang</th>
-                        <th style="width: 13%">Aksi</th>
-                      </tr>
-                    </thead>
-                    <tbody></tbody>
-                  </table>
+
+              <div class="tab-content">
+                <div class="tab-pane fade show active" id="perluRestok">
+                  <div class="d-flex mx-3 mt-0 align-items-end gap-2 flex-wrap">
+                    <div>
+                      <label for="filterBulan" class="form-label mb-0 small">Bulan</label>
+                      <input type="month" id="filterBulan" class="form-control" style="min-width: 180px" />
+                    </div>
+                    <button id="btnSendWA" class="btn btn-success">
+                      <i class="fa-brands fa-whatsapp me-2"></i>
+                      Kirim Data Perlu Restok
+                    </button>
+                  </div>
+                  <div class="card-body">
+                    <div class="table-responsive">
+                      <table class="table table-hover table-sm table-nowrap align-middle" id="dataTablePerlu">
+                        <thead class="table-light">
+                          <tr>
+                            <th style="width: 10%">Tanggal</th>
+                            <th style="width: 13%">Jenis</th>
+                            <th style="width: 22%">Nama Barang</th>
+                            <th style="width: 10%">Kadar</th>
+                            <th style="width: 10%">Berat</th>
+                            <th style="width: 10%">Panjang</th>
+                            <th style="width: 15%">Status</th>
+                            <th style="width: 10%">Aksi</th>
+                          </tr>
+                        </thead>
+                        <tbody></tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="tab-pane fade" id="sudahRestok">
+                  <div class="d-flex mx-3 mt-3 align-items-end gap-2 flex-wrap">
+                    <div>
+                      <label for="filterBulanSudah" class="form-label mb-0 small">Bulan</label>
+                      <input type="month" id="filterBulanSudah" class="form-control" style="min-width: 180px" />
+                    </div>
+                    <button id="btnTampilkanSudah" type="button" class="btn btn-outline-primary">Tampilkan</button>
+                  </div>
+                  <div class="card-body">
+                    <div class="table-responsive">
+                      <table class="table table-hover table-sm table-nowrap align-middle" id="dataTableSudah">
+                        <thead class="table-light">
+                          <tr>
+                            <th style="width: 10%">Tanggal</th>
+                            <th style="width: 13%">Jenis</th>
+                            <th style="width: 22%">Nama Barang</th>
+                            <th style="width: 10%">Kadar</th>
+                            <th style="width: 10%">Berat</th>
+                            <th style="width: 10%">Panjang</th>
+                            <th style="width: 15%">Status</th>
+                            <th style="width: 10%">Aksi</th>
+                          </tr>
+                        </thead>
+                        <tbody></tbody>
+                      </table>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
@@ -261,10 +367,36 @@
       </main>
     </div>
 
+    <!-- Modal Edit Status -->
+    <div class="modal fade" id="editStatusModal" tabindex="-1">
+      <div class="modal-dialog">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title">Edit Status Restok</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+          </div>
+          <div class="modal-body">
+            <div class="mb-3">
+              <label class="form-label">Status Restok</label>
+              <select class="form-control" id="statusSelect">
+                <option value="perlu">Perlu Restok</option>
+                <option value="sudah">Sudah Restok</option>
+              </select>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Batal</button>
+            <button type="button" class="btn btn-primary" id="saveStatusBtn">Simpan</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <script src="https://cdn.jsdelivr.net/npm/@popperjs/core@2.11.6/dist/umd/popper.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.2.3/dist/js/bootstrap.bundle.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/js/all.min.js" defer></script>
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="js/jquery-3.6.3.min.js"></script>
     <script type="module" src="js/main.js"></script>
     <script type="module" src="js/restokBarang.js"></script>
