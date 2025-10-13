@@ -148,7 +148,7 @@ function makeRow() {
   const tr = document.createElement("tr");
   tr.innerHTML = `
     <td>
-      <select class="form-control" required>
+      <select class="form-select form-select-sm" required>
         <option value="">Pilih Jenis</option>
         <option value="KALUNG">KALUNG</option>
         <option value="LIONTIN">LIONTIN</option>
@@ -158,10 +158,10 @@ function makeRow() {
         <option value="GIWANG">GIWANG</option>
       </select>
     </td>
-    <td><input type="text" class="form-control" placeholder="Nama barang" required></td>
-    <td><input type="text" class="form-control" placeholder="Kadar" required></td>
-    <td><input type="text" class="form-control" placeholder="Berat (gr)"></td>
-    <td><input type="text" class="form-control" placeholder="Panjang (cm)"></td>
+    <td><input type="text" class="form-control form-control-sm" placeholder="Nama barang" required></td>
+    <td><input type="text" class="form-control form-control-sm" placeholder="Kadar" required></td>
+    <td><input type="text" class="form-control form-control-sm" placeholder="Berat (gr)"></td>
+    <td><input type="text" class="form-control form-control-sm" placeholder="Panjang (cm)"></td>
     <td class="actions-cell"><button type="button" class="btn btn-danger btn-sm btn-remove">Hapus</button></td>
   `;
   tr.querySelector(".btn-remove").addEventListener("click", () => {
@@ -401,7 +401,7 @@ function enterEditMode(tr, currentStatus) {
   tr.innerHTML = `
     <td>${tanggal}</td>
     <td>
-      <select class="form-control form-control-sm">
+      <select class="form-select form-select-sm">
         <option value="">Pilih Jenis...</option>
         <option value="KALUNG" ${jenis === "KALUNG" ? "selected" : ""}>Kalung</option>
         <option value="LIONTIN" ${jenis === "LIONTIN" ? "selected" : ""}>Liontin</option>
@@ -531,7 +531,16 @@ async function updateChart() {
 
     const labels = [];
     const data = [];
-    const colors = ["#FF6384", "#36A2EB", "#FFCE56", "#4BC0C0", "#9966FF", "#FF9F40"];
+
+    // Define base colors for gradients
+    const baseColors = [
+      { start: "#007f1eff", end: "#8aff9eff" },
+      { start: "#a50000ff", end: "#ff9191ff" },
+      { start: "#ffe100ff", end: "#fff187ff" },
+      { start: "#4BC0C0", end: "#9dfcf1ff" },
+      { start: "#30008fff", end: "#a2a9fcff" },
+      { start: "#994c00ff", end: "#fcb791ff" },
+    ];
 
     jenisTypes.forEach((jenis) => {
       if (jenisCount[jenis] > 0) {
@@ -545,6 +554,15 @@ async function updateChart() {
     if (jenisChart) jenisChart.destroy();
 
     if (data.length > 0) {
+      // Create gradients for Chart.js
+      const gradients = [];
+      for (let i = 0; i < labels.length; i++) {
+        const gradient = ctx.createLinearGradient(0, 0, 0, 400);
+        gradient.addColorStop(0, baseColors[i].start);
+        gradient.addColorStop(1, baseColors[i].end);
+        gradients.push(gradient);
+      }
+
       jenisChart = new Chart(ctx, {
         type: "pie",
         data: {
@@ -552,7 +570,7 @@ async function updateChart() {
           datasets: [
             {
               data: data,
-              backgroundColor: colors.slice(0, labels.length),
+              backgroundColor: gradients,
             },
           ],
         },
@@ -571,7 +589,8 @@ async function updateChart() {
 
     labels.forEach((label, index) => {
       const percentage = total > 0 ? ((data[index] / total) * 100).toFixed(1) : 0;
-      summaryHtml += `<li><span style="color:${colors[index]}">●</span> ${label}: ${data[index]} (${percentage}%)</li>`;
+      const color = baseColors[index] ? baseColors[index].start : "#333";
+      summaryHtml += `<li><span style="color:${color}">●</span> ${label}: ${data[index]} (${percentage}%)</li>`;
     });
 
     summaryHtml += "</ul>";

@@ -1046,7 +1046,7 @@ function renderKodeTable(data, type) {
   tableBody.empty();
 
   if (data.length === 0) {
-    const colCount = type === "active" ? 8 : 9;
+    const colCount = type === "active" ? 9 : 10;
     tableBody.html(`<tr><td colspan="${colCount}" class="text-center">Tidak ada data kode</td></tr>`);
     return;
   }
@@ -1059,6 +1059,7 @@ function renderKodeTable(data, type) {
           <input type="checkbox" class="form-check-input kode-checkbox" data-id="${item.id}" data-type="${type}">
         </td>
         <td>${item.kode}</td>
+        <td>${item.sales || "-"}</td>
         <td>${item.nama}</td>
         <td>${item.kadar}</td>
         <td>${item.berat}</td>
@@ -1181,6 +1182,7 @@ function showKodeDetail(id, type) {
   }
 
   $("#detailKode").val(item.kode);
+  $("#detailSales").val(item.sales || "-");
   $("#detailNama").val(item.nama);
   $("#detailKadar").val(item.kadar);
   $("#detailBerat").val(item.berat);
@@ -1275,6 +1277,7 @@ function exportToExcel(data, filename, sheetName = "Data") {
 
     const exportData = data.map((item) => ({
       Kode: item.kode,
+      Sales: item.sales || "-",
       "Nama Barang": item.nama,
       Kadar: item.kadar,
       Berat: item.berat,

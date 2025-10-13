@@ -1994,7 +1994,7 @@ const penjualanHandler = {
               width: 100%;
             }
             .header-info { text-align: right; margin-bottom: 0.5cm; margin-right: 3cm; margin-top: 0.8cm; }
-            .customer-info { text-align: right; margin-bottom: 1.2cm; margin-right: 3cm; font-size: 11px; line-height: 1.2; }
+            .customer-info { text-align: right; margin-bottom: 1.1cm; margin-right: 3cm; font-size: 11px; line-height: 1.2; }
             .sales {
               text-align: right;
               margin-top: 0.6cm;
@@ -2152,7 +2152,7 @@ const penjualanHandler = {
             body { font-family: Arial, sans-serif; font-size: 12px; margin: 0; padding: 5mm; width: 20cm; box-sizing: border-box; }
             .invoice { width: 100%; }
             .header-info { text-align: right; margin-bottom: 0.5cm; margin-right: 3cm; margin-top: 0.8cm; }
-            .customer-info { text-align: right; margin-bottom: 1.2cm; margin-right: 3cm; font-size: 11px; line-height: 1.2; } 
+            .customer-info { text-align: right; margin-bottom: 1.1cm; margin-right: 3cm; font-size: 11px; line-height: 1.2; } 
             .total-row { margin-top: 0.7cm; text-align: right; font-weight: bold; margin-right: 3cm; }
             .sales { text-align: right; margin-top: 0.6cm; margin-right: 2cm; }
             .item-details { display: flex; flex-wrap: wrap; }
