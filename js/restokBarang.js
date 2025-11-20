@@ -609,6 +609,15 @@ if (btnTampilkanSudah) {
   btnTampilkanSudah.addEventListener("click", fetchAndRenderSudah);
 }
 
+// Auto-refresh when month filter changes
+if (filterBulan) {
+  filterBulan.addEventListener("change", fetchAndRenderPerlu);
+}
+
+if (filterBulanSudah) {
+  filterBulanSudah.addEventListener("change", fetchAndRenderSudah);
+}
+
 if (saveStatusBtn) {
   saveStatusBtn.addEventListener("click", saveStatus);
 }

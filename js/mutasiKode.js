@@ -1058,13 +1058,13 @@ function renderKodeTable(data, type) {
         <td>
           <input type="checkbox" class="form-check-input kode-checkbox" data-id="${item.id}" data-type="${type}">
         </td>
+        <td>${item.tanggalInput || "-"}</td>
         <td>${item.kode}</td>
         <td>${item.sales || "-"}</td>
         <td>${item.nama}</td>
         <td>${item.kadar}</td>
         <td>${item.berat}</td>
-        ${type === "mutated" ? `<td>${item.tanggalInput || "-"}</td>` : ""}
-        <td>${type === "active" ? item.tanggalInput : item.tanggalMutasi || "-"}</td>
+        ${type === "mutated" ? `<td>${item.tanggalMutasi || "-"}</td>` : ""}
         <td>${keteranganValue}</td>
         <td>
           <button class="btn btn-sm btn-info btn-detail" data-id="${item.id}" data-type="${type}">

@@ -166,6 +166,49 @@ const utils = {
     }
   },
 
+  formatTime: (date) => {
+    if (!date) return "-";
+
+    try {
+      let dateObj = null;
+
+      // Handle Firestore Timestamp
+      if (date && typeof date.toDate === "function") {
+        dateObj = date.toDate();
+      }
+      // Handle Date object
+      else if (date instanceof Date) {
+        dateObj = date;
+      }
+      // Handle timestamp number
+      else if (typeof date === "number") {
+        dateObj = new Date(date);
+      }
+      // Handle string
+      else if (typeof date === "string") {
+        dateObj = new Date(date);
+      }
+      // Handle object with seconds (Firestore timestamp format)
+      else if (date && typeof date === "object" && date.seconds) {
+        dateObj = new Date(date.seconds * 1000);
+      }
+
+      // Validate the date
+      if (!dateObj || isNaN(dateObj.getTime())) {
+        return "-";
+      }
+
+      const hours = String(dateObj.getHours()).padStart(2, "0");
+      const minutes = String(dateObj.getMinutes()).padStart(2, "0");
+      const seconds = String(dateObj.getSeconds()).padStart(2, "0");
+
+      return `${hours}:${minutes}:${seconds}`;
+    } catch (error) {
+      console.error("Error formatting time:", date, error);
+      return "-";
+    }
+  },
+
   // ✅ PERBAIKAN: Parse date dengan validasi yang lebih ketat
   parseDate: (dateString) => {
     if (!dateString) return null;
@@ -729,6 +772,7 @@ class OptimizedDataPenjualanApp {
       data: [],
       columns: [
         { title: "Tanggal", width: "90px", className: "text-center" },
+        { title: "Jam", width: "75px", className: "text-center" },
         { title: "Sales", width: "80px", className: "text-center" },
         { title: "Jenis", width: "85px", className: "text-center" },
         { title: "Kode", width: "100px", className: "text-center" },
@@ -749,7 +793,7 @@ class OptimizedDataPenjualanApp {
       autoWidth: false,
       columnDefs: [
         { targets: "_all", className: "text-nowrap" },
-        { targets: [10], className: "text-wrap" },
+        { targets: [11], className: "text-wrap" },
       ],
       language: {
         decimal: "",
@@ -938,26 +982,32 @@ class OptimizedDataPenjualanApp {
     uniqueFilteredData.forEach((transaction) => {
       // ✅ PERBAIKAN: Handle timestamp dengan lebih robust
       let displayDate = "-";
+      let displayTime = "-";
 
       if (transaction.timestamp) {
         if (typeof transaction.timestamp.toDate === "function") {
           try {
             displayDate = utils.formatDate(transaction.timestamp.toDate());
+            displayTime = utils.formatTime(transaction.timestamp.toDate());
           } catch (error) {
             console.warn("Error formatting timestamp:", error);
             displayDate = utils.formatDate(transaction.tanggal) || "-";
           }
         } else if (transaction.timestamp instanceof Date) {
           displayDate = utils.formatDate(transaction.timestamp);
+          displayTime = utils.formatTime(transaction.timestamp);
         } else if (
           transaction.timestamp &&
           typeof transaction.timestamp === "object" &&
           transaction.timestamp.seconds
         ) {
-          displayDate = utils.formatDate(new Date(transaction.timestamp.seconds * 1000));
+          const tempDate = new Date(transaction.timestamp.seconds * 1000);
+          displayDate = utils.formatDate(tempDate);
+          displayTime = utils.formatTime(tempDate);
         } else {
           const parsedDate = new Date(transaction.timestamp);
           displayDate = isNaN(parsedDate.getTime()) ? "-" : utils.formatDate(parsedDate);
+          displayTime = isNaN(parsedDate.getTime()) ? "-" : utils.formatTime(parsedDate);
         }
       } else if (transaction.tanggal) {
         displayDate = utils.formatDate(transaction.tanggal);
@@ -965,6 +1015,7 @@ class OptimizedDataPenjualanApp {
 
       const baseData = {
         date: displayDate,
+        time: displayTime,
         sales: transaction.sales || "Admin",
         jenis: this.formatJenisPenjualan(transaction),
         status: this.getStatusBadge(transaction),
@@ -975,6 +1026,7 @@ class OptimizedDataPenjualanApp {
         transaction.items.forEach((item) => {
           tableData.push([
             baseData.date,
+            baseData.time,
             baseData.sales,
             baseData.jenis,
             item.kodeText || item.barcode || "-",
@@ -991,6 +1043,7 @@ class OptimizedDataPenjualanApp {
       } else {
         tableData.push([
           baseData.date,
+          baseData.time,
           baseData.sales,
           baseData.jenis,
           "-",
@@ -1791,6 +1844,7 @@ class OptimizedDataPenjualanApp {
         .item-details { display: flex; flex-wrap: wrap; }
         .item-data { display: grid; grid-template-columns: 2cm 2.7cm 4.6cm 1.8cm 1.8cm 2cm; width: 100%; column-gap: 0.2cm; margin-left: 0.5cm; margin-top: 1cm; margin-right: 3cm; }
         .item-data span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .item-data span:nth-child(3) { white-space: normal; overflow: visible; text-overflow: clip; word-wrap: break-word; }
       </style>
     </head>
     <body>
@@ -1918,6 +1972,7 @@ class OptimizedDataPenjualanApp {
         .item-details { display: flex; flex-wrap: wrap; }
         .item-data { display: grid; grid-template-columns: 2cm 2.7cm 4.6cm 1.8cm 1.8cm 2cm; width: 100%; column-gap: 0.2cm; margin-left: 0.5cm; margin-top: 1cm; margin-right: 3cm; }
         .item-data span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .item-data span:nth-child(3) { white-space: normal; overflow: visible; text-overflow: clip; word-wrap: break-word; }
       </style>
     </head>
     <body>
