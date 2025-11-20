@@ -9,6 +9,7 @@ import {
   updateDoc,
   deleteDoc,
   getDoc,
+  setDoc,
 } from "https://www.gstatic.com/firebasejs/10.4.0/firebase-firestore.js";
 
 // DOM refs
@@ -20,8 +21,6 @@ const inputTbody = document.querySelector("#inputTable tbody");
 
 const filterBulan = document.getElementById("filterBulan");
 const filterBulanSudah = document.getElementById("filterBulanSudah");
-const btnTampilkan = document.getElementById("btnTampilkan");
-const btnTampilkanSudah = document.getElementById("btnTampilkanSudah");
 const dataTablePerlu = document.querySelector("#dataTablePerlu tbody");
 const dataTableSudah = document.querySelector("#dataTableSudah tbody");
 const btnSendWA = document.getElementById("btnSendWA");
@@ -30,6 +29,13 @@ const btnSendWA = document.getElementById("btnSendWA");
 const editStatusModal = document.getElementById("editStatusModal");
 const statusSelect = document.getElementById("statusSelect");
 const saveStatusBtn = document.getElementById("saveStatusBtn");
+
+// WhatsApp Setting Modal refs
+const settingWAModal = document.getElementById("settingWAModal");
+const btnSettingWA = document.getElementById("btnSettingWA");
+const supplierPhoneInput = document.getElementById("supplierPhoneInput");
+const savePhoneBtn = document.getElementById("savePhoneBtn");
+const phoneError = document.getElementById("phoneError");
 
 // Chart refs
 const chartBulan = document.getElementById("chartBulan");
@@ -75,6 +81,87 @@ async function loadSupplierPhone() {
   } catch (err) {
     console.error("Failed to load supplier phone:", err);
     return false;
+  }
+}
+
+// WhatsApp Setting Functions
+function openWhatsAppSettingModal() {
+  if (supplierPhoneInput) {
+    // Display current phone number
+    const displayPhone = SUPPLIER_PHONE
+      ? SUPPLIER_PHONE.startsWith("62")
+        ? `0${SUPPLIER_PHONE.slice(2)}`
+        : SUPPLIER_PHONE
+      : "";
+    supplierPhoneInput.value = displayPhone;
+    supplierPhoneInput.classList.remove("is-invalid");
+  }
+  new bootstrap.Modal(settingWAModal).show();
+}
+
+function validatePhoneNumber(phone) {
+  // Remove all non-digit characters except +
+  const cleaned = phone.replace(/[^+\d]/g, "");
+
+  // Check if empty
+  if (!cleaned) {
+    return { valid: false, message: "Nomor telepon tidak boleh kosong" };
+  }
+
+  // Check valid formats: 08xxx (min 10 digits) or +628xxx (min 12 digits)
+  if (cleaned.startsWith("08") && cleaned.length >= 10) {
+    return { valid: true, formatted: "62" + cleaned.slice(1) };
+  } else if (cleaned.startsWith("+628") && cleaned.length >= 13) {
+    return { valid: true, formatted: cleaned.slice(1) };
+  } else if (cleaned.startsWith("628") && cleaned.length >= 12) {
+    return { valid: true, formatted: cleaned };
+  } else {
+    return { valid: false, message: "Format nomor tidak valid. Gunakan 08xxx atau +628xxx" };
+  }
+}
+
+async function saveSupplierPhone() {
+  const phone = supplierPhoneInput.value.trim();
+  const validation = validatePhoneNumber(phone);
+
+  if (!validation.valid) {
+    supplierPhoneInput.classList.add("is-invalid");
+    phoneError.textContent = validation.message;
+    return;
+  }
+
+  supplierPhoneInput.classList.remove("is-invalid");
+  savePhoneBtn.disabled = true;
+
+  try {
+    // Save to settings/whatsapp with field supplierPhone
+    const ref = doc(firestore, "settings", "whatsapp");
+    await updateDoc(ref, {
+      supplierPhone: validation.formatted,
+      updatedAt: Date.now(),
+    }).catch(async (err) => {
+      // If document doesn't exist, create it
+      if (err.code === "not-found") {
+        await setDoc(ref, {
+          supplierPhone: validation.formatted,
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+        });
+      } else {
+        throw err;
+      }
+    });
+
+    // Update global variable
+    SUPPLIER_PHONE = validation.formatted;
+
+    bootstrap.Modal.getInstance(settingWAModal).hide();
+    toastSuccess("Nomor WhatsApp supplier berhasil disimpan");
+  } catch (err) {
+    console.error("Gagal menyimpan nomor:", err);
+    alert("Gagal menyimpan nomor WhatsApp");
+  } finally {
+    savePhoneBtn.disabled = false;
   }
 }
 
@@ -282,12 +369,21 @@ async function fetchByMonthAndStatus(monthStr, status) {
       items.push({ id: docSnap.id, ...data });
     });
     items.sort((a, b) => {
-      // Sort by date first, then by createdAt
+      // Sort by jenis first (alphabetical)
+      const jenisA = (a.jenis || "").toUpperCase();
+      const jenisB = (b.jenis || "").toUpperCase();
+      if (jenisA !== jenisB) {
+        return jenisA.localeCompare(jenisB);
+      }
+
+      // Then by date within same jenis
       const dateA = a.tanggal || "";
       const dateB = b.tanggal || "";
       if (dateA !== dateB) {
         return dateA.localeCompare(dateB);
       }
+
+      // Finally by createdAt
       return (a.createdAt || 0) - (b.createdAt || 0);
     });
     return items;
@@ -297,7 +393,7 @@ async function fetchByMonthAndStatus(monthStr, status) {
   }
 }
 
-function renderRows(items, tbody, status) {
+function renderRowsPerlu(items, tbody) {
   tbody.innerHTML = items
     .map(
       (x) => `
@@ -305,11 +401,11 @@ function renderRows(items, tbody, status) {
       <td>${x.tanggal || ""}</td>
       <td>${x.jenis || ""}</td>
       <td>${x.nama || ""}</td>
-      <td >${x.kadar || ""}</td>
+      <td>${x.kadar || ""}</td>
       <td>${x.berat ?? ""}</td>
       <td>${x.panjang ?? ""}</td>
       <td class="status-cell">
-        <button type="button" class="btn btn-warning btn-sm btn-edit-status" data-status="${status}" title="Edit Status">
+        <button type="button" class="btn btn-warning btn-sm btn-edit-status" data-status="perlu" title="Edit Status">
           <i class="fa-solid fa-edit me-1"></i>Edit Status
         </button>
       </td>
@@ -333,8 +429,36 @@ function renderRows(items, tbody, status) {
     btn.addEventListener("click", () => openEditStatusModal(btn.closest("tr")));
   });
   tbody.querySelectorAll(".btn-edit").forEach((btn) => {
-    btn.addEventListener("click", () => enterEditMode(btn.closest("tr"), status));
+    btn.addEventListener("click", () => enterEditMode(btn.closest("tr"), "perlu"));
   });
+  tbody.querySelectorAll(".btn-delete").forEach((btn) => {
+    btn.addEventListener("click", () => deleteRow(btn.closest("tr")));
+  });
+}
+
+function renderRowsSudah(items, tbody) {
+  tbody.innerHTML = items
+    .map(
+      (x) => `
+    <tr data-id="${x.id}">
+      <td>${x.tanggal || ""}</td>
+      <td>${x.jenis || ""}</td>
+      <td>${x.nama || ""}</td>
+      <td>${x.kadar || ""}</td>
+      <td>${x.berat ?? ""}</td>
+      <td>${x.panjang ?? ""}</td>
+      <td class="text-center">${x.tanggalRestok || "-"}</td>
+      <td class="actions-cell">
+        <button type="button" class="btn btn-danger btn-sm btn-delete" title="Hapus">
+          <i class="fa-solid fa-trash"></i>
+        </button>
+      </td>
+    </tr>
+  `
+    )
+    .join("");
+
+  // Bind actions
   tbody.querySelectorAll(".btn-delete").forEach((btn) => {
     btn.addEventListener("click", () => deleteRow(btn.closest("tr")));
   });
@@ -343,13 +467,13 @@ function renderRows(items, tbody, status) {
 async function fetchAndRenderPerlu() {
   const monthStr = filterBulan?.value || currentMonthStr();
   const items = await fetchByMonthAndStatus(monthStr, "perlu");
-  renderRows(items, dataTablePerlu, "perlu");
+  renderRowsPerlu(items, dataTablePerlu);
 }
 
 async function fetchAndRenderSudah() {
   const monthStr = filterBulanSudah?.value || currentMonthStr();
   const items = await fetchByMonthAndStatus(monthStr, "sudah");
-  renderRows(items, dataTableSudah, "sudah");
+  renderRowsSudah(items, dataTableSudah);
 }
 
 // Modal functions
@@ -365,10 +489,21 @@ async function saveStatus() {
   if (!currentEditId) return;
   const newStatus = statusSelect.value;
   try {
-    await updateDoc(doc(firestore, "restokBarang", currentEditId), {
+    const updateData = {
       status: newStatus,
       updatedAt: Date.now(),
-    });
+    };
+
+    // Simpan tanggal restok saat status diubah ke "sudah"
+    if (newStatus === "sudah") {
+      const today = new Date();
+      const yyyy = today.getFullYear();
+      const mm = String(today.getMonth() + 1).padStart(2, "0");
+      const dd = String(today.getDate()).padStart(2, "0");
+      updateData.tanggalRestok = `${yyyy}-${mm}-${dd}`;
+    }
+
+    await updateDoc(doc(firestore, "restokBarang", currentEditId), updateData);
     // Refresh both tabs
     await fetchAndRenderPerlu();
     await fetchAndRenderSudah();
@@ -398,6 +533,15 @@ function enterEditMode(tr, currentStatus) {
   const berat = tds[4].textContent.trim();
   const panjang = tds[5].textContent.trim();
 
+  const statusColumn =
+    currentStatus === "perlu"
+      ? `<td class="status-cell">
+        <span class="badge bg-warning text-dark mb-1">Perlu Restok</span>
+        <br>
+        <small class="text-muted">Status tidak bisa diubah saat edit</small>
+      </td>`
+      : `<td class="text-center">${tds[6].textContent.trim()}</td>`;
+
   tr.innerHTML = `
     <td>${tanggal}</td>
     <td>
@@ -415,13 +559,7 @@ function enterEditMode(tr, currentStatus) {
     <td><input type="text" class="form-control form-control-sm" value="${kadar}"></td>
     <td><input type="text" class="form-control form-control-sm" value="${berat}"></td>
     <td><input type="text" class="form-control form-control-sm" value="${panjang}"></td>
-    <td class="status-cell">
-      <span class="badge ${currentStatus === "perlu" ? "bg-warning text-dark" : "bg-success"} mb-1">
-        ${currentStatus === "perlu" ? "Perlu Restok" : "Sudah Restok"}
-      </span>
-      <br>
-      <small class="text-muted">Status tidak bisa diubah saat edit</small>
-    </td>
+    ${statusColumn}
     <td class="actions-cell">
       <div class="btn-group btn-group-sm" role="group">
         <button type="button" class="btn btn-success btn-save">Simpan</button>
@@ -488,9 +626,9 @@ async function deleteRow(tr) {
   }
 }
 
-// WhatsApp send untuk data perlu restok saja
+// WhatsApp send untuk data perlu restok saja dengan PDF
 if (btnSendWA) {
-  btnSendWA.addEventListener("click", () => {
+  btnSendWA.addEventListener("click", async () => {
     const rows = Array.from(dataTablePerlu.querySelectorAll("tr"));
     if (rows.length === 0) {
       alert("Tidak ada data perlu restok untuk dikirim");
@@ -500,17 +638,160 @@ if (btnSendWA) {
       alert("Nomor WhatsApp pemasok belum tersedia");
       return;
     }
-    const lines = ["Data Perlu Restok:"];
-    rows.forEach((tr) => {
-      const [tgl, jenis, nama, kadar, berat, panjang] = Array.from(tr.children)
-        .slice(0, 6)
-        .map((td) => td.textContent.trim());
-      lines.push(`- ${tgl} | ${jenis} | ${nama} | ${kadar} | ${berat} gr | ${panjang} cm`);
-    });
-    const text = encodeURIComponent(lines.join("\n"));
-    const url = `https://wa.me/${SUPPLIER_PHONE}?text=${text}`;
-    window.open(url, "_blank");
+
+    try {
+      btnSendWA.disabled = true;
+      btnSendWA.innerHTML = '<i class="fa-solid fa-spinner fa-spin me-2"></i>Membuat PDF...';
+
+      await generateAndSendPDF(rows);
+    } catch (err) {
+      console.error("Gagal membuat PDF:", err);
+      alert("Gagal membuat PDF");
+    } finally {
+      btnSendWA.disabled = false;
+      btnSendWA.innerHTML = '<i class="fa-brands fa-whatsapp me-2"></i>Kirim Data Perlu Restok';
+    }
   });
+}
+
+async function generateAndSendPDF(rows) {
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF();
+
+  // Load logo as base64
+  const logoImg = new Image();
+  logoImg.src = "img/logo.png";
+
+  await new Promise((resolve, reject) => {
+    logoImg.onload = resolve;
+    logoImg.onerror = () => {
+      console.warn("Logo tidak ditemukan, lanjut tanpa logo");
+      resolve();
+    };
+    setTimeout(resolve, 2000); // Fallback timeout
+  });
+
+  // Header with logo
+  const pageWidth = doc.internal.pageSize.getWidth();
+
+  // Add logo if loaded
+  if (logoImg.complete && logoImg.naturalHeight !== 0) {
+    try {
+      doc.addImage(logoImg, "PNG", pageWidth / 2 - 15, 10, 30, 30);
+    } catch (e) {
+      console.warn("Gagal menambahkan logo");
+    }
+  }
+
+  // Title
+  doc.setFontSize(18);
+  doc.setFont(undefined, "bold");
+  doc.text("MELATI GOLD SHOP", pageWidth / 2, 45, { align: "center" });
+
+  doc.setFontSize(14);
+  doc.text("Daftar Barang Perlu Restok", pageWidth / 2, 55, { align: "center" });
+
+  // Date
+  doc.setFontSize(10);
+  doc.setFont(undefined, "normal");
+  const today = new Date();
+  const dateStr = `${pad(today.getDate())}-${pad(today.getMonth() + 1)}-${today.getFullYear()}`;
+  doc.text(`Tanggal: ${dateStr}`, 14, 65);
+
+  // Prepare table data
+  const tableData = [];
+  rows.forEach((tr, idx) => {
+    const [tgl, jenis, nama, kadar, berat, panjang] = Array.from(tr.children)
+      .slice(0, 6)
+      .map((td) => td.textContent.trim());
+    tableData.push([idx + 1, tgl, jenis, nama, kadar, berat, panjang]);
+  });
+
+  // Table
+  doc.autoTable({
+    startY: 72,
+    head: [["No", "Tanggal", "Jenis", "Nama Barang", "Kadar", "Berat", "Panjang"]],
+    body: tableData,
+    theme: "grid",
+    headStyles: {
+      fillColor: [212, 175, 55], // Gold color
+      textColor: [255, 255, 255],
+      fontStyle: "bold",
+      halign: "center",
+    },
+    columnStyles: {
+      0: { cellWidth: 12, halign: "center" },
+      1: { cellWidth: 25, halign: "center" },
+      2: { cellWidth: 22, halign: "center" },
+      3: { cellWidth: 50 },
+      4: { cellWidth: 20, halign: "center" },
+      5: { cellWidth: 20, halign: "center" },
+      6: { cellWidth: 20, halign: "center" },
+    },
+    styles: {
+      fontSize: 9,
+      cellPadding: 3,
+    },
+    alternateRowStyles: {
+      fillColor: [245, 245, 245],
+    },
+  });
+
+  // Footer - Total items
+  const finalY = doc.lastAutoTable.finalY || 72;
+  doc.setFontSize(11);
+  doc.setFont(undefined, "bold");
+  doc.text(`Total: ${rows.length} items`, 14, finalY + 10);
+
+  // Generate blob for WhatsApp
+  const pdfBlob = doc.output("blob");
+  const pdfFile = new File([pdfBlob], `Restok_${dateStr}.pdf`, { type: "application/pdf" });
+
+  // Check if Web Share API with files is supported
+  if (navigator.canShare && navigator.canShare({ files: [pdfFile] })) {
+    try {
+      await navigator.share({
+        files: [pdfFile],
+        title: "Daftar Barang Perlu Restok",
+        text: `Data Perlu Restok - ${dateStr}`,
+      });
+    } catch (err) {
+      if (err.name !== "AbortError") {
+        console.error("Share error:", err);
+        fallbackPDFDownload(doc, dateStr);
+      }
+    }
+  } else {
+    // Fallback: Download PDF + open WhatsApp
+    fallbackPDFDownload(doc, dateStr);
+  }
+}
+
+function fallbackPDFDownload(doc, dateStr) {
+  // Download PDF
+  doc.save(`Restok_${dateStr}.pdf`);
+
+  // Open WhatsApp with text message
+  const message = encodeURIComponent(
+    `Halo, terlampir daftar barang perlu restok tanggal ${dateStr}.\n\nSilakan cek file PDF yang saya kirim.`
+  );
+  const url = `https://wa.me/${SUPPLIER_PHONE}?text=${message}`;
+
+  // Show instruction
+  if (window.Swal) {
+    Swal.fire({
+      icon: "info",
+      title: "PDF Berhasil Diunduh",
+      html: "Silakan attach file PDF yang sudah didownload ke WhatsApp yang akan terbuka.",
+      confirmButtonText: "Buka WhatsApp",
+      timer: 5000,
+    }).then(() => {
+      window.open(url, "_blank");
+    });
+  } else {
+    alert("PDF berhasil diunduh. Silakan attach ke WhatsApp.");
+    window.open(url, "_blank");
+  }
 }
 
 // Chart Functions
@@ -601,12 +882,23 @@ async function updateChart() {
 }
 
 // Event listeners
-if (btnTampilkan) {
-  btnTampilkan.addEventListener("click", fetchAndRenderPerlu);
+// WhatsApp Setting Event Listeners
+if (btnSettingWA) {
+  btnSettingWA.addEventListener("click", openWhatsAppSettingModal);
 }
 
-if (btnTampilkanSudah) {
-  btnTampilkanSudah.addEventListener("click", fetchAndRenderSudah);
+if (savePhoneBtn) {
+  savePhoneBtn.addEventListener("click", saveSupplierPhone);
+}
+
+// Handle Enter key in phone input
+if (supplierPhoneInput) {
+  supplierPhoneInput.addEventListener("keypress", (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      saveSupplierPhone();
+    }
+  });
 }
 
 // Auto-refresh when month filter changes
