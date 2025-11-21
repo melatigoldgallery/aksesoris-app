@@ -1972,7 +1972,12 @@ const penjualanHandler = {
       return;
     }
 
-    const tanggal = utils.formatDate(transaction.timestamp || transaction.tanggal);
+    // PERBAIKAN: Gunakan tanggal langsung karena sudah dalam format string dd/mm/yyyy
+    // Jika timestamp ada (Firestore Timestamp), format dulu, jika tidak pakai tanggal string
+    let tanggal = transaction.tanggal;
+    if (transaction.timestamp && transaction.timestamp.toDate) {
+      tanggal = utils.formatDate(transaction.timestamp);
+    }
 
     let invoiceHTML = `
     <!DOCTYPE html>
