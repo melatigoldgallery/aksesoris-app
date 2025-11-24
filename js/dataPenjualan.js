@@ -1647,11 +1647,10 @@ class OptimizedDataPenjualanApp {
 
     const transaction = this.currentTransaction;
 
-    // Khusus invoice manual dengan >1 item: cetak per item satu-satu via iframe (anti duplikat)
+    // Khusus invoice dengan >1 item: cetak per item satu-satu via iframe (anti duplikat)
     if (
       type === "invoice" &&
       transaction &&
-      transaction.jenisPenjualan === "manual" &&
       Array.isArray(transaction.items) &&
       transaction.items.length > 1
     ) {
