@@ -171,7 +171,7 @@
                       <span class="menu-text">Restok Barang</span>
                     </a>
                   </li>
-                  <li class="nav-item d-none">
+                  <li class="nav-item">
                     <a class="nav-link" href="buyback.html">
                       <i class="fas fa-exchange-alt"></i>
                       <span class="menu-text">Buyback</span>
@@ -278,15 +278,13 @@
           </div>
 
           <div class="content-wrapper">
-            <!-- Maintenance Actions -->
-            <!-- Data Management Section -->
             <div class="row mb-4">
               <div class="col-12">
                 <div class="card">
                   <div class="card-header bg-primary text-white p-2">
                     <h5 class="mb-0">
                       <i class="fas fa-database me-2"></i>
-                      Data Stok Transaksi
+                      Data Stok Aksesoris
                     </h5>
                   </div>
                   <div class="card-body">
@@ -329,6 +327,65 @@
 
                     <div id="dataLoading" class="text-center py-3" style="display: none">
                       <div class="spinner-border text-primary" role="status">
+                        <span class="visually-hidden">Loading...</span>
+                      </div>
+                      <p class="mt-2 text-muted">Memuat data...</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Section Data Penjualan Aksesoris -->
+            <div class="row mb-4">
+              <div class="col-12">
+                <div class="card">
+                  <div class="card-header bg-info text-white p-2">
+                    <h5 class="mb-0">
+                      <i class="fas fa-shopping-cart me-2"></i>
+                      Data Penjualan Aksesoris
+                    </h5>
+                  </div>
+                  <div class="card-body">
+                    <div class="row mb-3">
+                      <div class="col-md-2">
+                        <label for="filterDatePenjualan" class="form-label">Pilih Tanggal:</label>
+                        <input type="date" class="form-control" id="filterDatePenjualan" />
+                      </div>
+                      <div class="col-md-2 d-flex align-items-end">
+                        <button class="btn btn-info text-white" id="btnShowPenjualan">
+                          <i class="fas fa-search me-2"></i>
+                          Tampilkan
+                        </button>
+                      </div>
+                    </div>
+                    <div class="table-responsive">
+                      <table class="table table-striped table-hover">
+                        <thead class="table-dark">
+                          <tr>
+                            <th>Tanggal</th>
+                            <th>Jam</th>
+                            <th>Sales</th>
+                            <th>Barcode</th>
+                            <th>Kode Lock</th>
+                            <th>Nama Barang</th>
+                            <th>Kadar</th>
+                            <th>Berat</th>
+                            <th>Harga</th>
+                            <th>Aksi</th>
+                          </tr>
+                        </thead>
+                        <tbody id="penjualanTableBody">
+                          <tr>
+                            <td colspan="10" class="text-center text-muted">
+                              Pilih tanggal dan klik Tampilkan untuk melihat data
+                            </td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
+                    <div id="penjualanLoading" class="text-center py-3" style="display: none">
+                      <div class="spinner-border text-info" role="status">
                         <span class="visually-hidden">Loading...</span>
                       </div>
                       <p class="mt-2 text-muted">Memuat data...</p>

@@ -54,7 +54,11 @@ const cacheManager = {
     if (salesData && Array.isArray(salesData)) {
       const index = salesData.findIndex((item) => item.id === transactionId);
       if (index !== -1) {
-        salesData[index] = { ...salesData[index], ...updatedData };
+        // Deep copy untuk nested objects (items array)
+        const currentItem = JSON.parse(JSON.stringify(salesData[index]));
+        const newData = JSON.parse(JSON.stringify(updatedData));
+        delete newData.lastUpdated; // Remove serverTimestamp
+        salesData[index] = { ...currentItem, ...newData };
         this.set("salesData", salesData);
         return true;
       }
@@ -1197,10 +1201,38 @@ class OptimizedDataPenjualanApp {
 
   // Generate edit form HTML
   generateEditForm(transaction, jenisPenjualan) {
+    // Format tanggal untuk input date dengan error handling
+    let tanggalValue = new Date().toISOString().split("T")[0]; // Default hari ini
+    try {
+      if (transaction.timestamp) {
+        let dateObj = null;
+        if (typeof transaction.timestamp.toDate === "function") {
+          dateObj = transaction.timestamp.toDate();
+        } else if (transaction.timestamp.seconds) {
+          dateObj = new Date(transaction.timestamp.seconds * 1000);
+        } else if (transaction.timestamp instanceof Date) {
+          dateObj = transaction.timestamp;
+        } else {
+          dateObj = new Date(transaction.timestamp);
+        }
+        if (dateObj && !isNaN(dateObj.getTime())) {
+          tanggalValue = dateObj.toISOString().split("T")[0];
+        }
+      }
+    } catch (e) {
+      console.warn("Error parsing date for edit:", e);
+    }
+
     let formHtml = `
-      <div class="mb-3">
-        <label for="editSales" class="form-label">Sales:</label>
-        <input type="text" class="form-control" id="editSales" value="${transaction.sales || ""}">
+      <div class="row mb-3">
+        <div class="col-md-6">
+          <label for="editTanggal" class="form-label">Tanggal:</label>
+          <input type="date" class="form-control" id="editTanggal" value="${tanggalValue}">
+        </div>
+        <div class="col-md-6">
+          <label for="editSales" class="form-label">Sales:</label>
+          <input type="text" class="form-control" id="editSales" value="${transaction.sales || ""}">
+        </div>
       </div>
     `;
 
@@ -1208,28 +1240,31 @@ class OptimizedDataPenjualanApp {
       formHtml += `<div class="mb-3"><label class="form-label">Detail Barang:</label></div>`;
 
       transaction.items.forEach((item, index) => {
-        formHtml += `
-          <div class="border p-3 mb-3 rounded">
-            <h6>Item ${index + 1}</h6>
-            <div class="row">
-              <div class="col-md-6">
-                <label for="editNama_${index}" class="form-label">Nama Barang:</label>
-                <input type="text" class="form-control" id="editNama_${index}" value="${item.nama || ""}">
+        if (jenisPenjualan === "manual") {
+          // Manual: Barcode, Kode Lock, Nama, Kadar, Berat, Harga, Keterangan
+          formHtml += `
+            <div class="border p-3 mb-3 rounded">
+              <h6>Item ${index + 1}</h6>
+              <div class="row">
+                <div class="col-md-6">
+                  <label for="editBarcode_${index}" class="form-label">Barcode:</label>
+                  <input type="text" class="form-control" id="editBarcode_${index}" value="${item.kodeText || ""}">
+                </div>
+                <div class="col-md-6">
+                  <label for="editKodeLock_${index}" class="form-label">Kode Lock:</label>
+                  <input type="text" class="form-control" id="editKodeLock_${index}" value="${item.kodeLock || ""}">
+                </div>
               </div>
-              ${
-                jenisPenjualan !== "kotak"
-                  ? `
+              <div class="row mt-2">
+                <div class="col-md-6">
+                  <label for="editNama_${index}" class="form-label">Nama Barang:</label>
+                  <input type="text" class="form-control" id="editNama_${index}" value="${item.nama || ""}">
+                </div>
                 <div class="col-md-6">
                   <label for="editKadar_${index}" class="form-label">Kadar:</label>
                   <input type="text" class="form-control" id="editKadar_${index}" value="${item.kadar || ""}">
                 </div>
-              `
-                  : ""
-              }
-            </div>
-            ${
-              jenisPenjualan !== "kotak"
-                ? `
+              </div>
               <div class="row mt-2">
                 <div class="col-md-6">
                   <label for="editBerat_${index}" class="form-label">Berat (gr):</label>
@@ -1238,38 +1273,64 @@ class OptimizedDataPenjualanApp {
                 <div class="col-md-6">
                   <label for="editHarga_${index}" class="form-label">Harga:</label>
                   <input type="text" class="form-control" id="editHarga_${index}" value="${utils.formatRupiah(
-                    item.totalHarga || 0
-                  )}">
+            item.totalHarga || 0
+          )}">
                 </div>
               </div>
-            `
-                : `
-              <div class="row mt-2">
-                <div class="col-md-12">
-                  <label for="editHarga_${index}" class="form-label">Harga:</label>
-                  <input type="text" class="form-control" id="editHarga_${index}" value="${utils.formatRupiah(
-                    item.totalHarga || 0
-                  )}">
-                </div>
-              </div>
-            `
-            }
-            ${
-              jenisPenjualan === "manual"
-                ? `
               <div class="row mt-2">
                 <div class="col-md-12">
                   <label for="editKeterangan_${index}" class="form-label">Keterangan:</label>
                   <textarea class="form-control" id="editKeterangan_${index}" rows="2">${
-                    item.keterangan || ""
-                  }</textarea>
+            item.keterangan || ""
+          }</textarea>
                 </div>
               </div>
-            `
-                : ""
-            }
-          </div>
-        `;
+            </div>
+          `;
+        } else {
+          // Aksesoris & Kotak: Kode, Nama, Kadar, Berat, Harga
+          formHtml += `
+            <div class="border p-3 mb-3 rounded">
+              <h6>Item ${index + 1}</h6>
+              <div class="row">
+                <div class="col-md-6">
+                  <label for="editKode_${index}" class="form-label">Kode:</label>
+                  <input type="text" class="form-control" id="editKode_${index}" value="${
+            item.kodeText || item.kode || ""
+          }">
+                </div>
+                <div class="col-md-6">
+                  <label for="editNama_${index}" class="form-label">Nama Barang:</label>
+                  <input type="text" class="form-control" id="editNama_${index}" value="${item.nama || ""}">
+                </div>
+              </div>
+              ${
+                jenisPenjualan !== "kotak"
+                  ? `
+              <div class="row mt-2">
+                <div class="col-md-6">
+                  <label for="editKadar_${index}" class="form-label">Kadar:</label>
+                  <input type="text" class="form-control" id="editKadar_${index}" value="${item.kadar || ""}">
+                </div>
+                <div class="col-md-6">
+                  <label for="editBerat_${index}" class="form-label">Berat (gr):</label>
+                  <input type="text" class="form-control" id="editBerat_${index}" value="${item.berat || ""}">
+                </div>
+              </div>
+              `
+                  : ""
+              }
+              <div class="row mt-2">
+                <div class="col-md-12">
+                  <label for="editHarga_${index}" class="form-label">Harga:</label>
+                  <input type="text" class="form-control" id="editHarga_${index}" value="${utils.formatRupiah(
+            item.totalHarga || 0
+          )}">
+                </div>
+              </div>
+            </div>
+          `;
+        }
       });
     }
 
@@ -1296,8 +1357,15 @@ class OptimizedDataPenjualanApp {
     try {
       utils.showLoading(true);
 
+      // Get tanggal dari input dan simpan tanggal original untuk perbandingan
+      const tanggalInput = document.getElementById("editTanggal")?.value;
+      const originalDate = this.getTransactionDate(this.currentTransaction);
+      const newDate = tanggalInput ? new Date(tanggalInput) : originalDate;
+      const newTimestamp = tanggalInput ? Timestamp.fromDate(newDate) : this.currentTransaction.timestamp;
+
       const updateData = {
         sales: document.getElementById("editSales").value.trim(),
+        timestamp: newTimestamp,
         lastUpdated: serverTimestamp(),
       };
 
@@ -1307,13 +1375,36 @@ class OptimizedDataPenjualanApp {
 
           updatedItem.nama = document.getElementById(`editNama_${index}`)?.value || item.nama;
 
-          if (this.currentTransaction.jenisPenjualan !== "kotak") {
+          if (this.currentTransaction.jenisPenjualan === "manual") {
+            // Manual: barcode, kodeLock, kadar, berat, keterangan
+            // Hanya update field yang memang ada inputnya, pertahankan struktur original
+            const newBarcode = document.getElementById(`editBarcode_${index}`)?.value;
+            const newKodeLock = document.getElementById(`editKodeLock_${index}`)?.value;
+
+            // Update kode/barcode jika ada perubahan
+            if (newBarcode !== undefined && newBarcode !== "") {
+              updatedItem.kode = newBarcode;
+            }
+            // Update kodeLock jika ada perubahan
+            if (newKodeLock !== undefined && newKodeLock !== "") {
+              updatedItem.kodeLock = newKodeLock;
+            }
+            // kodeText tetap mengikuti nilai original, tidak diubah
+            // (kodeText biasanya barcode untuk display)
+
             updatedItem.kadar = document.getElementById(`editKadar_${index}`)?.value || item.kadar;
             updatedItem.berat = document.getElementById(`editBerat_${index}`)?.value || item.berat;
-          }
-
-          if (this.currentTransaction.jenisPenjualan === "manual") {
             updatedItem.keterangan = document.getElementById(`editKeterangan_${index}`)?.value || item.keterangan;
+          } else {
+            // Aksesoris & Kotak: kode, kadar, berat
+            const newKode = document.getElementById(`editKode_${index}`)?.value || item.kodeText || item.kode;
+            updatedItem.kodeText = newKode;
+            updatedItem.kode = newKode;
+
+            if (this.currentTransaction.jenisPenjualan !== "kotak") {
+              updatedItem.kadar = document.getElementById(`editKadar_${index}`)?.value || item.kadar;
+              updatedItem.berat = document.getElementById(`editBerat_${index}`)?.value || item.berat;
+            }
           }
 
           const hargaValue = document.getElementById(`editHarga_${index}`)?.value.replace(/\./g, "") || "0";
@@ -1328,8 +1419,9 @@ class OptimizedDataPenjualanApp {
       // Update in Firestore
       await updateDoc(doc(firestore, "penjualanAksesoris", this.currentTransaction.id), updateData);
 
-      // Update local data and cache
-      this.updateLocalData(this.currentTransaction.id, updateData);
+      // Update local data and cache (dengan info perubahan tanggal)
+      const dateChanged = originalDate && newDate && !utils.isSameDate(originalDate, newDate);
+      this.updateLocalData(this.currentTransaction.id, updateData, dateChanged);
 
       $("#editModal").modal("hide");
       utils.showAlert("Transaksi berhasil diperbarui", "Sukses", "success");
@@ -1342,27 +1434,40 @@ class OptimizedDataPenjualanApp {
   }
 
   // Update local data
-  updateLocalData(transactionId, updateData) {
-    // Update salesData
-    const salesIndex = this.salesData.findIndex((item) => item.id === transactionId);
-    if (salesIndex !== -1) {
-      this.salesData[salesIndex] = { ...this.salesData[salesIndex], ...updateData };
-      delete this.salesData[salesIndex].lastUpdated;
+  updateLocalData(transactionId, updateData, dateChanged = false) {
+    // Deep copy updateData untuk nested objects
+    const deepUpdateData = JSON.parse(JSON.stringify(updateData));
+    delete deepUpdateData.lastUpdated;
+
+    // Convert timestamp ke format yang bisa di-filter
+    if (deepUpdateData.timestamp && deepUpdateData.timestamp.seconds) {
+      // Sudah dalam format {seconds, nanoseconds} - OK
+    } else if (updateData.timestamp && typeof updateData.timestamp.toDate === "function") {
+      // Convert Firestore Timestamp ke object
+      const date = updateData.timestamp.toDate();
+      deepUpdateData.timestamp = { seconds: Math.floor(date.getTime() / 1000), nanoseconds: 0 };
     }
 
-    // Update filteredData
-    const filteredIndex = this.filteredData.findIndex((item) => item.id === transactionId);
-    if (filteredIndex !== -1) {
-      this.filteredData[filteredIndex] = { ...this.filteredData[filteredIndex], ...updateData };
-      delete this.filteredData[filteredIndex].lastUpdated;
+    // Update salesData dengan deep copy
+    const salesIndex = this.salesData.findIndex((item) => item.id === transactionId);
+    if (salesIndex !== -1) {
+      const currentData = JSON.parse(JSON.stringify(this.salesData[salesIndex]));
+      this.salesData[salesIndex] = { ...currentData, ...deepUpdateData };
     }
 
     // Update cache
-    cacheManager.updateTransaction(transactionId, updateData);
+    cacheManager.updateTransaction(transactionId, deepUpdateData);
 
-    // Re-render table
-    this.updateDataTable();
-    this.updateSummary();
+    // ✅ OPSI B: Simpan cache ke localStorage agar persist
+    cacheManager.saveToStorage();
+
+    // Force re-filter untuk refresh tampilan dengan data terbaru
+    this.filterData();
+
+    // Jika tanggal berubah, tampilkan notifikasi
+    if (dateChanged) {
+      console.log("📅 Tanggal transaksi berubah, cache updated tanpa reload Firestore");
+    }
   }
 
   // Show delete modal
@@ -1648,12 +1753,7 @@ class OptimizedDataPenjualanApp {
     const transaction = this.currentTransaction;
 
     // Khusus invoice dengan >1 item: cetak per item satu-satu via iframe (anti duplikat)
-    if (
-      type === "invoice" &&
-      transaction &&
-      Array.isArray(transaction.items) &&
-      transaction.items.length > 1
-    ) {
+    if (type === "invoice" && transaction && Array.isArray(transaction.items) && transaction.items.length > 1) {
       try {
         $("#printModal").modal("hide");
       } catch (_) {}

@@ -180,10 +180,6 @@ class MaintenanceSystem {
       this.attachEventListeners();
       this.setDefaultDates();
       this.updateDeleteButtonState();
-      const today = new Date().toISOString().split("T")[0];
-      this.loadStokTransaksiData(today).catch((error) => {
-        console.warn("Failed to load initial data:", error);
-      });
 
       console.log("Maintenance system initialized successfully");
     } catch (error) {
@@ -212,6 +208,12 @@ class MaintenanceSystem {
     this.btnShowData = document.getElementById("btnShowData");
     this.dataTableBody = document.getElementById("dataTableBody");
     this.dataLoading = document.getElementById("dataLoading");
+
+    // Penjualan Aksesoris elements
+    this.filterDatePenjualan = document.getElementById("filterDatePenjualan");
+    this.btnShowPenjualan = document.getElementById("btnShowPenjualan");
+    this.penjualanTableBody = document.getElementById("penjualanTableBody");
+    this.penjualanLoading = document.getElementById("penjualanLoading");
   }
 
   /**
@@ -232,6 +234,12 @@ class MaintenanceSystem {
     // Data management listeners
     this.btnShowData.addEventListener("click", () => this.handleShowData());
     this.filterDateInput.addEventListener("change", () => this.onFilterDateChange());
+
+    // Penjualan Aksesoris listeners
+    this.btnShowPenjualan.addEventListener("click", () => this.handleShowPenjualan());
+    this.filterDatePenjualan.addEventListener("change", () => {
+      if (this.filterDatePenjualan.value) this.handleShowPenjualan();
+    });
   }
 
   /**
@@ -249,6 +257,7 @@ class MaintenanceSystem {
     // Set default filter date to today
     const today = new Date().toISOString().split("T")[0];
     this.filterDateInput.value = today;
+    this.filterDatePenjualan.value = today;
   }
 
   // Handle export month change
@@ -571,6 +580,198 @@ class MaintenanceSystem {
     }
   }
 
+  // ==================== PENJUALAN AKSESORIS METHODS ====================
+
+  async handleShowPenjualan() {
+    const selectedDate = this.filterDatePenjualan.value;
+    if (!selectedDate) {
+      this.showAlert("Pilih tanggal terlebih dahulu", "warning");
+      return;
+    }
+    try {
+      this.penjualanLoading.style.display = "block";
+      this.penjualanTableBody.innerHTML = "";
+      await this.loadPenjualanData(selectedDate);
+    } catch (error) {
+      console.error("Error loading penjualan data:", error);
+      this.showAlert("Gagal memuat data: " + error.message, "error");
+    } finally {
+      this.penjualanLoading.style.display = "none";
+    }
+  }
+
+  async loadPenjualanData(dateStr) {
+    const selectedDate = new Date(dateStr);
+    const startDate = new Date(selectedDate.getFullYear(), selectedDate.getMonth(), selectedDate.getDate());
+    const endDate = new Date(selectedDate.getFullYear(), selectedDate.getMonth(), selectedDate.getDate() + 1);
+
+    const q = query(
+      collection(this.firestore, "penjualanAksesoris"),
+      where("timestamp", ">=", Timestamp.fromDate(startDate)),
+      where("timestamp", "<", Timestamp.fromDate(endDate)),
+      orderBy("timestamp", "desc")
+    );
+
+    const querySnapshot = await getDocs(q);
+    const data = [];
+    querySnapshot.docs.forEach((doc) => {
+      const docData = doc.data();
+      const items = Array.isArray(docData.items) ? docData.items : [];
+      items.forEach((item, idx) => {
+        data.push({
+          docId: doc.id,
+          itemIndex: idx,
+          timestamp: docData.timestamp,
+          sales: docData.sales || "",
+          barcode: item.kodeText || item.kode || "",
+          kodeLock: item.kodeLock || item.kode || "-",
+          nama: item.nama || "",
+          kadar: item.kadar || "-",
+          berat: item.berat || 0,
+          harga: item.harga || item.totalHarga || 0,
+        });
+      });
+    });
+    this.renderPenjualanTable(data);
+  }
+
+  renderPenjualanTable(data) {
+    if (data.length === 0) {
+      this.penjualanTableBody.innerHTML = `<tr><td colspan="10" class="text-center text-muted">Tidak ada data untuk tanggal yang dipilih</td></tr>`;
+      return;
+    }
+    this.penjualanTableBody.innerHTML = data
+      .map((item) => {
+        const date = item.timestamp ? new Date(item.timestamp.seconds * 1000) : null;
+        const dateStr = date ? date.toLocaleDateString("id-ID") : "";
+        const timeStr = date ? date.toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" }) : "";
+        const rowId = `${item.docId}_${item.itemIndex}`;
+        const hargaFormatted = new Intl.NumberFormat("id-ID").format(item.harga);
+        return `
+        <tr data-id="${rowId}" data-doc-id="${item.docId}" data-item-index="${item.itemIndex}">
+          <td class="pj-date-cell">${dateStr}</td>
+          <td class="pj-time-cell">${timeStr}</td>
+          <td class="pj-sales-cell">${item.sales}</td>
+          <td class="pj-barcode-cell">${item.barcode}</td>
+          <td class="pj-kode-lock-cell">${item.kodeLock}</td>
+          <td class="pj-nama-cell">${item.nama}</td>
+          <td class="pj-kadar-cell">${item.kadar}</td>
+          <td class="pj-berat-cell">${item.berat}</td>
+          <td class="pj-harga-cell">${hargaFormatted}</td>
+          <td class="pj-action-cell">
+            <button class="btn btn-sm btn-warning me-1" onclick="maintenanceSystem.editPenjualanRow('${rowId}')">
+              <i class="fas fa-edit"></i>
+            </button>
+            <button class="btn btn-sm btn-danger" onclick="maintenanceSystem.deletePenjualanRow('${item.docId}')">
+              <i class="fas fa-trash"></i>
+            </button>
+          </td>
+        </tr>`;
+      })
+      .join("");
+  }
+
+  editPenjualanRow(rowId) {
+    const row = document.querySelector(`tr[data-id="${rowId}"]`);
+    if (!row) return;
+    const dateCell = row.querySelector(".pj-date-cell");
+    const kodeCell = row.querySelector(".pj-kode-cell");
+    const namaCell = row.querySelector(".pj-nama-cell");
+    const actionCell = row.querySelector(".pj-action-cell");
+
+    const originalDate = dateCell.textContent;
+    const originalKode = kodeCell.textContent;
+    const originalNama = namaCell.textContent;
+    const dateValue = originalDate
+      ? new Date(originalDate.split("/").reverse().join("-")).toISOString().split("T")[0]
+      : "";
+
+    dateCell.innerHTML = `<input type="date" class="form-control form-control-sm" value="${dateValue}">`;
+    kodeCell.innerHTML = `<input type="text" class="form-control form-control-sm" value="${originalKode}">`;
+    namaCell.innerHTML = `<input type="text" class="form-control form-control-sm" value="${originalNama}">`;
+    actionCell.innerHTML = `
+      <button class="btn btn-sm btn-success me-1" onclick="maintenanceSystem.savePenjualanRow('${rowId}')"><i class="fas fa-save"></i></button>
+      <button class="btn btn-sm btn-secondary" onclick="maintenanceSystem.cancelPenjualanEdit('${rowId}', '${originalDate}', '${originalKode}', '${originalNama}')"><i class="fas fa-times"></i></button>`;
+  }
+
+  cancelPenjualanEdit(rowId, originalDate, originalKode, originalNama) {
+    const row = document.querySelector(`tr[data-id="${rowId}"]`);
+    if (!row) return;
+    row.querySelector(".pj-date-cell").textContent = originalDate;
+    row.querySelector(".pj-kode-cell").textContent = originalKode;
+    row.querySelector(".pj-nama-cell").textContent = originalNama;
+    row.querySelector(".pj-action-cell").innerHTML = `
+      <button class="btn btn-sm btn-warning me-1" onclick="maintenanceSystem.editPenjualanRow('${rowId}')"><i class="fas fa-edit"></i></button>
+      <button class="btn btn-sm btn-danger" onclick="maintenanceSystem.deletePenjualanRow('${row.dataset.docId}')"><i class="fas fa-trash"></i></button>`;
+  }
+
+  async savePenjualanRow(rowId) {
+    const row = document.querySelector(`tr[data-id="${rowId}"]`);
+    if (!row) return;
+    const docId = row.dataset.docId;
+    const itemIndex = parseInt(row.dataset.itemIndex);
+    const dateInput = row.querySelector(".pj-date-cell input").value;
+    const kodeInput = row.querySelector(".pj-kode-cell input").value;
+    const namaInput = row.querySelector(".pj-nama-cell input").value;
+
+    if (!dateInput || !kodeInput) {
+      this.showAlert("Tanggal dan Kode harus diisi", "warning");
+      return;
+    }
+
+    try {
+      const docRef = doc(this.firestore, "penjualanAksesoris", docId);
+      const docSnap = await getDocs(
+        query(collection(this.firestore, "penjualanAksesoris"), where("__name__", "==", docId))
+      );
+      if (docSnap.empty) throw new Error("Document not found");
+
+      const currentData = docSnap.docs[0].data();
+      const items = [...(currentData.items || [])];
+      if (items[itemIndex]) {
+        items[itemIndex].kodeText = kodeInput;
+        items[itemIndex].nama = namaInput;
+      }
+
+      await updateDoc(docRef, {
+        timestamp: Timestamp.fromDate(new Date(dateInput)),
+        items: items,
+        lastUpdated: serverTimestamp(),
+      });
+
+      row.querySelector(".pj-date-cell").textContent = new Date(dateInput).toLocaleDateString("id-ID");
+      row.querySelector(".pj-kode-cell").textContent = kodeInput;
+      row.querySelector(".pj-nama-cell").textContent = namaInput;
+      row.querySelector(".pj-action-cell").innerHTML = `
+        <button class="btn btn-sm btn-warning me-1" onclick="maintenanceSystem.editPenjualanRow('${rowId}')"><i class="fas fa-edit"></i></button>
+        <button class="btn btn-sm btn-danger" onclick="maintenanceSystem.deletePenjualanRow('${docId}')"><i class="fas fa-trash"></i></button>`;
+      this.showAlert("Data berhasil diupdate", "success");
+    } catch (error) {
+      console.error("Error saving penjualan:", error);
+      this.showAlert("Gagal menyimpan: " + error.message, "error");
+    }
+  }
+
+  async deletePenjualanRow(docId) {
+    const confirmed = await this.showConfirmation(
+      "Apakah Anda yakin ingin menghapus transaksi ini?",
+      "Konfirmasi Hapus"
+    );
+    if (!confirmed) return;
+
+    try {
+      await deleteDoc(doc(this.firestore, "penjualanAksesoris", docId));
+      document.querySelectorAll(`tr[data-doc-id="${docId}"]`).forEach((row) => row.remove());
+      if (this.penjualanTableBody.querySelectorAll("tr").length === 0) {
+        this.penjualanTableBody.innerHTML = `<tr><td colspan="9" class="text-center text-muted">Tidak ada data untuk tanggal yang dipilih</td></tr>`;
+      }
+      this.showAlert("Data berhasil dihapus", "success");
+    } catch (error) {
+      console.error("Error deleting penjualan:", error);
+      this.showAlert("Gagal menghapus: " + error.message, "error");
+    }
+  }
+
   /**
    * Enhanced loading management
    */
@@ -725,9 +926,6 @@ class MaintenanceSystem {
   /**
    * Transform data for Excel export
    */
-  /**
-   * Transform data for Excel export
-   */
   async transformDataForExcel(data, collectionName) {
     const transformedData = [];
 
@@ -744,6 +942,7 @@ class MaintenanceSystem {
             Waktu: item.timestamp ? new Date(item.timestamp.seconds * 1000).toLocaleTimeString("id-ID") : "",
             Kode: firstItem.kodeText || item.kodeText || "",
             "Nama Barang": firstItem.nama || item.nama || "",
+            Keterangan: firstItem.keterangan || item.keterangan || "",
             Sales: item.sales || "",
             "Total Harga": item.totalHarga || 0,
             "Jumlah Items": Array.isArray(item.items) ? item.items.length : 0,
