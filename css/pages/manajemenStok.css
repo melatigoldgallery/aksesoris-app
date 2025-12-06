@@ -572,6 +572,7 @@
 .nav-tabs .nav-link.active {
   padding: 0px 10px;
   font-size: 0.95rem;
+  background: transparent;
 }
 
 /* Table header & cell compact */
