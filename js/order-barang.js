@@ -278,8 +278,8 @@ function renderTable(items) {
     dataTable.innerHTML = `
       <tr>
         <td colspan="13" class="text-center text-muted py-5">
-          <i class="fas fa-calendar-alt fa-3x mb-3 opacity-50"></i>
-          <div class="h5">Pilih bulan dan klik "Tampilkan Data" untuk melihat data</div>
+          <i class="fas fa-calendar-alt fa-2x mb-3 opacity-50"></i>
+          <div class="h6">Pilih bulan dan klik "Tampilkan" untuk melihat data</div>
         </td>
       </tr>
     `;

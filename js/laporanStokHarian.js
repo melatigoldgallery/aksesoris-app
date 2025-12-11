@@ -65,6 +65,9 @@ let lastStockFetchAt = 0;
 let stockFetchPromise = null;
 const STOCK_SNAPSHOT_TTL = 60000;
 
+// Cache untuk menyimpan data snapshot per tanggal
+window.dailyDataCache = {};
+
 async function getStockSnapshot({ force = false } = {}) {
   const now = Date.now();
   const hasCache = Object.keys(stockDataSnapshot).length > 0;
@@ -213,6 +216,9 @@ function renderDailyReportTable(dataObj) {
     const items = dataObj.items;
     let i = 1;
 
+    // Simpan ke cache dengan dateKey
+    const dateKey = dataObj.date || formatDateKey(new Date());
+    window.dailyDataCache[dateKey] = dataObj;
     window.latestDailyData = dataObj;
 
     mainCategories.forEach((mainCat) => {
@@ -404,6 +410,7 @@ function initDailyReportPage() {
     const mainCat = btn.dataset.main;
     const dateInput = document.getElementById("dailyReportDate");
     const dateVal = dateInput ? dateInput.value : null;
+    if (!dateVal) return;
 
     const modalEl = document.getElementById("modalDetailJenis");
     if (!modalEl) return;
@@ -456,29 +463,45 @@ function initDailyReportPage() {
     }
 
     modal.show();
-    await getStockSnapshot();
+
+    // Reload data snapshot berdasarkan tanggal yang dipilih
+    let snapshotData = window.dailyDataCache[dateVal];
+    if (!snapshotData) {
+      snapshotData = await loadDailyStockSnapshot(dateVal);
+      if (snapshotData) {
+        window.dailyDataCache[dateVal] = snapshotData;
+      } else {
+        // Jika tidak ada snapshot (hari ini), gunakan live data
+        await getStockSnapshot();
+        snapshotData = { items: computeCurrentSummarySnapshot(), breakdown: null };
+      }
+    }
+    window.latestDailyData = snapshotData;
 
     if (tbody) tbody.innerHTML = "";
     totalFisik = 0;
     cats.forEach((cat) => {
-      const breakdown =
-        window.latestDailyData && window.latestDailyData.breakdown && window.latestDailyData.breakdown[mainCat];
+      const breakdown = snapshotData && snapshotData.breakdown && snapshotData.breakdown[mainCat];
       let qty = 0;
       if (breakdown && breakdown[cat] && typeof breakdown[cat].total !== "undefined") {
         qty = parseInt(breakdown[cat].total) || 0;
       } else {
-        const node = stockDataSnapshot[cat] && stockDataSnapshot[cat][mainCat];
-        if (node) {
-          const isKalungLiontin = mainCat === "KALUNG" || mainCat === "LIONTIN";
-          const isHala = mainCat === "HALA";
-          if (isKalungLiontin && node.details) {
-            qty = colorTypes.reduce((sum, color) => sum + (parseInt(node.details[color]) || 0), 0);
-          } else if (isHala && node.details) {
-            qty = halaJewelryTypes.reduce((sum, type) => sum + (parseInt(node.details[type]) || 0), 0);
-          } else {
-            qty = parseInt(node.quantity) || 0;
+        // Hanya gunakan live data jika tanggal = hari ini
+        if (isToday) {
+          const node = stockDataSnapshot[cat] && stockDataSnapshot[cat][mainCat];
+          if (node) {
+            const isKalungLiontin = mainCat === "KALUNG" || mainCat === "LIONTIN";
+            const isHala = mainCat === "HALA";
+            if (isKalungLiontin && node.details) {
+              qty = colorTypes.reduce((sum, color) => sum + (parseInt(node.details[color]) || 0), 0);
+            } else if (isHala && node.details) {
+              qty = halaJewelryTypes.reduce((sum, type) => sum + (parseInt(node.details[type]) || 0), 0);
+            } else {
+              qty = parseInt(node.quantity) || 0;
+            }
           }
         }
+        // Untuk tanggal lama tanpa breakdown: qty = 0 (data tidak tersedia)
       }
       totalFisik += qty;
       const tr = document.createElement("tr");
@@ -552,10 +575,13 @@ function initDailyReportPage() {
     if (!btn) return;
     const mainCat = btn.dataset.main;
     const cat = btn.dataset.cat;
+    const dateInput = document.getElementById("dailyReportDate");
+    const dateVal = dateInput ? dateInput.value : formatDateKey(new Date());
     const modalEl = document.getElementById("modalDetailWarna");
     if (!modalEl) return;
     const modal = new bootstrap.Modal(modalEl);
-    renderWarnaModal({ mainCat, cat, editable: false });
+    const snapshotData = window.dailyDataCache[dateVal] || window.latestDailyData;
+    renderWarnaModal({ mainCat, cat, editable: false, snapshotData });
     modal.show();
   });
 
@@ -578,8 +604,8 @@ function initDailyReportPage() {
     const qtyCellEl = row ? row.querySelector("td:nth-child(2)") : null;
     const footerQtyEl = document.querySelector("#detailJenisTfoot th.text-center");
     let prevCatTotal = 0;
-    const breakdown =
-      window.latestDailyData && window.latestDailyData.breakdown && window.latestDailyData.breakdown[mainCat];
+    const snapshotData = window.dailyDataCache[dateVal] || window.latestDailyData;
+    const breakdown = snapshotData && snapshotData.breakdown && snapshotData.breakdown[mainCat];
     if (breakdown && breakdown[cat] && typeof breakdown[cat].total !== "undefined") {
       prevCatTotal = parseInt(breakdown[cat].total) || 0;
     } else {
@@ -593,6 +619,7 @@ function initDailyReportPage() {
       prevCatTotal,
       qtyCellEl,
       footerQtyEl,
+      snapshotData,
     });
     modal.show();
   });
@@ -606,6 +633,7 @@ function renderWarnaModal({
   prevCatTotal = 0,
   qtyCellEl = null,
   footerQtyEl = null,
+  snapshotData = null,
 }) {
   const tbody = document.getElementById("warnaDetailTableBody");
   const totalFisikEl = document.getElementById("warnaDetailTotalFisik");
@@ -618,8 +646,8 @@ function renderWarnaModal({
   let details = {};
   let existingTotal = 0;
   try {
-    const breakdown =
-      window.latestDailyData && window.latestDailyData.breakdown && window.latestDailyData.breakdown[mainCat];
+    const useData = snapshotData || window.latestDailyData;
+    const breakdown = useData && useData.breakdown && useData.breakdown[mainCat];
     const bnode = breakdown && breakdown[cat];
     if (bnode) {
       existingTotal = parseInt(bnode.total) || 0;
@@ -627,12 +655,17 @@ function renderWarnaModal({
     }
   } catch {}
 
+  // Cek apakah ini data hari ini
+  const todayKey = formatDateKey(new Date());
+  const isToday = (dateKey || todayKey) === todayKey;
+
   const liveNode = stockDataSnapshot[cat] && stockDataSnapshot[cat][mainCat];
   const liveDetails = (liveNode && liveNode.details) || {};
 
   if (isKalungLiontin) {
     colorTypes.forEach((t) => {
-      const fis = parseInt(details[t] ?? liveDetails[t] ?? 0) || 0;
+      // Hanya gunakan liveDetails jika hari ini DAN tidak ada details dari snapshot
+      const fis = parseInt(details[t] ?? (isToday ? liveDetails[t] : 0) ?? 0) || 0;
       totalF += fis;
       const tr = document.createElement("tr");
       tr.innerHTML = editable
@@ -642,7 +675,8 @@ function renderWarnaModal({
     });
   } else if (isHala) {
     halaJewelryTypes.forEach((t) => {
-      const fis = parseInt(details[t] ?? liveDetails[t] ?? 0) || 0;
+      // Hanya gunakan liveDetails jika hari ini DAN tidak ada details dari snapshot
+      const fis = parseInt(details[t] ?? (isToday ? liveDetails[t] : 0) ?? 0) || 0;
       totalF += fis;
       const tr = document.createElement("tr");
       tr.innerHTML = editable
@@ -651,7 +685,9 @@ function renderWarnaModal({
       tbody.appendChild(tr);
     });
   } else {
-    const fis = existingTotal || parseInt((liveNode && liveNode.quantity) || 0) || 0;
+    // Untuk kategori non-detail (CINCIN, ANTING, dll)
+    // Hanya gunakan liveNode jika hari ini DAN tidak ada existingTotal
+    const fis = existingTotal || (isToday ? parseInt((liveNode && liveNode.quantity) || 0) || 0 : 0);
     totalF = fis;
     const tr = document.createElement("tr");
     tr.innerHTML = editable
