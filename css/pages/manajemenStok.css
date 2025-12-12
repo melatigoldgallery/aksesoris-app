@@ -133,18 +133,6 @@
   letter-spacing: 0.5px;
 }
 
-.nav-tabs .nav-link::before {
-  content: "";
-  position: absolute;
-  top: 0;
-  left: -100%;
-  width: 100%;
-  height: 100%;
-  background: linear-gradient(135deg, rgba(89, 102, 224, 0.1) 0%, rgba(89, 102, 224, 0.05) 100%);
-  transition: left 0.3s ease;
-  z-index: -1;
-}
-
 .nav-tabs .nav-link:hover {
   color: #5966e0;
   background: rgba(89, 102, 224, 0.08);
@@ -152,28 +140,8 @@
   box-shadow: 0 6px 16px rgba(89, 102, 224, 0.15);
 }
 
-.nav-tabs .nav-link:hover::before {
-  left: 0;
-}
 
-.nav-tabs .nav-link.active {
-  background: linear-gradient(135deg, #5966e0 0%, #4c63d2 100%);
-  color: white;
-  border-color: #5966e0;
-  transform: translateY(-3px);
-  box-shadow: 0 8px 20px rgba(89, 102, 224, 0.3);
-  position: relative;
-}
 
-.nav-tabs .nav-link.active::after {
-  content: "";
-  position: absolute;
-  bottom: -3px;
-  left: 0;
-  right: 0;
-  height: 3px;
-  background: #5966e0;
-}
 
 .nav-tabs .nav-link i {
   margin-right: 8px;
@@ -552,7 +520,6 @@
 .btn:focus,
 .nav-link:focus,
 .form-control:focus {
-  outline: 3px solid rgba(89, 102, 224, 0.3);
   outline-offset: 2px;
 }
 
@@ -579,8 +546,6 @@
   background: linear-gradient(135deg, #4c63d2 0%, #3b51c4 100%);
 }
 
-/* ===== Compact Layout Adjustments (Requested) ===== */
-/* Mengurangi padding & font-size di nav tabs dan tabel agar lebih rapat */
 .nav-tabs.compact .nav-link,
 .nav-tabs .nav-link {
   padding: 0px 10px 15px;
@@ -588,13 +553,13 @@
   letter-spacing: 0.3px;
 }
 
-/* Saat active tetap proporsional */
 .nav-tabs .nav-link.active {
   padding: 0px 10px;
   font-size: 0.95rem;
+  background: rgba(203, 226, 247, 0.614);
+  border-bottom: 1px solid #35393d;
 }
 
-/* Table header & cell compact */
 .tab-content .table thead th {
   padding: 10px 8px !important;
   font-size: 0.91rem;
@@ -604,7 +569,6 @@
   font-size: 0.82rem;
 }
 
-/* Badge & small buttons sizing tweak */
 .tab-content .table .btn.btn-sm {
   padding: 4px 8px;
   font-size: 0.65rem;
@@ -615,13 +579,10 @@
   padding: 4px 6px;
 }
 
-/* Reduce summary card number size slightly for balance */
 .stock-card .number {
   font-size: 1.9rem;
 }
 
-/* ===== Compact Modal Styling (simpler, smaller, scoped) ===== */
-/* Target only the add/update/reduce modals to keep global modal styles intact */
 #modalTambahStok .modal-dialog,
 #modalKurangiStok .modal-dialog,
 #modalUpdateStok .modal-dialog,
@@ -648,7 +609,6 @@
   max-width: 750px;
 }
 
-/* HALA bulk modals may need slightly more width but still constrained */
 #modalKurangiStokHala .modal-dialog,
 #modalUpdateStokHala .modal-dialog {
   max-width: 500px;
@@ -664,7 +624,6 @@
   border-radius: 12px;
 }
 
-/* Reduce header/body/footer paddings and font sizes inside the targeted modals */
 #modalTambahStok .modal-header,
 #modalKurangiStok .modal-header,
 #modalUpdateStok .modal-header,
@@ -716,7 +675,6 @@
   padding: 10px 14px;
 }
 
-/* Smaller form labels & controls inside these modals */
 #modalTambahStok .form-label,
 #modalKurangiStok .form-label,
 #modalUpdateStok .form-label,

@@ -2,13 +2,11 @@ import { sidebarToggle } from "./components/sidebar.js";
 import { initializeDateTime } from "./components/header.js";
 
 try {
-  console.log("Initializing UI components...");
 
   sidebarToggle();
   initializeDateTime();
 
   document.addEventListener("DOMContentLoaded", function () {
-    console.log("DOM fully loaded");
 
     const appContainer = document.querySelector(".app-container");
     const sidebar = document.querySelector(".sidebar");
@@ -27,8 +25,6 @@ try {
       });
     }
   });
-
-  console.log("UI components initialized successfully");
 } catch (error) {
   console.error("Error initializing UI components:", error);
 }
@@ -56,20 +52,16 @@ function setupMenuAccess() {
 }
 
 function setupPasswordVerification() {
-  const tambahAksesorisLinks = document.querySelectorAll('a[href="tambahAksesoris.html"]');
+  document.addEventListener("click", function (e) {
+    const link = e.target.closest('a[href="tambahAksesoris.html"]');
 
-  console.log("Found tambahAksesoris links:", tambahAksesorisLinks.length);
+    if (link) {
+      e.preventDefault();
+      e.stopPropagation();
+      createPasswordModal();
+    }
+  });
 
-  if (tambahAksesorisLinks.length > 0) {
-    tambahAksesorisLinks.forEach(function (link) {
-      link.addEventListener("click", function (e) {
-        e.preventDefault();
-        e.stopPropagation();
-        console.log("Tambah Aksesoris link clicked, showing password modal");
-        createPasswordModal();
-      });
-    });
-  }
 }
 
 function createPasswordModal() {

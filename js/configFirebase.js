@@ -15,8 +15,6 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const firestore = getFirestore(app);
 
-console.log('Firebase initialized successfully');
-
 // Make firestore available globally
 window.firestore = firestore;
 

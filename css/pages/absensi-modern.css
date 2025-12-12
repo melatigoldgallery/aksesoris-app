@@ -1,7 +1,7 @@
 /* Base Styles */
 :root {
   --primary-color: #4361ee;
-  --primary-light: #4895ef;
+  --primary-light: #7aa6da;
   --primary-dark: #3f37c9;
   --secondary-color: #f72585;
   --success-color: #05d828;
@@ -936,7 +936,7 @@ tr:has(.badge.bg-info) {
 /* Sidebar styles */
 .sidebar {
   width: var(--sidebar-width);
-  background: linear-gradient(135deg, var(--primary-dark) 0%, var(--primary-color) 100%);
+  background: linear-gradient(135deg, var(--primary-light) 0%, var(--primary-dark) 100%);
   color: white;
   height: 100vh;
   position: fixed;

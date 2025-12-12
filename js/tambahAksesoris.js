@@ -16,15 +16,15 @@ import {
 
 // ===== IMPROVED CACHE MANAGEMENT =====
 const CACHE_TTL_STANDARD = 60 * 60 * 1000; // 1 jam untuk data statis
-const CACHE_TTL_TODAY = 5 * 60 * 1000;     // 5 menit untuk data hari ini
-const CACHE_TTL_STOCK = 2 * 60 * 1000;     // 2 menit untuk data stok
+const CACHE_TTL_TODAY = 5 * 60 * 1000; // 5 menit untuk data hari ini
+const CACHE_TTL_STOCK = 2 * 60 * 1000; // 2 menit untuk data stok
 
 // Cache storage dengan timestamp
 const cacheStorage = {
   kodeAksesoris: new Map(),
   stockAdditions: new Map(),
   stockData: new Map(),
-  timestamps: new Map()
+  timestamps: new Map(),
 };
 
 // Fungsi untuk menyimpan cache dengan timestamp
@@ -32,16 +32,19 @@ function setCacheWithTimestamp(key, data, ttl = CACHE_TTL_STANDARD) {
   cacheStorage.kodeAksesoris.set(key, data);
   cacheStorage.timestamps.set(key, {
     timestamp: Date.now(),
-    ttl: ttl
+    ttl: ttl,
   });
-  
+
   // Simpan ke sessionStorage untuk persistensi
   try {
-    sessionStorage.setItem(`cache_${key}`, JSON.stringify({
-      data: data,
-      timestamp: Date.now(),
-      ttl: ttl
-    }));
+    sessionStorage.setItem(
+      `cache_${key}`,
+      JSON.stringify({
+        data: data,
+        timestamp: Date.now(),
+        ttl: ttl,
+      })
+    );
   } catch (error) {
     console.warn("Failed to save cache to sessionStorage:", error);
   }
@@ -50,11 +53,11 @@ function setCacheWithTimestamp(key, data, ttl = CACHE_TTL_STANDARD) {
 // Fungsi untuk mengambil cache dengan validasi TTL
 function getCacheWithValidation(key) {
   const now = Date.now();
-  
+
   // Cek memory cache terlebih dahulu
   if (cacheStorage.kodeAksesoris.has(key) && cacheStorage.timestamps.has(key)) {
     const meta = cacheStorage.timestamps.get(key);
-    if ((now - meta.timestamp) < meta.ttl) {
+    if (now - meta.timestamp < meta.ttl) {
       return cacheStorage.kodeAksesoris.get(key);
     } else {
       // Cache expired, hapus dari memory
@@ -62,18 +65,18 @@ function getCacheWithValidation(key) {
       cacheStorage.timestamps.delete(key);
     }
   }
-  
+
   // Cek sessionStorage sebagai fallback
   try {
     const cached = sessionStorage.getItem(`cache_${key}`);
     if (cached) {
       const parsedCache = JSON.parse(cached);
-      if ((now - parsedCache.timestamp) < parsedCache.ttl) {
+      if (now - parsedCache.timestamp < parsedCache.ttl) {
         // Restore ke memory cache
         cacheStorage.kodeAksesoris.set(key, parsedCache.data);
         cacheStorage.timestamps.set(key, {
           timestamp: parsedCache.timestamp,
-          ttl: parsedCache.ttl
+          ttl: parsedCache.ttl,
         });
         return parsedCache.data;
       } else {
@@ -84,7 +87,7 @@ function getCacheWithValidation(key) {
   } catch (error) {
     console.warn("Failed to read cache from sessionStorage:", error);
   }
-  
+
   return null;
 }
 
@@ -103,11 +106,11 @@ function invalidateCache(pattern = null) {
     // Hapus semua cache
     cacheStorage.kodeAksesoris.clear();
     cacheStorage.timestamps.clear();
-    
+
     // Hapus dari sessionStorage
     for (let i = sessionStorage.length - 1; i >= 0; i--) {
       const key = sessionStorage.key(i);
-      if (key && key.startsWith('cache_')) {
+      if (key && key.startsWith("cache_")) {
         sessionStorage.removeItem(key);
       }
     }
@@ -188,12 +191,14 @@ export const aksesorisSaleHandler = {
       btnBatal: document.getElementById("btnBatal"),
       btnKelolaKode: document.getElementById("btnKelolaKode"),
       btnFilterHistory: document.getElementById("btnFilterHistory"),
-      filterDate: document.getElementById("filterDate"),
+      filterDateStart: document.getElementById("filterDateStart"),
+      filterDateEnd: document.getElementById("filterDateEnd"),
     };
 
-    // Validasi elemen DOM
+    // Validasi elemen DOM (hanya log warning untuk elemen opsional)
+    const requiredElements = ["selectKategori", "btnTambahAksesoris", "tbody", "btnSimpanData"];
     for (const [key, element] of Object.entries(elements)) {
-      if (!element) {
+      if (!element && requiredElements.includes(key)) {
         console.error(`Elemen DOM ${key} tidak ditemukan.`);
       }
     }
@@ -320,24 +325,6 @@ export const aksesorisSaleHandler = {
 
     // Initialize datepicker untuk filter tanggal
     this.initFilterDatepickers();
-
-    // Initialize datepicker for filter date
-    if (this.elements.filterDate) {
-      $(this.elements.filterDate).datepicker({
-        format: "dd/mm/yyyy",
-        autoclose: true,
-        language: "id",
-        todayHighlight: true,
-      });
-
-      // Calendar icon click handler
-      const filterDateIcon = document.getElementById("filterDateIcon");
-      if (filterDateIcon) {
-        filterDateIcon.addEventListener("click", () => {
-          $(this.elements.filterDate).datepicker("show");
-        });
-      }
-    }
   },
 
   // Method untuk inisialisasi datepicker filter
@@ -470,7 +457,7 @@ export const aksesorisSaleHandler = {
   async fetchKodeAksesoris() {
     try {
       const cacheKey = "kodeAksesoris_all";
-      
+
       // Cek cache terlebih dahulu
       const cachedData = getCacheWithValidation(cacheKey);
       if (cachedData) {
@@ -479,11 +466,11 @@ export const aksesorisSaleHandler = {
       }
 
       console.log("Fetching fresh kode aksesoris data");
-      
+
       // Fetch data dari Firestore
       const [kotakSnapshot, aksesorisSnapshot] = await Promise.all([
         getDocs(collection(firestore, "kodeAksesoris", "kategori", "kotak")),
-        getDocs(collection(firestore, "kodeAksesoris", "kategori", "aksesoris"))
+        getDocs(collection(firestore, "kodeAksesoris", "kategori", "aksesoris")),
       ]);
 
       const OPSI_KOTAK = [{ value: "0", text: "Pilih Kategori" }];
@@ -508,7 +495,7 @@ export const aksesorisSaleHandler = {
       });
 
       const result = { OPSI_KOTAK, OPSI_AKSESORIS };
-      
+
       // Simpan ke cache dengan TTL standar (data ini jarang berubah)
       setCacheWithTimestamp(cacheKey, result, CACHE_TTL_STANDARD);
 
@@ -547,7 +534,7 @@ export const aksesorisSaleHandler = {
   async loadKodeBarangData(docId, kategori) {
     try {
       const cacheKey = `kodeBarang_${kategori}_${docId}`;
-      
+
       // Cek cache terlebih dahulu
       const cachedData = getCacheWithValidation(cacheKey);
       if (cachedData) {
@@ -563,7 +550,7 @@ export const aksesorisSaleHandler = {
         const data = docSnap.data();
         document.getElementById("textKode").value = data.text;
         document.getElementById("namaKode").value = data.nama;
-        
+
         // Simpan ke cache
         setCacheWithTimestamp(cacheKey, data, CACHE_TTL_STANDARD);
       } else {
@@ -905,7 +892,7 @@ export const aksesorisSaleHandler = {
   generateLaporanHTML() {
     const filterDateStart = document.getElementById("filterDateStart").value;
     const filterDateEnd = document.getElementById("filterDateEnd").value;
-    
+
     // Group data by kategori
     const groupedData = this.laporanData.reduce((acc, item) => {
       const kategori = item.jenisText || "Lainnya";
@@ -956,7 +943,7 @@ export const aksesorisSaleHandler = {
     // Tambahkan data per kategori
     Object.entries(groupedData).forEach(([kategori, items]) => {
       const subtotal = items.reduce((sum, item) => sum + (item.jumlah || 0), 0);
-      
+
       laporanHTML += `
         <div class="category-section">
           <div class="category-title">${kategori.toUpperCase()} (${subtotal} pcs)</div>
@@ -972,7 +959,7 @@ export const aksesorisSaleHandler = {
             <tbody>
       `;
 
-      items.forEach(item => {
+      items.forEach((item) => {
         laporanHTML += `
           <tr>
             <td>${item.tanggal || "-"}</td>
@@ -1007,8 +994,8 @@ export const aksesorisSaleHandler = {
         </div>
         
         <div class="footer">
-          <p>Dicetak pada: ${new Date().toLocaleString('id-ID')}</p>
-          <p>Admin: ${localStorage.getItem('currentUser') || 'Admin'}</p>
+          <p>Dicetak pada: ${new Date().toLocaleString("id-ID")}</p>
+          <p>Admin: ${localStorage.getItem("currentUser") || "Admin"}</p>
         </div>
         
         <script>
@@ -1031,7 +1018,7 @@ export const aksesorisSaleHandler = {
     try {
       const filterDateStart = document.getElementById("filterDateStart");
       const filterDateEnd = document.getElementById("filterDateEnd");
-      
+
       // Validasi elemen ada dan memiliki value
       if (!filterDateStart || !filterDateEnd || !filterDateStart.value || !filterDateEnd.value) {
         console.log("Filter tanggal belum diset, menggunakan tanggal hari ini");
@@ -1042,28 +1029,28 @@ export const aksesorisSaleHandler = {
       // Parse tanggal filter dengan validasi
       const startParts = filterDateStart.value.split("/");
       const endParts = filterDateEnd.value.split("/");
-      
+
       if (startParts.length !== 3 || endParts.length !== 3) {
         throw new Error("Format tanggal tidak valid");
       }
 
       const startDate = new Date(startParts[2], startParts[1] - 1, startParts[0]);
       const endDate = new Date(endParts[2], endParts[1] - 1, endParts[0]);
-      
+
       // Validasi tanggal valid
       if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
         throw new Error("Tanggal tidak valid");
       }
-      
+
       startDate.setHours(0, 0, 0, 0);
       endDate.setHours(23, 59, 59, 999);
 
       // Create cache key
       const cacheKey = `stockAdditions_${filterDateStart.value}_${filterDateEnd.value}`;
-      
+
       // Cek apakah rentang tanggal mencakup hari ini untuk menentukan TTL
       const today = new Date();
-      const includesCurrentDay = (startDate <= today && today <= endDate);
+      const includesCurrentDay = startDate <= today && today <= endDate;
       const ttl = includesCurrentDay ? CACHE_TTL_TODAY : CACHE_TTL_STANDARD;
 
       // Cek cache terlebih dahulu
@@ -1112,7 +1099,6 @@ export const aksesorisSaleHandler = {
 
       // Render data
       this.renderStockAdditionHistory(historyData);
-      
     } catch (error) {
       console.error("Error loading stock addition history:", error);
       this.renderStockAdditionHistory([]); // Render tabel kosong dengan pesan error
@@ -1129,10 +1115,10 @@ export const aksesorisSaleHandler = {
 
     const filterDateStart = document.getElementById("filterDateStart");
     const filterDateEnd = document.getElementById("filterDateEnd");
-    
+
     if (filterDateStart) filterDateStart.value = formattedDate;
     if (filterDateEnd) filterDateEnd.value = formattedDate;
-    
+
     // Load data setelah set tanggal
     setTimeout(() => this.loadStockAdditionHistory(), 100);
   },
@@ -1140,7 +1126,7 @@ export const aksesorisSaleHandler = {
   // Render riwayat penambahan stok ke tabel
   renderStockAdditionHistory(historyData = []) {
     const tableBody = document.querySelector("#tableRiwayatTambahStok tbody");
-    
+
     if (!tableBody) {
       console.error("Table body element not found");
       return;
@@ -1322,7 +1308,7 @@ export const aksesorisSaleHandler = {
 
       // Create cache key
       const cacheKey = `kodeBarang_${kategori}`;
-      
+
       // Cek cache terlebih dahulu
       const cachedData = getCacheWithValidation(cacheKey);
       if (cachedData) {
@@ -1559,7 +1545,7 @@ export const aksesorisSaleHandler = {
 
       // Reload kode aksesoris data for the main form
       await this.loadKodeAksesorisData();
-      
+
       // Update dropdown options if category is active
       const selectKategori = document.getElementById("jenis-aksesoris");
       if (
@@ -1623,18 +1609,18 @@ export const aksesorisSaleHandler = {
     try {
       // Hapus semua cache
       invalidateCache();
-      
+
       // Reload data utama
       await this.loadKodeAksesorisData();
-      
+
       // Reload riwayat jika ada filter tanggal
       const filterDateStart = document.getElementById("filterDateStart");
       const filterDateEnd = document.getElementById("filterDateEnd");
-      
+
       if (filterDateStart?.value && filterDateEnd?.value) {
         await this.loadStockAdditionHistory();
       }
-      
+
       this.showSuccessNotification("Cache berhasil disegarkan!");
     } catch (error) {
       console.error("Error refreshing cache:", error);
@@ -1646,19 +1632,19 @@ export const aksesorisSaleHandler = {
   getCacheStatus() {
     const now = Date.now();
     const cacheInfo = [];
-    
+
     for (const [key, meta] of cacheStorage.timestamps.entries()) {
-      const isExpired = (now - meta.timestamp) > meta.ttl;
+      const isExpired = now - meta.timestamp > meta.ttl;
       const ageMinutes = Math.floor((now - meta.timestamp) / (1000 * 60));
-      
+
       cacheInfo.push({
         key: key,
         age: ageMinutes,
         expired: isExpired,
-        ttl: Math.floor(meta.ttl / (1000 * 60)) // TTL in minutes
+        ttl: Math.floor(meta.ttl / (1000 * 60)), // TTL in minutes
       });
     }
-    
+
     return cacheInfo;
   },
 
@@ -1666,25 +1652,25 @@ export const aksesorisSaleHandler = {
   cleanupExpiredCache() {
     const now = Date.now();
     const expiredKeys = [];
-    
+
     for (const [key, meta] of cacheStorage.timestamps.entries()) {
-      if ((now - meta.timestamp) > meta.ttl) {
+      if (now - meta.timestamp > meta.ttl) {
         expiredKeys.push(key);
       }
     }
-    
-    expiredKeys.forEach(key => {
+
+    expiredKeys.forEach((key) => {
       cacheStorage.kodeAksesoris.delete(key);
       cacheStorage.timestamps.delete(key);
       sessionStorage.removeItem(`cache_${key}`);
     });
-    
+
     if (expiredKeys.length > 0) {
       console.log(`Cleaned up ${expiredKeys.length} expired cache entries`);
     }
-    
+
     return expiredKeys.length;
-  }
+  },
 };
 
 // IMPROVED: Auto cleanup expired cache setiap 5 menit
@@ -1693,7 +1679,7 @@ setInterval(() => {
 }, 5 * 60 * 1000);
 
 // IMPROVED: Cleanup cache saat halaman akan ditutup
-window.addEventListener('beforeunload', () => {
+window.addEventListener("beforeunload", () => {
   aksesorisSaleHandler.cleanupExpiredCache();
 });
 
@@ -1702,28 +1688,16 @@ document.addEventListener("DOMContentLoaded", function () {
   // Initialize handler
   aksesorisSaleHandler.init();
 
-  // Set up datepicker untuk filterDate
-  $("#filterDate").datepicker({
-    format: "dd/mm/yyyy",
-    autoclose: true,
-    language: "id",
-    todayHighlight: true,
-  });
-
-  // Calendar icon click handler
-  $("#filterDateIcon").on("click", function () {
-    $("#filterDate").datepicker("show");
-  });
-
   // IMPROVED: Tambahkan tombol refresh cache jika belum ada
   const addRefreshCacheButton = () => {
     const existingButton = document.getElementById("refreshCacheBtn");
     if (existingButton) return;
 
     // Cari container yang sesuai untuk menambahkan tombol
-    const buttonContainer = document.querySelector(".card-header .d-flex") || 
-                           document.querySelector(".btn-group") ||
-                           document.querySelector(".card-body .row .col-auto");
+    const buttonContainer =
+      document.querySelector(".card-header .d-flex") ||
+      document.querySelector(".btn-group") ||
+      document.querySelector(".card-body .row .col-auto");
 
     if (buttonContainer) {
       const refreshButton = document.createElement("button");
@@ -1731,13 +1705,13 @@ document.addEventListener("DOMContentLoaded", function () {
       refreshButton.className = "btn btn-outline-secondary btn-sm ms-2";
       refreshButton.innerHTML = '<i class="fas fa-sync-alt"></i> Refresh Cache';
       refreshButton.title = "Segarkan semua data dari server";
-      
+
       refreshButton.addEventListener("click", () => {
         if (confirm("Apakah Anda yakin ingin menyegarkan semua cache? Data akan diambil ulang dari server.")) {
           aksesorisSaleHandler.forceRefreshCache();
         }
       });
-      
+
       buttonContainer.appendChild(refreshButton);
     }
   };
@@ -1750,27 +1724,26 @@ document.addEventListener("DOMContentLoaded", function () {
     const existingIndicator = document.getElementById("cacheStatusIndicator");
     if (existingIndicator) return;
 
-    const statusContainer = document.querySelector(".card-footer") || 
-                           document.querySelector(".card-body");
+    const statusContainer = document.querySelector(".card-footer") || document.querySelector(".card-body");
 
     if (statusContainer) {
       const indicator = document.createElement("small");
       indicator.id = "cacheStatusIndicator";
       indicator.className = "text-muted d-block mt-2";
       indicator.innerHTML = '<i class="fas fa-database"></i> <span id="cacheStatusText">Cache aktif</span>';
-      
+
       // Update status setiap 30 detik
       const updateCacheStatus = () => {
         const cacheInfo = aksesorisSaleHandler.getCacheStatus();
-        const activeCache = cacheInfo.filter(info => !info.expired).length;
-        const expiredCache = cacheInfo.filter(info => info.expired).length;
-        
+        const activeCache = cacheInfo.filter((info) => !info.expired).length;
+        const expiredCache = cacheInfo.filter((info) => info.expired).length;
+
         const statusText = document.getElementById("cacheStatusText");
         if (statusText) {
           statusText.textContent = `Cache: ${activeCache} aktif, ${expiredCache} expired`;
         }
       };
-      
+
       statusContainer.appendChild(indicator);
       updateCacheStatus();
       setInterval(updateCacheStatus, 30000);
@@ -1786,5 +1759,5 @@ window.aksesorisCacheDebug = {
   getStatus: () => aksesorisSaleHandler.getCacheStatus(),
   cleanup: () => aksesorisSaleHandler.cleanupExpiredCache(),
   invalidate: (pattern) => invalidateCache(pattern),
-  refresh: () => aksesorisSaleHandler.forceRefreshCache()
+  refresh: () => aksesorisSaleHandler.forceRefreshCache(),
 };

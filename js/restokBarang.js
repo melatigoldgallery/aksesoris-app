@@ -29,6 +29,8 @@ const btnSendWA = document.getElementById("btnSendWA");
 const editStatusModal = document.getElementById("editStatusModal");
 const statusSelect = document.getElementById("statusSelect");
 const saveStatusBtn = document.getElementById("saveStatusBtn");
+const inputBarangModal = document.getElementById("inputBarangModal");
+const btnTambahBarang = document.getElementById("btnTambahBarang");
 
 // WhatsApp Setting Modal refs
 const settingWAModal = document.getElementById("settingWAModal");
@@ -328,6 +330,9 @@ if (form) {
           updatedAt: Date.now(),
         });
       }
+      // Close modal
+      const modalInstance = bootstrap.Modal.getInstance(inputBarangModal);
+      if (modalInstance) modalInstance.hide();
       // reset
       inputTbody.innerHTML = "";
       makeRow();
@@ -881,7 +886,20 @@ async function updateChart() {
   }
 }
 
+// Modal Input Barang Functions
+function openInputBarangModal() {
+  // Reset form to clean state
+  inputTbody.innerHTML = "";
+  makeRow();
+  if (tanggalInput) tanggalInput.value = todayStr();
+  new bootstrap.Modal(inputBarangModal).show();
+}
+
 // Event listeners
+if (btnTambahBarang) {
+  btnTambahBarang.addEventListener("click", openInputBarangModal);
+}
+
 // WhatsApp Setting Event Listeners
 if (btnSettingWA) {
   btnSettingWA.addEventListener("click", openWhatsAppSettingModal);

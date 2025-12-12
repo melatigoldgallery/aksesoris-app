@@ -38,7 +38,7 @@ export async function initializeUsers() {
 export async function loginUser(username, password) {
   const users = {
     'adminmelati': { password: 'admin', role: 'admin' },
-    'supervisor': { password: 'svmlt116', role: 'supervisor' }
+    'supervisor': { password: 'smlt116', role: 'supervisor' }
   };
 
   const user = users[username];
