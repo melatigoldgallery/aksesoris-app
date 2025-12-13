@@ -31,6 +31,9 @@ const kodeDataCacheMeta = new Map();
 let unsubscribeListener = null;
 let currentDataSource = null;
 
+// Variabel untuk DataTable instance
+let mutatedDataTable = null;
+
 // Fungsi untuk mendapatkan tanggal hari ini dalam format string
 function getLocalDateString() {
   const now = new Date();
@@ -1043,6 +1046,13 @@ function filterKodeData(data) {
 function renderKodeTable(data, type) {
   const tableId = type === "active" ? "tableActiveKode" : "tableMutatedKode";
   const tableBody = $(`#${tableId} tbody`);
+
+  // Untuk tabel mutated, destroy DataTable jika sudah ada
+  if (type === "mutated" && mutatedDataTable) {
+    mutatedDataTable.destroy();
+    mutatedDataTable = null;
+  }
+
   tableBody.empty();
 
   if (data.length === 0) {
@@ -1089,6 +1099,49 @@ function renderKodeTable(data, type) {
     `;
     tableBody.append(row);
   });
+
+  // Inisialisasi DataTable untuk tabel mutated
+  if (type === "mutated" && data.length > 0) {
+    mutatedDataTable = $(`#${tableId}`).DataTable({
+      pageLength: 25,
+      lengthMenu: [
+        [10, 25, 50, 100, -1],
+        [10, 25, 50, 100, "Semua"],
+      ],
+      order: [[1, "desc"]], // Sort by Tanggal Input descending
+      columnDefs: [
+        { orderable: false, targets: [0, 9] }, // Disable sorting untuk checkbox & action column
+        { width: "4%", targets: 0 },
+        { width: "10%", targets: 1 },
+        { width: "9%", targets: 2 },
+        { width: "7%", targets: 3 },
+        { width: "19%", targets: 4 },
+        { width: "6%", targets: 5 },
+        { width: "6%", targets: 6 },
+        { width: "11%", targets: 7 },
+        { width: "18%", targets: 8 },
+        { width: "10%", targets: 9 },
+      ],
+      language: {
+        search: "Cari:",
+        lengthMenu: "Tampilkan _MENU_ data",
+        info: "Menampilkan _START_ sampai _END_ dari _TOTAL_ data",
+        infoEmpty: "Menampilkan 0 sampai 0 dari 0 data",
+        infoFiltered: "(disaring dari _MAX_ total data)",
+        paginate: {
+          first: "Pertama",
+          last: "Terakhir",
+          next: "Selanjutnya",
+          previous: "Sebelumnya",
+        },
+        zeroRecords: "Tidak ada data yang cocok",
+        emptyTable: "Tidak ada data kode",
+      },
+      dom: '<"row"<"col-sm-12 col-md-6"l><"col-sm-12 col-md-6"f>>rt<"row"<"col-sm-12 col-md-5"i><"col-sm-12 col-md-7"p>>',
+      responsive: true,
+      autoWidth: false,
+    });
+  }
 
   attachTableEventHandlers(type);
 }
@@ -1325,8 +1378,21 @@ function exportActiveKodes() {
 }
 
 function exportMutatedKodes() {
-  const filteredData = filterKodeData(kodeData.mutated);
-  exportToExcel(filteredData, "Kode_Dimutasi", "Kode Dimutasi");
+  let dataToExport;
+
+  if (mutatedDataTable) {
+    // Export data yang difilter/visible di DataTable
+    const visibleIds = [];
+    mutatedDataTable.rows({ search: "applied" }).every(function () {
+      const id = $(this.node()).data("id");
+      visibleIds.push(id);
+    });
+    dataToExport = kodeData.mutated.filter((item) => visibleIds.includes(item.id));
+  } else {
+    dataToExport = filterKodeData(kodeData.mutated);
+  }
+
+  exportToExcel(dataToExport, "Kode_Dimutasi", "Kode Dimutasi");
 }
 
 // Initialize event handlers
@@ -1455,13 +1521,28 @@ function initializeEventHandlers() {
 
   $("#selectAllMutated").on("change", function () {
     const isChecked = $(this).is(":checked");
-    $("#tableMutatedKode .kode-checkbox").prop("checked", isChecked);
 
-    if (isChecked) {
-      const filteredMutated = filterKodeData(kodeData.mutated);
-      filteredMutated.forEach((item) => selectedKodes.mutated.add(item.id));
+    if (mutatedDataTable) {
+      // Untuk DataTable: select semua yang visible di current page
+      mutatedDataTable.rows({ page: "current" }).every(function () {
+        const rowNode = this.node();
+        $(rowNode).find(".kode-checkbox").prop("checked", isChecked);
+        const id = $(rowNode).data("id");
+        if (isChecked) {
+          selectedKodes.mutated.add(id);
+        } else {
+          selectedKodes.mutated.delete(id);
+        }
+      });
     } else {
-      selectedKodes.mutated = new Set();
+      // Fallback untuk tabel biasa
+      $("#tableMutatedKode .kode-checkbox").prop("checked", isChecked);
+      if (isChecked) {
+        const filteredMutated = filterKodeData(kodeData.mutated);
+        filteredMutated.forEach((item) => selectedKodes.mutated.add(item.id));
+      } else {
+        selectedKodes.mutated = new Set();
+      }
     }
     updateButtonStatus("mutated");
   });
@@ -1528,6 +1609,12 @@ function cleanup() {
   if (unsubscribeListener) {
     unsubscribeListener();
     console.log("Real-time listener unsubscribed");
+  }
+
+  // Destroy DataTable instance
+  if (mutatedDataTable) {
+    mutatedDataTable.destroy();
+    mutatedDataTable = null;
   }
 
   // Simpan cache sebelum cleanup

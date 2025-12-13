@@ -214,49 +214,156 @@
               </div>
             </div>
 
-            <!-- Data Table Section -->
-            <div class="card">
-              <div class="card-header">
-                <div class="d-flex justify-content-between align-items-center flex-wrap gap-3">
-                  <h2 class="mb-0">
-                    <i class="fas fa-table"></i>
-                    Data Hapus Kode
-                  </h2>
+            <!-- Tab Navigation -->
+            <ul class="nav nav-tabs mb-3" role="tablist">
+              <li class="nav-item" role="presentation">
+                <button
+                  class="nav-link active"
+                  id="tab-pending"
+                  data-bs-toggle="tab"
+                  data-bs-target="#tabPending"
+                  type="button"
+                  role="tab"
+                >
+                  Data Hapus Kode
+                  <span class="badge bg-primary ms-1" id="badgePending">0</span>
+                </button>
+              </li>
+              <li class="nav-item" role="presentation">
+                <button
+                  class="nav-link"
+                  id="tab-processed"
+                  data-bs-toggle="tab"
+                  data-bs-target="#tabProcessed"
+                  type="button"
+                  role="tab"
+                >
+                  Sudah Hapus Kode
+                  <span class="badge bg-success ms-1" id="badgeProcessed">0</span>
+                </button>
+              </li>
+            </ul>
+
+            <!-- Tab Content -->
+            <div class="tab-content">
+              <!-- Tab 1: Data Hapus Kode (Pending) -->
+              <div class="tab-pane fade show active" id="tabPending" role="tabpanel">
+                <div class="card">
+                  <div class="card-header">
+                    <div class="d-flex justify-content-between align-items-center flex-wrap gap-3">
+                      <h2 class="mb-0">
+                        <i class="fas fa-table"></i>
+                        Data Hapus Kode
+                      </h2>
+                    </div>
+                  </div>
+                  <div class="d-flex gap-2 m-3 align-items-center">
+                    <input
+                      type="text"
+                      class="form-control form-control-sm"
+                      id="searchKodePending"
+                      placeholder="Cari barcode..."
+                      style="width: 200px"
+                    />
+                    <button type="button" class="btn btn-sm btn-outline-primary" id="btnCariKodePending">
+                      <i class="fas fa-search"></i>
+                    </button>
+                    <div class="ms-auto">
+                      <button type="button" class="btn btn-sm btn-danger" id="btnHapusKodeTerpilih" disabled>
+                        <i class="fas fa-trash-alt me-1"></i>
+                        Hapus Kode Terpilih
+                      </button>
+                    </div>
+                  </div>
+                  <div class="card-body">
+                    <div class="table-responsive">
+                      <table class="table table-hover table-sm align-middle" id="tablePending">
+                        <thead class="table-light">
+                          <tr>
+                            <th style="width: 3%">
+                              <input type="checkbox" class="form-check-input" id="checkAllPending" />
+                            </th>
+                            <th style="width: 4%">No</th>
+                            <th style="width: 9%">Tanggal</th>
+                            <th style="width: 7%">Jam</th>
+                            <th style="width: 10%">Sales</th>
+                            <th style="width: 11%">Barcode</th>
+                            <th style="width: 16%">Nama Barang</th>
+                            <th style="width: 8%">Berat</th>
+                            <th style="width: 7%">Kadar</th>
+                            <th style="width: 14%">Keterangan</th>
+                            <th style="width: 8%">Aksi</th>
+                          </tr>
+                        </thead>
+                        <tbody></tbody>
+                      </table>
+                    </div>
+                  </div>
                 </div>
               </div>
-              <div class="d-flex gap-2 m-3">
 
-                <input
-                  type="text"
-                  class="form-control form-control-sm"
-                  id="searchKode"
-                  placeholder="Cari barcode..."
-                  style="width: 200px"
-                />
-                <button type="button" class="btn btn-sm btn-outline-primary" id="btnCariKode">
-                  <i class="fas fa-search"></i>
-                </button>
-              </div>
-              <div class="card-body">
-                <div class="table-responsive">
-                  <table class="table table-hover table-sm align-middle" id="dataTable">
-                    <thead class="table-light">
-                      <tr>
-                        <th style="width: 5%">No</th>
-                        <th style="width: 10%">Tanggal</th>
-                        <th style="width: 8%">Jam</th>
-                        <th style="width: 12%">Sales</th>
-                        <th style="width: 12%">Barcode</th>
-                        <th style="width: 18%">Nama Barang</th>
-                        <th style="width: 8%">Berat</th>
-                        <th style="width: 8%">Kadar</th>
-                        <th style="width: 12%">Tgl Terjual</th>
-                        <th style="width: 12%">Penerima</th>
-                        <th style="width: 5%">Aksi</th>
-                      </tr>
-                    </thead>
-                    <tbody></tbody>
-                  </table>
+              <!-- Tab 2: Sudah Hapus Kode (Processed) -->
+              <div class="tab-pane fade" id="tabProcessed" role="tabpanel">
+                <div class="card">
+                  <div class="card-header">
+                    <div class="d-flex justify-content-between align-items-center flex-wrap gap-3">
+                      <h2 class="mb-0">
+                        <i class="fas fa-check-circle"></i>
+                        Sudah Hapus Kode
+                      </h2>
+                    </div>
+                  </div>
+                  <div class="d-flex gap-2 m-3 align-items-center">
+                    <input
+                      type="text"
+                      class="form-control form-control-sm"
+                      id="searchKodeProcessed"
+                      placeholder="Cari barcode..."
+                      style="width: 200px"
+                    />
+                    <button type="button" class="btn btn-sm btn-outline-primary" id="btnCariKodeProcessed">
+                      <i class="fas fa-search"></i>
+                    </button>
+                    <div class="ms-auto d-flex gap-2">
+                      <button type="button" class="btn btn-sm btn-warning" id="btnKembalikanTerpilih" disabled>
+                        <i class="fas fa-undo me-1"></i>
+                        Kembalikan Terpilih
+                      </button>
+                      <button type="button" class="btn btn-sm btn-danger" id="btnHapusTerpilih" disabled>
+                        <i class="fas fa-trash me-1"></i>
+                        Hapus Terpilih
+                      </button>
+                      <button type="button" class="btn btn-sm btn-success" id="btnExportExcel">
+                        <i class="fas fa-file-excel me-1"></i>
+                        Export Excel
+                      </button>
+                    </div>
+                  </div>
+                  <div class="card-body">
+                    <div class="table-responsive">
+                      <table class="table table-hover table-sm align-middle" id="tableProcessed">
+                        <thead class="table-light">
+                          <tr>
+                            <th style="width: 3%">
+                              <input type="checkbox" class="form-check-input" id="checkAllProcessed" />
+                            </th>
+                            <th style="width: 4%">No</th>
+                            <th style="width: 8%">Tanggal</th>
+                            <th style="width: 6%">Jam</th>
+                            <th style="width: 9%">Sales</th>
+                            <th style="width: 10%">Barcode</th>
+                            <th style="width: 14%">Nama Barang</th>
+                            <th style="width: 7%">Berat</th>
+                            <th style="width: 6%">Kadar</th>
+                            <th style="width: 12%">Keterangan</th>
+                            <th style="width: 10%">Penerima</th>
+                            <th style="width: 8%">Aksi</th>
+                          </tr>
+                        </thead>
+                        <tbody></tbody>
+                      </table>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
@@ -303,8 +410,7 @@
                       <th style="width: 20%">Nama Barang</th>
                       <th style="width: 10%">Berat (gr)</th>
                       <th style="width: 10%">Kadar</th>
-                      <th style="width: 12%">Tgl Terjual</th>
-                      <th style="width: 14%">Penerima</th>
+                      <th style="width: 14%">Keterangan</th>
                       <th style="width: 6%" class="text-center">Aksi</th>
                     </tr>
                   </thead>
@@ -323,8 +429,170 @@
         </div>
       </div>
     </div>
+
+    <!-- Modal Konfirmasi Hapus Kode -->
+    <div class="modal fade" id="konfirmasiHapusKodeModal" tabindex="-1">
+      <div class="modal-dialog">
+        <div class="modal-content">
+          <div class="modal-header bg-danger text-white">
+            <h5 class="modal-title">
+              <i class="fas fa-exclamation-triangle me-2"></i>
+              Konfirmasi Hapus Kode
+            </h5>
+            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+          </div>
+          <div class="modal-body">
+            <form id="formKonfirmasiHapus" novalidate>
+              <div class="mb-3">
+                <label class="form-label">Tanggal Hapus Kode</label>
+                <input type="text" class="form-control" id="tglHapusKode" readonly />
+              </div>
+              <div class="mb-3">
+                <label class="form-label">Jam Hapus Kode</label>
+                <input type="text" class="form-control" id="jamHapusKode" readonly />
+              </div>
+              <div class="mb-3">
+                <label class="form-label">
+                  Sales Mutasi
+                  <span class="text-danger">*</span>
+                </label>
+                <input type="text" class="form-control" id="salesMutasi" placeholder="Nama sales..." required />
+                <div class="invalid-feedback">Sales mutasi wajib diisi</div>
+              </div>
+              <div class="mb-3">
+                <label class="form-label">Kode yang akan dihapus</label>
+                <textarea class="form-control" id="kodeYangDihapus" rows="4" readonly></textarea>
+              </div>
+            </form>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Batal</button>
+            <button type="button" class="btn btn-danger" id="btnKonfirmasiHapusKode">
+              <i class="fas fa-check me-2"></i>
+              Konfirmasi Hapus Kode
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal Edit Penerima -->
+    <div class="modal fade" id="editPenerimaModal" tabindex="-1">
+      <div class="modal-dialog">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title">
+              <i class="fas fa-edit me-2"></i>
+              Edit Penerima
+            </h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+          </div>
+          <div class="modal-body">
+            <form id="formEditPenerima" novalidate>
+              <div class="mb-3">
+                <label class="form-label">
+                  Nama Penerima
+                  <span class="text-danger">*</span>
+                </label>
+                <input type="text" class="form-control" id="namaPenerima" placeholder="Nama penerima..." required />
+                <div class="invalid-feedback">Nama penerima wajib diisi</div>
+              </div>
+            </form>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Batal</button>
+            <button type="button" class="btn btn-primary" id="btnSimpanPenerima">
+              <i class="fas fa-save me-2"></i>
+              Simpan
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal Info Detail -->
+    <div class="modal fade" id="infoDetailModal" tabindex="-1">
+      <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+          <div class="modal-header bg-info text-white">
+            <h5 class="modal-title">
+              <i class="fas fa-info-circle me-2"></i>
+              Detail Barang
+            </h5>
+            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+          </div>
+          <div class="modal-body">
+            <div class="row">
+              <div class="col-md-6">
+                <h6 class="text-muted mb-3">Informasi Barang</h6>
+                <table class="table table-sm table-borderless">
+                  <tr>
+                    <td width="40%"><strong>Tanggal:</strong></td>
+                    <td id="infoTanggal">-</td>
+                  </tr>
+                  <tr>
+                    <td><strong>Jam:</strong></td>
+                    <td id="infoJam">-</td>
+                  </tr>
+                  <tr>
+                    <td><strong>Sales Input:</strong></td>
+                    <td id="infoSales">-</td>
+                  </tr>
+                  <tr>
+                    <td><strong>Barcode:</strong></td>
+                    <td id="infoBarcode">-</td>
+                  </tr>
+                  <tr>
+                    <td><strong>Nama Barang:</strong></td>
+                    <td id="infoNamaBarang">-</td>
+                  </tr>
+                  <tr>
+                    <td><strong>Berat:</strong></td>
+                    <td id="infoBerat">-</td>
+                  </tr>
+                  <tr>
+                    <td><strong>Kadar:</strong></td>
+                    <td id="infoKadar">-</td>
+                  </tr>
+                  <tr>
+                    <td><strong>Keterangan:</strong></td>
+                    <td id="infoKeterangan">-</td>
+                  </tr>
+                </table>
+              </div>
+              <div class="col-md-6">
+                <h6 class="text-muted mb-3">Informasi Hapus Kode</h6>
+                <table class="table table-sm table-borderless">
+                  <tr>
+                    <td width="45%"><strong>Tgl Hapus Kode:</strong></td>
+                    <td id="infoTglHapusKode">-</td>
+                  </tr>
+                  <tr>
+                    <td><strong>Jam Hapus Kode:</strong></td>
+                    <td id="infoJamHapusKode">-</td>
+                  </tr>
+                  <tr>
+                    <td><strong>Sales Mutasi:</strong></td>
+                    <td id="infoSalesMutasi">-</td>
+                  </tr>
+                  <tr>
+                    <td><strong>Penerima:</strong></td>
+                    <td id="infoPenerima"><span class="text-muted">Belum diisi</span></td>
+                  </tr>
+                </table>
+              </div>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Tutup</button>
+          </div>
+        </div>
+      </div>
+    </div>
     <script src="js/sidebar-loader.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    <!-- SheetJS for Excel Export -->
+    <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
     <script type="module" src="js/main.js"></script>
     <script type="module" src="js/hapus-kode.js"></script>
   </body>
