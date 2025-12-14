@@ -824,8 +824,8 @@ async function updateChart() {
       { start: "#ff0000ff", end: "#570000ff" },
       { start: "#ffe202ff", end: "#d1b900ff" },
       { start: "#00ffffff", end: "#008f81ff" },
-      { start: "#30008fff", end: "#35008aff" },
-      { start: "#000399ff", end: "#b1b6faff" },
+      { start: "#5300f8ff", end: "#35008aff" },
+      { start: "#d400ffff", end: "#680091ff" },
     ];
 
     jenisTypes.forEach((jenis) => {
