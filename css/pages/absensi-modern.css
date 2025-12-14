@@ -1647,7 +1647,11 @@ tr:has(.badge.bg-info) {
   color: white;
 }
 
-.btn-primary {
+.btn-success:hover {
+  background: linear-gradient(135deg, #3fbe5d 0%, #075840 100%);
+}
+
+.btn-primary, .bg-primary {
   background: linear-gradient(135deg, #4361ee 0%, #3f37c9 100%);
   color: white;
   border: none;
@@ -1659,7 +1663,7 @@ tr:has(.badge.bg-info) {
 
 .btn-warning {
   background: linear-gradient(135deg, #ffc107 0%, #f8961e 100%);
-  color: white;
+  color: black;
   border: none;
 }
 
@@ -1690,3 +1694,12 @@ tr:has(.badge.bg-info) {
 .btn-info {
   background: linear-gradient(135deg, #0dcaf0 0%, #0aa2c0 100%);
 }
+
+.btn-info:hover {
+  background: linear-gradient(135deg, #5ddaf3 0%, #0aa2c0 100%);
+}
+
+.btn-daily {
+  font-size: 0.7rem;
+}
+

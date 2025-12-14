@@ -820,12 +820,12 @@ async function updateChart() {
 
     // Define base colors for gradients
     const baseColors = [
-      { start: "#007f1eff", end: "#8aff9eff" },
-      { start: "#a50000ff", end: "#ff9191ff" },
-      { start: "#ffe100ff", end: "#fff187ff" },
-      { start: "#4BC0C0", end: "#9dfcf1ff" },
-      { start: "#30008fff", end: "#a2a9fcff" },
-      { start: "#994c00ff", end: "#fcb791ff" },
+      { start: "#00ff3cff", end: "#003a0aff" },
+      { start: "#ff0000ff", end: "#570000ff" },
+      { start: "#ffe202ff", end: "#d1b900ff" },
+      { start: "#00ffffff", end: "#008f81ff" },
+      { start: "#30008fff", end: "#35008aff" },
+      { start: "#000399ff", end: "#b1b6faff" },
     ];
 
     jenisTypes.forEach((jenis) => {

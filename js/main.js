@@ -2,12 +2,10 @@ import { sidebarToggle } from "./components/sidebar.js";
 import { initializeDateTime } from "./components/header.js";
 
 try {
-
   sidebarToggle();
   initializeDateTime();
 
   document.addEventListener("DOMContentLoaded", function () {
-
     const appContainer = document.querySelector(".app-container");
     const sidebar = document.querySelector(".sidebar");
     const hamburger = document.querySelector(".hamburger");
@@ -43,10 +41,20 @@ async function checkLoginStatus() {
 
 function setupMenuAccess() {
   const user = JSON.parse(sessionStorage.getItem("currentUser"));
+
+  // Hide maintenance menu for admin
   if (user && user.role === "admin") {
     const maintenanceMenu = document.querySelector('a[href="maintenance.html"]');
     if (maintenanceMenu) {
       maintenanceMenu.closest(".nav-item").style.display = "none";
+    }
+  }
+
+  // Hide btnSettingWA if not supervisor
+  if (user && user.role !== "supervisor") {
+    const btnSettingWA = document.getElementById("btnSettingWA");
+    if (btnSettingWA) {
+      btnSettingWA.style.display = "none";
     }
   }
 }
@@ -61,7 +69,6 @@ function setupPasswordVerification() {
       createPasswordModal();
     }
   });
-
 }
 
 function createPasswordModal() {
