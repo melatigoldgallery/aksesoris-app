@@ -1933,15 +1933,15 @@ class OptimizedDataPenjualanApp {
       <style>
         @page { size: 10cm 20cm; margin: 0; }
         body { font-family: Arial, sans-serif; font-size: 12px; margin: 0; padding: 5mm; width: 20cm; box-sizing: border-box; }
-        .invoice { width: 100%; position: relative; min-height: 19cm; }
-        .header-info { text-align: left; margin-bottom: 0.5cm; margin-left: 14.3cm; margin-top: 0.8cm; }
-        .customer-info { text-align: left; margin-bottom: 1.1cm; margin-left: 14.3cm; font-size: 11px; line-height: 1.2; }
-        .total-row { position: absolute; top: 6.3cm; right: 3cm; text-align: right; font-weight: bold; }
-        .sales { position: absolute; top: 7.2cm; right: 1.6cm; text-align: right; }
-        .keterangan { position: absolute; top: 5cm; left: 0.5cm; right: 3cm; font-style: italic; font-size: 10px; padding-top: 2mm; text-align: left; }
-        .keterangan-spacer { height: 0; }
+        .invoice { width: 100%; }
+        .header-info { text-align: right; margin-bottom: 0.5cm; margin-right: 3cm; margin-top: 0.8cm; }
+        .customer-info { text-align: right; margin-bottom: 1.1cm; margin-right: 3cm; font-size: 11px; line-height: 1.2; }
+        .total-row { margin-top: 0.7cm; text-align: right; font-weight: bold; margin-right: 3cm; }
+        .sales { text-align: right; margin-top: 0.6cm; margin-right: 2cm; }
+        .keterangan { font-style: italic; font-size: 10px; margin-top: 1.2cm; margin-bottom: 0.5cm; padding-top: 2mm; text-align: left; margin-left: 0.5cm; margin-right: 3cm; }
+        .keterangan-spacer { height: 1.6cm; }
         .item-details { display: flex; flex-wrap: wrap; }
-        .item-data { display: grid; grid-template-columns: 2cm 2.8cm 4.7cm 1.8cm 1.8cm 2cm; width: 100%; column-gap: 0.2cm; margin-left: 0.5cm; margin-top: 0.8cm; margin-right: 3cm; }
+        .item-data { display: grid; grid-template-columns: 2cm 2.7cm 4.6cm 1.8cm 1.8cm 2cm; width: 100%; column-gap: 0.2cm; margin-left: 0.5cm; margin-top: 1cm; margin-right: 3cm; }
         .item-data span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
         .item-data span:nth-child(3) { white-space: normal; overflow: visible; text-overflow: clip; word-wrap: break-word; }
       </style>
@@ -2061,15 +2061,15 @@ class OptimizedDataPenjualanApp {
       <style>
         @page { size: 10cm 20cm; margin: 0; }
         body { font-family: Arial, sans-serif; font-size: 12px; margin: 0; padding: 5mm; width: 20cm; box-sizing: border-box; }
-        .invoice { width: 100%; position: relative; min-height: 19cm; }
-        .header-info { text-align: left; margin-bottom: 0.5cm; margin-left: 14.3cm; margin-top: 0.8cm; }
-        .customer-info { text-align: left; margin-bottom: 1.1cm; margin-left: 14.3cm; font-size: 11px; line-height: 1.2; }
-        .total-row { position: absolute; top: 6.3cm; right: 3cm; text-align: right; font-weight: bold; }
-        .sales { position: absolute; top: 7.2cm; right: 1.6cm; text-align: right; }
-        .keterangan { position: absolute; top: 5cm; left: 0.5cm; right: 3cm; font-style: italic; font-size: 10px; padding-top: 2mm; text-align: left; }
-        .keterangan-spacer { height: 0; }
+        .invoice { width: 100%; }
+        .header-info { text-align: right; margin-bottom: 0.5cm; margin-right: 3cm; margin-top: 0.8cm; }
+        .customer-info { text-align: right; margin-bottom: 1.1cm; margin-right: 3cm; font-size: 11px; line-height: 1.2; }
+        .total-row { margin-top: 0.7cm; text-align: right; font-weight: bold; margin-right: 3cm; }
+        .sales { text-align: right; margin-top: 0.6cm; margin-right: 2cm; }
+        .keterangan { font-style: italic; font-size: 10px; margin-top: 1.2cm; margin-bottom: 0.5cm; padding-top: 2mm; text-align: left; margin-left: 0.5cm; margin-right: 3cm; }
+        .keterangan-spacer { height: 1.6cm; }
         .item-details { display: flex; flex-wrap: wrap; }
-        .item-data { display: grid; grid-template-columns: 2cm 2.8cm 4.7cm 1.8cm 1.8cm 2cm; width: 100%; column-gap: 0.2cm; margin-left: 0.5cm; margin-top: 0.8cm; margin-right: 3cm; }
+        .item-data { display: grid; grid-template-columns: 2cm 2.7cm 4.6cm 1.8cm 1.8cm 2cm; width: 100%; column-gap: 0.2cm; margin-left: 0.5cm; margin-top: 1cm; margin-right: 3cm; }
         .item-data span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
         .item-data span:nth-child(3) { white-space: normal; overflow: visible; text-overflow: clip; word-wrap: break-word; }
       </style>
