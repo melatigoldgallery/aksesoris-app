@@ -512,10 +512,11 @@ class OptimizedStockReport {
     try {
       const kodeAksesorisData = [];
 
-      // Get kotak and aksesoris data
-      const [kotakSnapshot, aksesorisSnapshot] = await Promise.all([
+      // Get kotak, aksesoris, and silver data
+      const [kotakSnapshot, aksesorisSnapshot, silverSnapshot] = await Promise.all([
         getDocs(collection(firestore, "kodeAksesoris", "kategori", "kotak")),
         getDocs(collection(firestore, "kodeAksesoris", "kategori", "aksesoris")),
+        getDocs(collection(firestore, "kodeAksesoris", "kategori", "silver")),
       ]);
 
       // Process kotak data
@@ -530,6 +531,14 @@ class OptimizedStockReport {
       aksesorisSnapshot.forEach((doc) => {
         const data = doc.data();
         const kodeItem = this.createKodeItem(data, "aksesoris");
+        kodeAksesorisData.push(kodeItem);
+        this.mergeStockItem(kodeItem);
+      });
+
+      // Process silver data
+      silverSnapshot.forEach((doc) => {
+        const data = doc.data();
+        const kodeItem = this.createKodeItem(data, "silver");
         kodeAksesorisData.push(kodeItem);
         this.mergeStockItem(kodeItem);
       });
@@ -1034,19 +1043,20 @@ class OptimizedStockReport {
       // Group data by category
       const kotakItems = this.filteredStockData.filter((item) => item.kategori === "kotak");
       const aksesorisItems = this.filteredStockData.filter((item) => item.kategori === "aksesoris");
+      const silverItems = this.filteredStockData.filter((item) => item.kategori === "silver");
       const otherItems = this.filteredStockData.filter(
-        (item) => item.kategori !== "kotak" && item.kategori !== "aksesoris"
+        (item) => item.kategori !== "kotak" && item.kategori !== "aksesoris" && item.kategori !== "silver"
       );
 
       console.log(
-        `📦 Kotak items: ${kotakItems.length}, Aksesoris items: ${aksesorisItems.length}, Other items: ${otherItems.length}`
+        `📦 Kotak items: ${kotakItems.length}, Aksesoris items: ${aksesorisItems.length}, Silver items: ${silverItems.length}, Other items: ${otherItems.length}`
       );
 
       // Create HTML for table
       let html = "";
       let rowIndex = 1;
 
-      [...kotakItems, ...aksesorisItems, ...otherItems].forEach((item) => {
+      [...kotakItems, ...aksesorisItems, ...silverItems, ...otherItems].forEach((item) => {
         // Debug: Log items with all zero values
         if (
           item.stokAwal === 0 &&

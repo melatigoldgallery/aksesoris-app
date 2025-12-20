@@ -163,11 +163,7 @@
                     <label for="tanggal" class="form-label">Tanggal</label>
                     <div class="input-group">
                       <input type="text" class="form-control" id="tanggal" placeholder="Masukkan tanggal" />
-                      <span
-                        class="input-group-text bg-transparent text-secondary"
-                        id="calendarIcon"
-                        style="cursor: pointer"
-                      >
+                      <span class="input-group-text bg-transparent text-secondary" id="calendarIcon" style="cursor: pointer">
                         <i class="fa-solid fa-calendar-days"></i>
                       </span>
                     </div>
@@ -178,7 +174,6 @@
                       <option selected>Pilih Kategori</option>
                       <option id="jenis-kotak" value="1">Kotak Perhiasan</option>
                       <option id="jenis-aksesoris" value="2">Aksesoris Perhiasan</option>
-                      <option id="jenis-silver" value="3">Silver</option>
                     </select>
                   </div>
                   <div class="col-md-2">
@@ -352,20 +347,6 @@
                   Aksesoris Perhiasan
                 </button>
               </li>
-              <li class="nav-item" role="presentation">
-                <button
-                  class="nav-link"
-                  id="silver-tab"
-                  data-bs-toggle="tab"
-                  data-bs-target="#silver"
-                  type="button"
-                  role="tab"
-                  aria-controls="silver"
-                  aria-selected="false"
-                >
-                  Silver
-                </button>
-              </li>
             </ul>
 
             <!-- Tab content -->
@@ -417,37 +398,6 @@
                 </div>
                 <div class="table-responsive">
                   <table class="table table-hover" id="tableKodeAksesoris">
-                    <thead class="table-light">
-                      <tr>
-                        <th>No</th>
-                        <th>Kode</th>
-                        <th>Nama</th>
-                        <th>Aksi</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      <!-- Data akan diisi oleh JavaScript -->
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-
-              <!-- Tab Silver -->
-              <div class="tab-pane fade" id="silver" role="tabpanel" aria-labelledby="silver-tab">
-                <div class="d-flex justify-content-between mb-3">
-                  <div class="input-group" style="max-width: 300px">
-                    <input type="text" class="form-control" id="searchSilver" placeholder="Cari kode atau nama..." />
-                    <button class="btn btn-outline-secondary" type="button" id="clearSearchSilver">
-                      <i class="fas fa-search"></i>
-                    </button>
-                  </div>
-                  <button class="btn btn-primary btn-sm" id="btnTambahSilver">
-                    <i class="fas fa-plus-circle me-1"></i>
-                    Tambah Kode
-                  </button>
-                </div>
-                <div class="table-responsive">
-                  <table class="table table-hover" id="tableKodeSilver">
                     <thead class="table-light">
                       <tr>
                         <th>No</th>

@@ -127,7 +127,6 @@ export const aksesorisSaleHandler = {
   // Other properties
   OPSI_KOTAK: [],
   OPSI_AKSESORIS: [],
-  OPSI_SILVER: [],
   modalKelolaKode: null,
   modalFormKode: null,
   currentKategori: "kotak",
@@ -209,10 +208,9 @@ export const aksesorisSaleHandler = {
 
   // IMPROVED: Fungsi untuk memuat data kode aksesoris dengan caching yang lebih efisien
   async loadKodeAksesorisData() {
-    const { OPSI_KOTAK, OPSI_AKSESORIS, OPSI_SILVER } = await this.fetchKodeAksesoris();
+    const { OPSI_KOTAK, OPSI_AKSESORIS } = await this.fetchKodeAksesoris();
     this.OPSI_KOTAK = OPSI_KOTAK;
     this.OPSI_AKSESORIS = OPSI_AKSESORIS;
-    this.OPSI_SILVER = OPSI_SILVER;
   },
 
   // Fungsi untuk inisialisasi modal
@@ -291,14 +289,6 @@ export const aksesorisSaleHandler = {
       });
     }
 
-    const silverTab = document.getElementById("silver-tab");
-    if (silverTab) {
-      silverTab.addEventListener("click", () => {
-        this.currentKategori = "silver";
-        this.loadKodeBarang("silver");
-      });
-    }
-
     // Event listeners untuk pencarian
     this.attachSearchListeners();
 
@@ -315,13 +305,6 @@ export const aksesorisSaleHandler = {
     if (btnTambahAksesorisKode) {
       btnTambahAksesorisKode.addEventListener("click", () => {
         this.showFormKodeModal("aksesoris");
-      });
-    }
-
-    const btnTambahSilver = document.getElementById("btnTambahSilver");
-    if (btnTambahSilver) {
-      btnTambahSilver.addEventListener("click", () => {
-        this.showFormKodeModal("silver");
       });
     }
 
@@ -407,31 +390,11 @@ export const aksesorisSaleHandler = {
         }
       });
     }
-
-    // Search untuk silver
-    const searchSilver = document.getElementById("searchSilver");
-    const clearSearchSilver = document.getElementById("clearSearchSilver");
-
-    if (searchSilver) {
-      searchSilver.addEventListener("input", () => {
-        this.filterTable("silver", searchSilver.value);
-      });
-    }
-
-    if (clearSearchSilver) {
-      clearSearchSilver.addEventListener("click", () => {
-        if (searchSilver) {
-          searchSilver.value = "";
-          this.filterTable("silver", "");
-        }
-      });
-    }
   },
 
   // Fungsi untuk memfilter tabel berdasarkan input pencarian
   filterTable(kategori, searchText) {
-    const tableId =
-      kategori === "kotak" ? "tableKodeKotak" : kategori === "aksesoris" ? "tableKodeAksesoris" : "tableKodeSilver";
+    const tableId = kategori === "kotak" ? "tableKodeKotak" : "tableKodeAksesoris";
     const table = document.getElementById(tableId);
 
     if (!table) return;
@@ -505,15 +468,13 @@ export const aksesorisSaleHandler = {
       console.log("Fetching fresh kode aksesoris data");
 
       // Fetch data dari Firestore
-      const [kotakSnapshot, aksesorisSnapshot, silverSnapshot] = await Promise.all([
+      const [kotakSnapshot, aksesorisSnapshot] = await Promise.all([
         getDocs(collection(firestore, "kodeAksesoris", "kategori", "kotak")),
         getDocs(collection(firestore, "kodeAksesoris", "kategori", "aksesoris")),
-        getDocs(collection(firestore, "kodeAksesoris", "kategori", "silver")),
       ]);
 
       const OPSI_KOTAK = [{ value: "0", text: "Pilih Kategori" }];
       const OPSI_AKSESORIS = [{ value: "0", text: "Pilih Kategori" }];
-      const OPSI_SILVER = [{ value: "0", text: "Pilih Kategori" }];
 
       kotakSnapshot.forEach((doc) => {
         const data = doc.data();
@@ -533,16 +494,7 @@ export const aksesorisSaleHandler = {
         });
       });
 
-      silverSnapshot.forEach((doc) => {
-        const data = doc.data();
-        OPSI_SILVER.push({
-          id: doc.id,
-          text: data.text,
-          nama: data.nama,
-        });
-      });
-
-      const result = { OPSI_KOTAK, OPSI_AKSESORIS, OPSI_SILVER };
+      const result = { OPSI_KOTAK, OPSI_AKSESORIS };
 
       // Simpan ke cache dengan TTL standar (data ini jarang berubah)
       setCacheWithTimestamp(cacheKey, result, CACHE_TTL_STANDARD);
@@ -553,7 +505,6 @@ export const aksesorisSaleHandler = {
       return {
         OPSI_KOTAK: [{ value: "0", text: "Pilih Kategori" }],
         OPSI_AKSESORIS: [{ value: "0", text: "Pilih Kategori" }],
-        OPSI_SILVER: [{ value: "0", text: "Pilih Kategori" }],
       };
     }
   },
@@ -561,14 +512,7 @@ export const aksesorisSaleHandler = {
   // Fungsi untuk menangani perubahan kategori
   handleCategoryChange(kategori, tbody) {
     tbody.innerHTML = ""; // Clear table
-    const options =
-      kategori === "1"
-        ? this.OPSI_KOTAK
-        : kategori === "2"
-        ? this.OPSI_AKSESORIS
-        : kategori === "3"
-        ? this.OPSI_SILVER
-        : [];
+    const options = kategori === "1" ? this.OPSI_KOTAK : kategori === "2" ? this.OPSI_AKSESORIS : [];
     this.updateAllKodeBarangOptions(options);
     if (options.length) {
       this.tambahBaris(kategori, tbody);
@@ -624,7 +568,7 @@ export const aksesorisSaleHandler = {
     const newRow = document.createElement("tr");
     const rowCount = tbody.children.length + 1;
 
-    const options = kategori === "1" ? this.OPSI_KOTAK : kategori === "2" ? this.OPSI_AKSESORIS : this.OPSI_SILVER;
+    const options = kategori === "1" ? this.OPSI_KOTAK : this.OPSI_AKSESORIS;
 
     newRow.innerHTML = `
                   <td>${rowCount}</td>
@@ -825,12 +769,7 @@ export const aksesorisSaleHandler = {
         kodeText: kodeText,
         nama: namaBarang,
         jumlah: parseInt(jumlah),
-        kategori:
-          this.elements.selectKategori.value === "1"
-            ? "kotak"
-            : this.elements.selectKategori.value === "2"
-            ? "aksesoris"
-            : "silver",
+        kategori: this.elements.selectKategori.value === "1" ? "kotak" : "aksesoris",
       });
     });
     return isValid ? items : null;
@@ -1357,8 +1296,7 @@ export const aksesorisSaleHandler = {
   // IMPROVED: Fungsi untuk memuat data kode barang dengan caching yang efisien
   async loadKodeBarang(kategori) {
     try {
-      const tableId =
-        kategori === "kotak" ? "tableKodeKotak" : kategori === "aksesoris" ? "tableKodeAksesoris" : "tableKodeSilver";
+      const tableId = kategori === "kotak" ? "tableKodeKotak" : "tableKodeAksesoris";
       const tableBody = document.querySelector(`#${tableId} tbody`);
 
       if (!tableBody) {
@@ -1404,8 +1342,7 @@ export const aksesorisSaleHandler = {
       this.renderKodeBarangTable(tableBody, kodeData, kategori);
     } catch (error) {
       console.error("Error loading kode barang:", error);
-      const tableId =
-        kategori === "kotak" ? "tableKodeKotak" : kategori === "aksesoris" ? "tableKodeAksesoris" : "tableKodeSilver";
+      const tableId = kategori === "kotak" ? "tableKodeKotak" : "tableKodeAksesoris";
       const tableBody = document.querySelector(`#${tableId} tbody`);
       if (tableBody) {
         tableBody.innerHTML = `<tr><td colspan="5" class="text-center text-danger">Error: ${error.message}</td></tr>`;
@@ -1531,8 +1468,7 @@ export const aksesorisSaleHandler = {
       if (
         selectKategori &&
         ((selectKategori.value === "1" && kategori === "kotak") ||
-          (selectKategori.value === "2" && kategori === "aksesoris") ||
-          (selectKategori.value === "3" && kategori === "silver"))
+          (selectKategori.value === "2" && kategori === "aksesoris"))
       ) {
         const tbody = document.querySelector("#tableTambahAksesoris tbody");
         this.handleCategoryChange(selectKategori.value, tbody);

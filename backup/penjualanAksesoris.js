@@ -589,7 +589,7 @@ const penjualanHandler = {
     });
 
     // Search events
-    $("#searchAksesoris, #searchKotak, #searchSilver, #searchLock").on(
+    $("#searchAksesoris, #searchKotak, #searchLock").on(
       "input",
       utils.debounce((e) => {
         this.searchTable(e.target);
@@ -627,7 +627,6 @@ const penjualanHandler = {
     const categories = {
       aksesoris: "#tableAksesoris",
       kotak: "#tableKotak",
-      silver: "#tableSilver",
     };
 
     Object.entries(categories).forEach(([category, selector]) => {
@@ -636,8 +635,6 @@ const penjualanHandler = {
 
       // FILTER: Hanya tampilkan yang stoknya > 0
       const items = this.stockData.filter((item) => item.kategori === category && (item.stokAkhir || 0) > 0);
-
-      console.log(`📦 ${category}: ${items.length} items found`);
 
       if (items.length === 0) {
         tbody.append(`<tr><td colspan="2" class="text-center text-muted">Tidak ada stok ${category}</td></tr>`);
@@ -679,7 +676,7 @@ const penjualanHandler = {
   // Attach table row click handlers
   attachTableRowClickHandlers() {
     // Remove existing handlers to prevent duplicates
-    $("#tableAksesoris tbody tr, #tableKotak tbody tr, #tableSilver tbody tr, #tableLock tbody tr").off("click");
+    $("#tableAksesoris tbody tr, #tableKotak tbody tr, #tableLock tbody tr").off("click");
 
     // Aksesoris table
     $("#tableAksesoris tbody tr").on("click", function () {
@@ -704,19 +701,6 @@ const penjualanHandler = {
         };
         penjualanHandler.addKotakToTable(data);
         $("#modalPilihKotak").modal("hide");
-      }
-    });
-
-    // Silver table
-    $("#tableSilver tbody tr").on("click", function () {
-      if ($(this).data("kode")) {
-        const data = {
-          kode: $(this).data("kode"),
-          nama: $(this).data("nama"),
-          harga: $(this).data("harga"),
-        };
-        penjualanHandler.addSilverToTable(data);
-        $("#modalPilihSilver").modal("hide");
       }
     });
 
@@ -745,8 +729,6 @@ const penjualanHandler = {
       $("#modalPilihAksesoris").modal("show");
     } else if (salesType === "kotak") {
       $("#modalPilihKotak").modal("show");
-    } else if (salesType === "silver") {
-      $("#modalPilihSilver").modal("show");
     }
   },
 
@@ -822,43 +804,6 @@ const penjualanHandler = {
     this.updateGrandTotal("kotak");
   },
 
-  // Add silver to table
-  addSilverToTable(data) {
-    const { kode, nama, harga } = data;
-    const newRow = `
-      <tr>
-        <td>${kode}</td>
-        <td>${nama}</td>
-        <td>
-          <input type="number" class="form-control form-control-sm jumlah-input" value="1" min="1">
-        </td>
-        <td>
-          <input type="text" class="form-control form-control-sm kadar-input" value="" placeholder="Masukkan kadar" required>
-        </td>
-        <td>
-          <input type="text" class="form-control form-control-sm berat-input" value="" placeholder="0.00" required>
-        </td>
-        <td>
-          <input type="text" class="form-control form-control-sm harga-per-gram-input" value="0" readonly>
-        </td>
-        <td>
-          <input type="text" class="form-control form-control-sm total-harga-input" value="" placeholder="Masukkan harga" required>
-        </td>
-        <td>
-          <button class="btn btn-sm btn-danger btn-delete">
-            <i class="fas fa-trash"></i>
-          </button>
-        </td>
-      </tr>
-    `;
-
-    $("#tableSilverDetail tbody").append(newRow);
-    const $newRow = $("#tableSilverDetail tbody tr:last-child");
-    $newRow.find(".kadar-input").focus();
-    this.attachRowEventHandlers($newRow);
-    this.updateGrandTotal("silver");
-  },
-
   // Attach row event handlers
   attachRowEventHandlers($row) {
     // Remove existing handlers
@@ -866,8 +811,6 @@ const penjualanHandler = {
 
     if ($row.closest("table").attr("id") === "tableAksesorisDetail") {
       this.attachAksesorisRowHandlers($row);
-    } else if ($row.closest("table").attr("id") === "tableSilverDetail") {
-      this.attachAksesorisRowHandlers($row); // Silver menggunakan handler yang sama dengan aksesoris
     } else if ($row.closest("table").attr("id") === "tableKotakDetail") {
       this.attachKotakRowHandlers($row);
     }
@@ -876,13 +819,7 @@ const penjualanHandler = {
     $row.find(".btn-delete").on("click", () => {
       const tableId = $row.closest("table").attr("id");
       const salesType =
-        tableId === "tableAksesorisDetail"
-          ? "aksesoris"
-          : tableId === "tableSilverDetail"
-          ? "silver"
-          : tableId === "tableKotakDetail"
-          ? "kotak"
-          : "manual";
+        tableId === "tableAksesorisDetail" ? "aksesoris" : tableId === "tableKotakDetail" ? "kotak" : "manual";
       $row.remove();
       this.updateGrandTotal(salesType);
     });
@@ -990,7 +927,7 @@ const penjualanHandler = {
   // Update UI for sales type
   updateUIForSalesType(type) {
     // Hide all containers
-    $("#aksesorisTableContainer, #silverTableContainer, #kotakTableContainer, #manualTableContainer").hide();
+    $("#aksesorisTableContainer, #kotakTableContainer, #manualTableContainer").hide();
     $("#btnTambah, #btnTambahBaris").hide();
 
     let detailTitle = "Detail Barang";
@@ -1000,11 +937,6 @@ const penjualanHandler = {
         $("#aksesorisTableContainer").show();
         $("#btnTambah").show();
         detailTitle = "Detail Aksesoris";
-        break;
-      case "silver":
-        $("#silverTableContainer").show();
-        $("#btnTambah").show();
-        detailTitle = "Detail Silver";
         break;
       case "kotak":
         $("#kotakTableContainer").show();
@@ -1228,10 +1160,6 @@ const penjualanHandler = {
         tableSelector = "#tableAksesorisDetail";
         grandTotalId = "#grand-total-aksesoris";
         break;
-      case "silver":
-        tableSelector = "#tableSilverDetail";
-        grandTotalId = "#grand-total-silver";
-        break;
       case "kotak":
         tableSelector = "#tableKotakDetail";
         grandTotalId = "#grand-total-kotak";
@@ -1244,7 +1172,7 @@ const penjualanHandler = {
 
     let total = 0;
 
-    if (salesType === "aksesoris" || salesType === "silver") {
+    if (salesType === "aksesoris") {
       $(tableSelector + " tbody tr:not(.input-row) .total-harga-input").each(function () {
         const value = $(this).val().replace(/\./g, "");
         total += parseFloat(value) || 0;
@@ -1397,8 +1325,6 @@ const penjualanHandler = {
       const tableSelector =
         salesType === "aksesoris"
           ? "#tableAksesorisDetail"
-          : salesType === "silver"
-          ? "#tableSilverDetail"
           : salesType === "kotak"
           ? "#tableKotakDetail"
           : "#tableManualDetail";
@@ -1546,7 +1472,7 @@ const penjualanHandler = {
   collectItemsData(salesType, tableSelector) {
     const items = [];
 
-    if (salesType === "aksesoris" || salesType === "silver") {
+    if (salesType === "aksesoris") {
       $(tableSelector + " tbody tr:not(.input-row)").each(function () {
         const kode = $(this).find("td:nth-child(1)").text();
         const nama = $(this).find("td:nth-child(2)").text();
