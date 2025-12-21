@@ -675,7 +675,7 @@ class MaintenanceSystem {
     const row = document.querySelector(`tr[data-id="${rowId}"]`);
     if (!row) return;
     const dateCell = row.querySelector(".pj-date-cell");
-    const kodeCell = row.querySelector(".pj-kode-cell");
+    const kodeCell = row.querySelector(".pj-barcode-cell");
     const namaCell = row.querySelector(".pj-nama-cell");
     const actionCell = row.querySelector(".pj-action-cell");
 
@@ -698,7 +698,7 @@ class MaintenanceSystem {
     const row = document.querySelector(`tr[data-id="${rowId}"]`);
     if (!row) return;
     row.querySelector(".pj-date-cell").textContent = originalDate;
-    row.querySelector(".pj-kode-cell").textContent = originalKode;
+    row.querySelector(".pj-barcode-cell").textContent = originalKode;
     row.querySelector(".pj-nama-cell").textContent = originalNama;
     row.querySelector(".pj-action-cell").innerHTML = `
       <button class="btn btn-sm btn-warning me-1" onclick="maintenanceSystem.editPenjualanRow('${rowId}')"><i class="fas fa-edit"></i></button>
@@ -711,7 +711,7 @@ class MaintenanceSystem {
     const docId = row.dataset.docId;
     const itemIndex = parseInt(row.dataset.itemIndex);
     const dateInput = row.querySelector(".pj-date-cell input").value;
-    const kodeInput = row.querySelector(".pj-kode-cell input").value;
+    const kodeInput = row.querySelector(".pj-barcode-cell input").value;
     const namaInput = row.querySelector(".pj-nama-cell input").value;
 
     if (!dateInput || !kodeInput) {
@@ -740,7 +740,7 @@ class MaintenanceSystem {
       });
 
       row.querySelector(".pj-date-cell").textContent = new Date(dateInput).toLocaleDateString("id-ID");
-      row.querySelector(".pj-kode-cell").textContent = kodeInput;
+      row.querySelector(".pj-barcode-cell").textContent = kodeInput;
       row.querySelector(".pj-nama-cell").textContent = namaInput;
       row.querySelector(".pj-action-cell").innerHTML = `
         <button class="btn btn-sm btn-warning me-1" onclick="maintenanceSystem.editPenjualanRow('${rowId}')"><i class="fas fa-edit"></i></button>
