@@ -1,0 +1,33 @@
+{
+  "indexes": [
+    {
+      "collectionGroup": "stokAksesorisTransaksi",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "kode",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "timestamp",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "stokAksesorisTransaksi",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "jenis",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "timestamp",
+          "order": "DESCENDING"
+        }
+      ]
+    }
+  ],
+  "fieldOverrides": []
+}

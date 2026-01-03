@@ -14,6 +14,8 @@ import {
   serverTimestamp,
 } from "https://www.gstatic.com/firebasejs/10.4.0/firebase-firestore.js";
 
+import StockService from "./services/stockService.js";
+
 // ===== IMPROVED CACHE MANAGEMENT =====
 const CACHE_TTL_STANDARD = 60 * 60 * 1000; // 1 jam untuk data statis
 const CACHE_TTL_TODAY = 5 * 60 * 1000; // 5 menit untuk data hari ini
@@ -745,13 +747,7 @@ export const aksesorisSaleHandler = {
       }
 
       // Buat objek data penambahan stok
-      const stockAdditionData = this.createStockAdditionData(items);
-
-      // Simpan data penambahan stok ke Firestore
-      const docId = await this.saveStockAdditionToFirestore(stockAdditionData);
-      console.log("Stock addition saved with ID:", docId);
-
-      // Update stok aksesoris
+      // ✅ Update stok aksesoris via StockService (single source of truth)
       await this.updateStokAksesoris(items);
 
       // IMPROVED: Invalidate related caches
@@ -868,56 +864,28 @@ export const aksesorisSaleHandler = {
   // IMPROVED: Fungsi untuk memperbarui stok aksesoris dengan cache invalidation
   async updateStokAksesoris(items) {
     try {
+      console.log(`🔄 Starting stock update for ${items.length} items`);
+
       // Invalidate stock cache sebelum update
       invalidateCache("stockData");
 
       for (const item of items) {
-        // Cek apakah item sudah ada di koleksi stokAksesoris
-        const stokQuery = query(collection(firestore, "stokAksesoris"), where("kode", "==", item.kodeText));
+        console.log(`📦 Updating stock for ${item.kodeText} (+${item.jumlah})`);
 
-        const stokSnapshot = await getDocs(stokQuery);
-
-        if (stokSnapshot.empty) {
-          // Jika belum ada, buat dokumen baru
-          const newStockData = {
-            kode: item.kodeText,
-            nama: item.nama,
-            kategori: item.kategori,
-            stokAwal: 0,
-            tambahStok: parseInt(item.jumlah) || 0,
-            laku: 0,
-            free: 0,
-            gantiLock: 0,
-            stokAkhir: parseInt(item.jumlah) || 0,
-            lastUpdate: serverTimestamp(),
-          };
-
-          await addDoc(collection(firestore, "stokAksesoris"), newStockData);
-        } else {
-          // Jika sudah ada, update dokumen
-          const stokDoc = stokSnapshot.docs[0];
-          const stokData = stokDoc.data();
-
-          // Hitung stok akhir baru
-          const currentTambahStok = parseInt(stokData.tambahStok) || 0;
-          const newTambahStok = currentTambahStok + (parseInt(item.jumlah) || 0);
-
-          const stokAwal = parseInt(stokData.stokAwal) || 0;
-          const laku = parseInt(stokData.laku) || 0;
-          const free = parseInt(stokData.free) || 0;
-          const gantiLock = parseInt(stokData.gantiLock) || 0;
-
-          const stokAkhir = stokAwal + newTambahStok - laku - free - gantiLock;
-
-          const updateData = {
-            tambahStok: newTambahStok,
-            stokAkhir: stokAkhir,
-            lastUpdate: serverTimestamp(),
-          };
-
-          await updateDoc(doc(firestore, "stokAksesoris", stokDoc.id), updateData);
-        }
+        // ✅ Gunakan StockService - single source of truth
+        await StockService.updateStock({
+          kode: item.kodeText,
+          jenis: "stockAddition",
+          jumlah: parseInt(item.jumlah) || 0,
+          keterangan: `Tambah stok: ${item.nama}`,
+          sales: "System",
+        });
       }
+
+      console.log(`✅ All stock updates completed (${items.length} items)`);
+
+      // Force clear cache lagi setelah selesai
+      invalidateCache("stockData");
     } catch (error) {
       console.error("Error updating stok aksesoris:", error);
       throw error;

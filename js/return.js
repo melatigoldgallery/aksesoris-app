@@ -13,6 +13,8 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.4.0/firebase-firestore.js";
 import { firestore } from "./configFirebase.js";
 
+import StockService from "./services/stockService.js";
+
 // Utils function untuk alert
 const showAlert = (message, title = "Informasi", type = "info") => {
   return Swal.fire({
@@ -331,10 +333,10 @@ const returnHandler = {
     });
   },
 
-  // Load stock data based on type
+  // Load master data (kode, nama, kategori) - NO STOCK FIELDS
   async loadStockData(type) {
     try {
-      // Get all stock data first
+      // Get master data only (no stock fields - stock from transactions)
       const stockRef = collection(firestore, "stokAksesoris");
       const snapshot = await getDocs(stockRef);
 
@@ -357,7 +359,7 @@ const returnHandler = {
           type === "kotak" ? itemType.includes("kotak") : itemType.includes("aksesoris") || itemType === "";
 
         // Check stock
-        const hasStock = (parseInt(item.stok) || parseInt(item.stokAkhir) || 0) > 0;
+        const hasStock = (parseInt(item.stok) || 0) > 0; // Legacy field for backward compatibility
 
         // Log item details for debugging
         console.log(`Item ${item.kode}:`, {
@@ -365,7 +367,6 @@ const returnHandler = {
           matches: isMatchingType,
           stock: hasStock,
           stok: item.stok,
-          stokAkhir: item.stokAkhir,
         });
 
         return isMatchingType && hasStock;
@@ -397,7 +398,7 @@ const returnHandler = {
     }
 
     this.stockData.forEach((item) => {
-      const stok = parseInt(item.stok) || parseInt(item.stokAkhir) || 0;
+      const stok = parseInt(item.stok) || 0; // Legacy field
       if (stok > 0) {
         $tbody.append(`
           <tr data-id="${item.id}" data-kode="${item.kode}">
@@ -525,61 +526,26 @@ const returnHandler = {
     }
   },
 
-  // NEW: Update stock in stokAksesoris collection
-  async updateStockAfterReturn(kode, jumlahReturn) {
-    try {
-      const stockRef = collection(firestore, "stokAksesoris");
-      const stockQuery = query(stockRef, where("kode", "==", kode));
-      const snapshot = await getDocs(stockQuery);
-
-      if (!snapshot.empty) {
-        const stockDoc = snapshot.docs[0];
-        const currentData = stockDoc.data();
-        const currentStok = parseInt(currentData.stok) || parseInt(currentData.stokAkhir) || 0;
-        const newStok = Math.max(0, currentStok - jumlahReturn); // return = barang keluar → stok berkurang
-
-        await updateDoc(doc(firestore, "stokAksesoris", stockDoc.id), {
-          stok: newStok,
-          stokAkhir: newStok,
-        });
-
-        return true;
-      }
-      return false;
-    } catch (error) {
-      console.error("Error updating stock:", error);
-      return false;
-    }
-  },
-
-  // NEW: Save to stokAksesorisTransaksi collection
+  // NEW: Save to stokAksesorisTransaksi collection using StockService
   async saveToStokTransaksi(returnData) {
     try {
       for (const item of returnData.detailReturn) {
         const currentStock = await this.getCurrentStockData(item.kode);
 
         if (currentStock) {
-          const stokSebelum = parseInt(currentStock.stok) || parseInt(currentStock.stokAkhir) || 0;
-          const stokSesudah = Math.max(0, stokSebelum - item.jumlah); // pengurangan karena return
+          const stokSebelum = parseInt(currentStock.stok) || 0; // Legacy field
+          const stokSesudah = Math.max(0, stokSebelum - item.jumlah);
 
-          const transaksiData = {
-            isScantiLock: false,
-            jenis: "return", // transaksi return → pengurangan stok
-            jumlah: item.jumlah, // disimpan positif, dihitung sebagai pengurangan di laporan
-            kategori: currentStock.kategori || returnData.jenisReturn,
-            keterangan: `Return barang oleh ${returnData.namaSales}${item.keterangan ? ` - ${item.keterangan}` : ""}`,
+          // ✅ Gunakan StockService - single source of truth
+          await StockService.updateStock({
             kode: item.kode,
-            nama: item.namaBarang,
-            stokAkhir: stokSesudah,
-            stokSebelum: stokSebelum,
-            stokSesudah: stokSesudah,
-            timestamp: serverTimestamp(),
-          };
-
-          await addDoc(collection(firestore, "stokAksesorisTransaksi"), transaksiData);
-
-          // Update stok master (berkurang)
-          await this.updateStockAfterReturn(item.kode, item.jumlah);
+            jenis: "return",
+            jumlah: item.jumlah,
+            keterangan: `Return barang oleh ${returnData.namaSales}${item.keterangan ? ` - ${item.keterangan}` : ""}`,
+            sales: returnData.namaSales,
+            currentStock: stokSebelum,
+            newStock: stokSesudah,
+          });
 
           console.log(`✅ Transaction saved for ${item.kode}`);
         } else {
@@ -743,24 +709,15 @@ const returnHandler = {
         const currentStock = await this.getCurrentStockData(item.kode);
 
         if (currentStock) {
-          const currentStok = parseInt(currentStock.stok) || parseInt(currentStock.stokAkhir) || 0;
-          const newStok = currentStok + item.jumlah; // pembatalan return → stok bertambah
-
-          await updateDoc(doc(firestore, "stokAksesoris", currentStock.id), {
-            stok: newStok,
-            stokAkhir: newStok,
-          });
-
-          // Catat transaksi pembatalan return agar historis konsisten
+          // ✅ Stock managed by StockService - no direct update to stokAksesoris
+          // Create reverse transaction in stokAksesorisTransaksi
           const reverseTransaksiData = {
-            isScantiLock: false,
             jenis: "reverse_return", // pembatalan return
             jumlah: item.jumlah, // positif → akan mengurangi nilai return bersih di laporan
             kategori: currentStock.kategori || returnData.jenisReturn,
             keterangan: `Pembatalan return - ${returnData.namaSales}`,
             kode: item.kode,
             nama: item.namaBarang,
-            stokAkhir: newStok,
             stokSebelum: currentStok,
             stokSesudah: newStok,
             timestamp: serverTimestamp(),
