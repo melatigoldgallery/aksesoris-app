@@ -17,6 +17,8 @@ import {
   writeBatch,
   serverTimestamp,
   updateDoc,
+  onSnapshot,
+  getDoc,
 } from "https://www.gstatic.com/firebasejs/10.4.0/firebase-firestore.js";
 
 /**
@@ -29,8 +31,92 @@ class MaintenanceCacheManager {
     this.dataCache = new Map(); // In-memory cache
     this.cacheTimestamps = new Map(); // Track cache timestamps
 
+    // Data cache per collection per date: Map<collection_date, Map<docId, data>>
+    this.collectionDataCache = new Map();
+    this.collectionCacheTimestamps = new Map();
+
     // Load cache from sessionStorage on initialization
     this.loadCacheFromStorage();
+  }
+
+  /**
+   * Get cache key for collection data
+   */
+  getCollectionCacheKey(collection, date) {
+    return `${collection}_${date}`;
+  }
+
+  /**
+   * Set collection data cache
+   */
+  setCollectionData(collection, date, docId, data) {
+    const key = this.getCollectionCacheKey(collection, date);
+
+    if (!this.collectionDataCache.has(key)) {
+      this.collectionDataCache.set(key, new Map());
+      this.collectionCacheTimestamps.set(key, Date.now());
+    }
+
+    this.collectionDataCache.get(key).set(docId, data);
+  }
+
+  /**
+   * Get collection data cache
+   */
+  getCollectionData(collection, date) {
+    const key = this.getCollectionCacheKey(collection, date);
+    const timestamp = this.collectionCacheTimestamps.get(key);
+
+    if (!timestamp || Date.now() - timestamp > this.dataTTL) {
+      this.collectionDataCache.delete(key);
+      this.collectionCacheTimestamps.delete(key);
+      return null;
+    }
+
+    return this.collectionDataCache.get(key);
+  }
+
+  /**
+   * Update single document in cache
+   */
+  updateCollectionDoc(collection, date, docId, data) {
+    const key = this.getCollectionCacheKey(collection, date);
+    const cache = this.collectionDataCache.get(key);
+
+    if (cache) {
+      cache.set(docId, data);
+    }
+  }
+
+  /**
+   * Remove document from cache
+   */
+  removeCollectionDoc(collection, date, docId) {
+    const key = this.getCollectionCacheKey(collection, date);
+    const cache = this.collectionDataCache.get(key);
+
+    if (cache) {
+      cache.delete(docId);
+    }
+  }
+
+  /**
+   * Clear collection cache
+   */
+  clearCollectionCache(collection, date = null) {
+    if (date) {
+      const key = this.getCollectionCacheKey(collection, date);
+      this.collectionDataCache.delete(key);
+      this.collectionCacheTimestamps.delete(key);
+    } else {
+      // Clear all cache for collection
+      for (const key of this.collectionDataCache.keys()) {
+        if (key.startsWith(`${collection}_`)) {
+          this.collectionDataCache.delete(key);
+          this.collectionCacheTimestamps.delete(key);
+        }
+      }
+    }
   }
 
   /**
@@ -167,6 +253,11 @@ class MaintenanceSystem {
     this.cache = new MaintenanceCacheManager();
     this.isLoading = false;
     this.currentOperation = null;
+
+    // Realtime listeners management
+    this.activeListeners = new Map(); // Map<listenerKey, unsubscribe>
+    this.currentDate = null;
+    this.currentPenjualanDate = null;
 
     this.init();
   }
@@ -320,10 +411,21 @@ class MaintenanceSystem {
   }
 
   /**
-   * Load stok transaksi data for specific date
+   * Setup realtime listener for stok transaksi data
    */
   async loadStokTransaksiData(dateStr) {
     try {
+      // Detach previous listener if exists
+      this.detachListener("stokAksesoris");
+
+      // Check cache first
+      const cachedData = this.cache.getCollectionData("stokAksesorisTransaksi", dateStr);
+      if (cachedData) {
+        const dataArray = Array.from(cachedData.values());
+        this.renderDataTable(dataArray);
+      }
+
+      this.currentDate = dateStr;
       const selectedDate = new Date(dateStr);
       const startDate = new Date(selectedDate.getFullYear(), selectedDate.getMonth(), selectedDate.getDate());
       const endDate = new Date(selectedDate.getFullYear(), selectedDate.getMonth(), selectedDate.getDate() + 1);
@@ -335,16 +437,127 @@ class MaintenanceSystem {
         orderBy("timestamp", "desc")
       );
 
-      const querySnapshot = await getDocs(q);
-      const data = querySnapshot.docs.map((doc) => ({
-        id: doc.id,
-        ...doc.data(),
-      }));
+      // Setup realtime listener
+      const unsubscribe = onSnapshot(
+        q,
+        (snapshot) => {
+          snapshot.docChanges().forEach((change) => {
+            const docData = { id: change.doc.id, ...change.doc.data() };
 
-      this.renderDataTable(data);
+            if (change.type === "added") {
+              this.cache.setCollectionData("stokAksesorisTransaksi", dateStr, change.doc.id, docData);
+              if (cachedData) {
+                this.addRowToTable(docData);
+              }
+            } else if (change.type === "modified") {
+              this.cache.updateCollectionDoc("stokAksesorisTransaksi", dateStr, change.doc.id, docData);
+              this.updateRowInTable(docData);
+            } else if (change.type === "removed") {
+              this.cache.removeCollectionDoc("stokAksesorisTransaksi", dateStr, change.doc.id);
+              this.removeRowFromTable(change.doc.id);
+            }
+          });
+
+          // Initial render if no cache
+          if (!cachedData) {
+            const allData = [];
+            snapshot.forEach((doc) => {
+              const docData = { id: doc.id, ...doc.data() };
+              this.cache.setCollectionData("stokAksesorisTransaksi", dateStr, doc.id, docData);
+              allData.push(docData);
+            });
+            this.renderDataTable(allData);
+          }
+        },
+        (error) => {
+          console.error("Error in realtime listener:", error);
+          this.showAlert("Error memuat data realtime: " + error.message, "error");
+        }
+      );
+
+      this.activeListeners.set("stokAksesoris", unsubscribe);
     } catch (error) {
       console.error("Error loading stok transaksi data:", error);
       throw error;
+    }
+  }
+
+  /**
+   * Add new row to table (realtime)
+   */
+  addRowToTable(item) {
+    const existingRow = document.querySelector(`tr[data-id="${item.id}"]`);
+    if (existingRow) return; // Already exists
+
+    const date = item.timestamp ? new Date(item.timestamp.seconds * 1000) : null;
+    const dateStr = date ? date.toLocaleDateString("id-ID") : "";
+    const timeStr =
+      item.timestr || (date ? date.toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" }) : "");
+
+    const rowHtml = `
+      <tr data-id="${item.id}" style="animation: fadeIn 0.3s;">
+        <td class="date-cell">${dateStr}</td>
+        <td class="time-cell">${timeStr}</td>
+        <td class="sales-cell">${item.keterangan || ""}</td>
+        <td class="kode-cell">${item.kode || ""}</td>
+        <td class="nama-cell">${item.nama || ""}</td>
+        <td class="stok-sebelum-cell">${item.stokSebelum || 0}</td>
+        <td class="stok-sesudah-cell">${item.stokSesudah || 0}</td>
+        <td class="action-cell">
+          <button class="btn btn-sm btn-warning me-1" onclick="maintenanceSystem.editRow('${item.id}')">
+            <i class="fas fa-edit"></i>
+          </button>
+          <button class="btn btn-sm btn-danger" onclick="maintenanceSystem.deleteRow('${item.id}')">
+            <i class="fas fa-trash"></i>
+          </button>
+        </td>
+      </tr>
+    `;
+
+    this.dataTableBody.insertAdjacentHTML("afterbegin", rowHtml);
+  }
+
+  /**
+   * Update existing row in table (realtime)
+   */
+  updateRowInTable(item) {
+    const row = document.querySelector(`tr[data-id="${item.id}"]`);
+    if (!row) return;
+
+    const date = item.timestamp ? new Date(item.timestamp.seconds * 1000) : null;
+    const dateStr = date ? date.toLocaleDateString("id-ID") : "";
+    const timeStr =
+      item.timestr || (date ? date.toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" }) : "");
+
+    row.style.animation = "pulse 0.5s";
+    row.querySelector(".date-cell").textContent = dateStr;
+    row.querySelector(".time-cell").textContent = timeStr;
+    row.querySelector(".sales-cell").textContent = item.keterangan || "";
+    row.querySelector(".kode-cell").textContent = item.kode || "";
+    row.querySelector(".nama-cell").textContent = item.nama || "";
+    row.querySelector(".stok-sebelum-cell").textContent = item.stokSebelum || 0;
+    row.querySelector(".stok-sesudah-cell").textContent = item.stokSesudah || 0;
+  }
+
+  /**
+   * Remove row from table (realtime)
+   */
+  removeRowFromTable(docId) {
+    const row = document.querySelector(`tr[data-id="${docId}"]`);
+    if (row) {
+      row.style.animation = "fadeOut 0.3s";
+      setTimeout(() => row.remove(), 300);
+    }
+  }
+
+  /**
+   * Detach listener
+   */
+  detachListener(key) {
+    const unsubscribe = this.activeListeners.get(key);
+    if (unsubscribe) {
+      unsubscribe();
+      this.activeListeners.delete(key);
     }
   }
 
@@ -524,6 +737,15 @@ class MaintenanceSystem {
       </button>
     `;
 
+      // Update cache
+      const docData = await getDoc(docRef);
+      if (docData.exists()) {
+        this.cache.updateCollectionDoc("stokAksesorisTransaksi", this.currentDate, docId, {
+          id: docId,
+          ...docData.data(),
+        });
+      }
+
       this.showAlert("Data berhasil diupdate", "success");
     } catch (error) {
       console.error("Error saving data:", error);
@@ -540,12 +762,13 @@ class MaintenanceSystem {
     if (!confirmed) return;
 
     try {
-      // Delete from Firestore
+      // Delete from Firestore (listener will handle UI update)
       await deleteDoc(doc(this.firestore, "stokAksesorisTransaksi", docId));
 
-      // Remove from table
+      // Listener will automatically remove from table and cache
+      // No manual removal needed
       const row = document.querySelector(`tr[data-id="${docId}"]`);
-      if (row) {
+      if (row && false) {
         row.remove();
       }
 
@@ -601,6 +824,17 @@ class MaintenanceSystem {
   }
 
   async loadPenjualanData(dateStr) {
+    // Detach previous listener
+    this.detachListener("penjualan");
+
+    // Check cache first
+    const cachedData = this.cache.getCollectionData("penjualanAksesoris", dateStr);
+    if (cachedData) {
+      const dataArray = this.flattenPenjualanData(Array.from(cachedData.values()));
+      this.renderPenjualanTable(dataArray);
+    }
+
+    this.currentPenjualanDate = dateStr;
     const selectedDate = new Date(dateStr);
     const startDate = new Date(selectedDate.getFullYear(), selectedDate.getMonth(), selectedDate.getDate());
     const endDate = new Date(selectedDate.getFullYear(), selectedDate.getMonth(), selectedDate.getDate() + 1);
@@ -612,10 +846,55 @@ class MaintenanceSystem {
       orderBy("timestamp", "desc")
     );
 
-    const querySnapshot = await getDocs(q);
+    // Setup realtime listener
+    const unsubscribe = onSnapshot(
+      q,
+      (snapshot) => {
+        snapshot.docChanges().forEach((change) => {
+          const docData = { id: change.doc.id, ...change.doc.data() };
+
+          if (change.type === "added") {
+            this.cache.setCollectionData("penjualanAksesoris", dateStr, change.doc.id, docData);
+            if (cachedData) {
+              this.addPenjualanRowsToTable(docData);
+            }
+          } else if (change.type === "modified") {
+            this.cache.updateCollectionDoc("penjualanAksesoris", dateStr, change.doc.id, docData);
+            this.updatePenjualanRowsInTable(docData);
+          } else if (change.type === "removed") {
+            this.cache.removeCollectionDoc("penjualanAksesoris", dateStr, change.doc.id);
+            this.removePenjualanRowsFromTable(change.doc.id);
+          }
+        });
+
+        // Initial render if no cache
+        if (!cachedData) {
+          const allData = [];
+          snapshot.forEach((doc) => {
+            const docData = { id: doc.id, ...doc.data() };
+            this.cache.setCollectionData("penjualanAksesoris", dateStr, doc.id, docData);
+            allData.push(docData);
+          });
+          const flatData = this.flattenPenjualanData(allData);
+          this.renderPenjualanTable(flatData);
+        }
+      },
+      (error) => {
+        console.error("Error in penjualan realtime listener:", error);
+        this.showAlert("Error memuat data penjualan realtime: " + error.message, "error");
+      }
+    );
+
+    this.activeListeners.set("penjualan", unsubscribe);
+  }
+
+  /**
+   * Flatten penjualan data (doc with items array to flat array)
+   */
+  flattenPenjualanData(docs) {
     const data = [];
-    querySnapshot.docs.forEach((doc) => {
-      const docData = doc.data();
+    docs.forEach((doc) => {
+      const docData = doc;
       const items = Array.isArray(docData.items) ? docData.items : [];
       items.forEach((item, idx) => {
         data.push({
@@ -632,7 +911,68 @@ class MaintenanceSystem {
         });
       });
     });
-    this.renderPenjualanTable(data);
+    return data;
+  }
+
+  /**
+   * Add penjualan rows to table (realtime)
+   */
+  addPenjualanRowsToTable(docData) {
+    const items = Array.isArray(docData.items) ? docData.items : [];
+    items.forEach((item, idx) => {
+      const rowId = `${docData.id}_${idx}`;
+      const existingRow = document.querySelector(`tr[data-id="${rowId}"]`);
+      if (existingRow) return;
+
+      const date = docData.timestamp ? new Date(docData.timestamp.seconds * 1000) : null;
+      const dateStr = date ? date.toLocaleDateString("id-ID") : "";
+      const timeStr = date ? date.toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" }) : "";
+      const hargaFormatted = new Intl.NumberFormat("id-ID").format(item.harga || 0);
+
+      const rowHtml = `
+        <tr data-id="${rowId}" data-doc-id="${docData.id}" data-item-index="${idx}" style="animation: fadeIn 0.3s;">
+          <td class="pj-date-cell">${dateStr}</td>
+          <td class="pj-time-cell">${timeStr}</td>
+          <td class="pj-sales-cell">${docData.sales || ""}</td>
+          <td class="pj-barcode-cell">${item.barcode || ""}</td>
+          <td class="pj-kode-lock-cell">${item.kodeLock || ""}</td>
+          <td class="pj-nama-cell">${item.nama || ""}</td>
+          <td class="pj-kadar-cell">${item.kadar || ""}</td>
+          <td class="pj-berat-cell">${item.berat || ""}</td>
+          <td class="pj-harga-cell">${hargaFormatted}</td>
+          <td class="pj-action-cell">
+            <button class="btn btn-sm btn-warning me-1" onclick="maintenanceSystem.editPenjualanRow('${rowId}')">
+              <i class="fas fa-edit"></i>
+            </button>
+            <button class="btn btn-sm btn-danger" onclick="maintenanceSystem.deletePenjualanRow('${docData.id}')">
+              <i class="fas fa-trash"></i>
+            </button>
+          </td>
+        </tr>
+      `;
+
+      this.penjualanTableBody.insertAdjacentHTML("afterbegin", rowHtml);
+    });
+  }
+
+  /**
+   * Update penjualan rows in table (realtime)
+   */
+  updatePenjualanRowsInTable(docData) {
+    // Remove old rows for this doc
+    document.querySelectorAll(`tr[data-doc-id="${docData.id}"]`).forEach((row) => row.remove());
+    // Add updated rows
+    this.addPenjualanRowsToTable(docData);
+  }
+
+  /**
+   * Remove penjualan rows from table (realtime)
+   */
+  removePenjualanRowsFromTable(docId) {
+    document.querySelectorAll(`tr[data-doc-id="${docId}"]`).forEach((row) => {
+      row.style.animation = "fadeOut 0.3s";
+      setTimeout(() => row.remove(), 300);
+    });
   }
 
   renderPenjualanTable(data) {
@@ -761,10 +1101,14 @@ class MaintenanceSystem {
 
     try {
       await deleteDoc(doc(this.firestore, "penjualanAksesoris", docId));
-      document.querySelectorAll(`tr[data-doc-id="${docId}"]`).forEach((row) => row.remove());
-      if (this.penjualanTableBody.querySelectorAll("tr").length === 0) {
-        this.penjualanTableBody.innerHTML = `<tr><td colspan="9" class="text-center text-muted">Tidak ada data untuk tanggal yang dipilih</td></tr>`;
-      }
+      // Listener will automatically remove rows and update cache
+      // Check if table is empty after listener processes
+      setTimeout(() => {
+        if (this.penjualanTableBody.querySelectorAll("tr").length === 0) {
+          this.penjualanTableBody.innerHTML = `<tr><td colspan="10" class="text-center text-muted">Tidak ada data untuk tanggal yang dipilih</td></tr>`;
+        }
+      }, 500);
+
       this.showAlert("Data berhasil dihapus", "success");
     } catch (error) {
       console.error("Error deleting penjualan:", error);
@@ -799,6 +1143,17 @@ class MaintenanceSystem {
       console.error("Error showing loading modal:", error);
       this.isLoading = false;
     }
+  }
+
+  /**
+   * Cleanup all active listeners
+   */
+  cleanupAllListeners() {
+    for (const [key, unsubscribe] of this.activeListeners.entries()) {
+      unsubscribe();
+      console.log(`Cleaned up listener: ${key}`);
+    }
+    this.activeListeners.clear();
   }
 
   /**
@@ -1171,4 +1526,11 @@ class MaintenanceSystem {
 // Initialize the maintenance system when page loads
 document.addEventListener("DOMContentLoaded", () => {
   window.maintenanceSystem = new MaintenanceSystem();
+
+  // Cleanup listeners on page unload
+  window.addEventListener("beforeunload", () => {
+    if (window.maintenanceSystem) {
+      window.maintenanceSystem.cleanupAllListeners();
+    }
+  });
 });
