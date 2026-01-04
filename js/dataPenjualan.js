@@ -310,6 +310,7 @@ class OptimizedDataPenjualanApp {
     this.realtimeListener = null;
     this.isListeningToday = false;
     this.currentSelectedDate = null;
+    this.currentListeningDate = null;
     this.currentDeleteAction = null;
 
     // ✅ PERBAIKAN: Tambahkan properties untuk inactivity timer
@@ -334,12 +335,9 @@ class OptimizedDataPenjualanApp {
 
     // Reactivate listener if user becomes active again
     if (!this.isUserActive && this.currentSelectedDate) {
-      const today = new Date();
-      const isToday = utils.isSameDate(this.currentSelectedDate, today);
-
-      if (isToday && !this.isListeningToday) {
-        this.setupTodayListener();
-        this.isListeningToday = true;
+      if (!this.realtimeListener) {
+        this.setupDateListener(this.currentSelectedDate);
+        this.currentListeningDate = this.currentSelectedDate;
         console.log("📡 Real-time listener reactivated due to user activity");
       }
     }
@@ -354,9 +352,8 @@ class OptimizedDataPenjualanApp {
   handleUserInactivity() {
     this.isUserActive = false;
 
-    if (this.realtimeListener && this.isListeningToday) {
-      this.removeTodayListener();
-      this.isListeningToday = false;
+    if (this.realtimeListener) {
+      this.removeRealtimeListener();
       console.log("🔇 Real-time listener deactivated due to inactivity (5 minutes)");
 
       // Show subtle notification
@@ -504,36 +501,32 @@ class OptimizedDataPenjualanApp {
     }
   }
 
-  // Setup real-time listener for today's data
+  // Setup real-time listener for selected date
   setupRealtimeListener(selectedDate) {
-    const today = new Date();
-    const isToday = utils.isSameDate(selectedDate, today);
+    if (!selectedDate || !this.isUserActive) {
+      this.removeRealtimeListener();
+      return;
+    }
 
-    // ✅ PERBAIKAN: Cek user activity sebelum setup listener
-    if (isToday && !this.isListeningToday && this.isUserActive) {
-      this.setupTodayListener();
-      this.isListeningToday = true;
-      console.log("📡 Real-time listener activated for today");
-    } else if (!isToday && this.isListeningToday) {
-      this.removeTodayListener();
-      this.isListeningToday = false;
-      console.log("🔇 Real-time listener deactivated");
+    // Jika sudah ada listener untuk tanggal yang sama, skip
+    if (this.currentListeningDate && utils.isSameDate(this.currentListeningDate, selectedDate)) {
+      return;
     }
-    // ✅ PERBAIKAN: Jika user tidak aktif tapi tanggal hari ini, tampilkan info
-    else if (isToday && !this.isUserActive) {
-      console.log("⏸️ Real-time listener not activated due to user inactivity");
-    }
+
+    // Remove listener lama & setup yang baru
+    this.removeRealtimeListener();
+    this.setupDateListener(selectedDate);
+    this.currentListeningDate = selectedDate;
   }
 
-  // Setup today's real-time listener
-  setupTodayListener() {
-    const today = new Date();
-    const startOfDay = new Date(today);
+  // Setup real-time listener for specific date
+  setupDateListener(date) {
+    const startOfDay = new Date(date);
     startOfDay.setHours(0, 0, 0, 0);
-    const endOfDay = new Date(today);
+    const endOfDay = new Date(date);
     endOfDay.setHours(23, 59, 59, 999);
 
-    const todayQuery = query(
+    const dateQuery = query(
       collection(firestore, "penjualanAksesoris"),
       where("timestamp", ">=", Timestamp.fromDate(startOfDay)),
       where("timestamp", "<=", Timestamp.fromDate(endOfDay)),
@@ -541,7 +534,7 @@ class OptimizedDataPenjualanApp {
     );
 
     this.realtimeListener = onSnapshot(
-      todayQuery,
+      dateQuery,
       (snapshot) => {
         if (!snapshot.metadata.hasPendingWrites) {
           this.handleRealtimeUpdate(snapshot);
@@ -551,14 +544,17 @@ class OptimizedDataPenjualanApp {
         console.error("Real-time listener error:", error);
       }
     );
+
+    console.log(`📡 Real-time listener activated for: ${utils.formatDate(date)}`);
   }
 
-  // Remove today's listener
-  removeTodayListener() {
+  // Remove real-time listener
+  removeRealtimeListener() {
     if (this.realtimeListener) {
       this.realtimeListener();
       this.realtimeListener = null;
     }
+    this.currentListeningDate = null;
   }
 
   // Handle real-time updates
@@ -1419,7 +1415,7 @@ class OptimizedDataPenjualanApp {
       // Update in Firestore
       await updateDoc(doc(firestore, "penjualanAksesoris", this.currentTransaction.id), updateData);
 
-      // Update local data and cache (dengan info perubahan tanggal)
+      // Update local data and cache (real-time listener akan sync ke browser lain)
       const dateChanged = originalDate && newDate && !utils.isSameDate(originalDate, newDate);
       this.updateLocalData(this.currentTransaction.id, updateData, dateChanged);
 
@@ -1556,7 +1552,7 @@ class OptimizedDataPenjualanApp {
       // Hapus dari Firestore (logic existing)
       await deleteDoc(doc(firestore, "penjualanAksesoris", this.currentTransaction.id));
 
-      // Update local data (logic existing)
+      // Update local data (real-time listener akan sync ke browser lain)
       this.salesData = this.salesData.filter((item) => item.id !== this.currentTransaction.id);
       this.filteredData = this.filteredData.filter((item) => item.id !== this.currentTransaction.id);
 
@@ -1593,7 +1589,7 @@ class OptimizedDataPenjualanApp {
         restoredCount = await this.removeStockTransactions(transaction);
       }
 
-      // Step 3: Update local data
+      // Step 3: Update local data (real-time listener akan sync ke browser lain)
       this.salesData = this.salesData.filter((item) => item.id !== transaction.id);
       this.filteredData = this.filteredData.filter((item) => item.id !== transaction.id);
       cacheManager.removeTransaction(transaction.id);

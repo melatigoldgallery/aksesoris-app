@@ -1642,7 +1642,7 @@ tr:has(.badge.bg-info) {
   display: block;
 }
 
-.btn-success {
+.btn-success, .bg-success {
   background: linear-gradient(135deg, #24973f 0%, #075840 100%);
   color: white;
 }
@@ -1671,7 +1671,7 @@ tr:has(.badge.bg-info) {
   background: linear-gradient(135deg, #f8961e 0%, #e68a00 100%);
 }
 
-.btn-danger {
+.btn-danger, .bg-danger {
   background: linear-gradient(135deg, #f94144 0%, #d62828 100%);
   color: white;
   border: none;
@@ -1691,7 +1691,7 @@ tr:has(.badge.bg-info) {
   background: linear-gradient(135deg, #495057 0%, #343a40 100%);
 }
 
-.btn-info {
+.btn-info, .bg-info {
   background: linear-gradient(135deg, #0dcaf0 0%, #0aa2c0 100%);
 }
 

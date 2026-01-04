@@ -201,6 +201,66 @@
           </div>
 
           <div class="content-wrapper">
+
+            <div class="row">
+              <!-- Export Data -->
+              <div class="col-md-6 mb-4">
+                <div class="card h-100">
+                  <div class="card-header bg-success text-white p-2">
+                    <h5 class="mb-0">
+                      <i class="fas fa-file-excel me-2"></i>
+                      Export Data
+                    </h5>
+                  </div>
+                  <div class="card-body">
+                    <p class="card-text">Export data berdasarkan bulan untuk backup eksternal.</p>
+                    <div class="mb-3">
+                      <label for="exportMonth" class="form-label">Pilih Bulan untuk Export:</label>
+                      <input type="month" class="form-control" id="exportMonth" />
+                    </div>
+                    <div class="d-grid gap-2">
+                      <button class="btn btn-success" id="btnExportPenjualan">
+                        <i class="fas fa-download me-2"></i>
+                        Export Penjualan
+                      </button>
+                      <button class="btn btn-success" id="btnExportStockAdditions">
+                        <i class="fas fa-download me-2"></i>
+                        Export Stock Additions
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Delete Old Data -->
+              <div class="col-md-6 mb-4">
+                <div class="card h-100">
+                  <div class="card-header bg-danger text-white p-2">
+                    <h5 class="mb-0">
+                      <i class="fas fa-trash me-2"></i>
+                      Hapus Data Lama
+                    </h5>
+                  </div>
+                  <div class="card-body">
+                    <p class="card-text">
+                      <strong>Peringatan:</strong>
+                      Hapus data lama setelah berhasil diexport. Pastikan file backup sudah tersimpan dengan aman.
+                    </p>
+                    <div class="mb-3">
+                      <label for="deleteMonth" class="form-label">Pilih Bulan untuk Dihapus:</label>
+                      <input type="month" class="form-control" id="deleteMonth" />
+                    </div>
+                    <button class="btn btn-danger w-100" id="btnDeleteOldData" disabled>
+                      <i class="fas fa-trash me-2"></i>
+                      Hapus Data Lama
+                    </button>
+                    <small class="text-muted mt-2 d-block">
+                      Tombol akan aktif setelah export berhasil untuk bulan yang dipilih
+                    </small>
+                  </div>
+                </div>
+              </div>
+            </div>
             <div class="row mb-4">
               <div class="col-12">
                 <div class="card">
@@ -313,66 +373,6 @@
                       </div>
                       <p class="mt-2 text-muted">Memuat data...</p>
                     </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div class="row">
-              <!-- Export Data -->
-              <div class="col-md-6 mb-4">
-                <div class="card h-100">
-                  <div class="card-header bg-success text-white p-2">
-                    <h5 class="mb-0">
-                      <i class="fas fa-file-excel me-2"></i>
-                      Export Data
-                    </h5>
-                  </div>
-                  <div class="card-body">
-                    <p class="card-text">Export data berdasarkan bulan untuk backup eksternal.</p>
-                    <div class="mb-3">
-                      <label for="exportMonth" class="form-label">Pilih Bulan untuk Export:</label>
-                      <input type="month" class="form-control" id="exportMonth" />
-                    </div>
-                    <div class="d-grid gap-2">
-                      <button class="btn btn-success" id="btnExportPenjualan">
-                        <i class="fas fa-download me-2"></i>
-                        Export Penjualan
-                      </button>
-                      <button class="btn btn-success" id="btnExportStockAdditions">
-                        <i class="fas fa-download me-2"></i>
-                        Export Stock Additions
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <!-- Delete Old Data -->
-              <div class="col-md-6 mb-4">
-                <div class="card h-100">
-                  <div class="card-header bg-danger text-white p-2">
-                    <h5 class="mb-0">
-                      <i class="fas fa-trash me-2"></i>
-                      Hapus Data Lama
-                    </h5>
-                  </div>
-                  <div class="card-body">
-                    <p class="card-text">
-                      <strong>Peringatan:</strong>
-                      Hapus data lama setelah berhasil diexport. Pastikan file backup sudah tersimpan dengan aman.
-                    </p>
-                    <div class="mb-3">
-                      <label for="deleteMonth" class="form-label">Pilih Bulan untuk Dihapus:</label>
-                      <input type="month" class="form-control" id="deleteMonth" />
-                    </div>
-                    <button class="btn btn-danger w-100" id="btnDeleteOldData" disabled>
-                      <i class="fas fa-trash me-2"></i>
-                      Hapus Data Lama
-                    </button>
-                    <small class="text-muted mt-2 d-block">
-                      Tombol akan aktif setelah export berhasil untuk bulan yang dipilih
-                    </small>
                   </div>
                 </div>
               </div>

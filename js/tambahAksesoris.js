@@ -16,10 +16,12 @@ import {
 
 import StockService from "./services/stockService.js";
 
-// ===== IMPROVED CACHE MANAGEMENT =====
-const CACHE_TTL_STANDARD = 60 * 60 * 1000; // 1 jam untuk data statis
-const CACHE_TTL_TODAY = 5 * 60 * 1000; // 5 menit untuk data hari ini
-const CACHE_TTL_STOCK = 2 * 60 * 1000; // 2 menit untuk data stok
+// ===== OPTIMIZED CACHE MANAGEMENT =====
+// Cache hanya di-invalidate saat ada perubahan data (CRUD), bukan berdasarkan waktu
+// Ini mengurangi Firestore reads secara signifikan
+const CACHE_TTL_STANDARD = 24 * 60 * 60 * 1000; // 24 jam - cache bertahan lama
+const CACHE_TTL_TODAY = 24 * 60 * 60 * 1000; // 24 jam - sama, karena invalidate saat CRUD
+const CACHE_TTL_STOCK = 24 * 60 * 60 * 1000; // 24 jam - sama, karena invalidate saat CRUD
 
 // Cache storage dengan timestamp
 const cacheStorage = {
@@ -158,8 +160,8 @@ export const aksesorisSaleHandler = {
     // Set tanggal hari ini
     this.setTodayDate();
 
-    // Load riwayat penambahan stok
-    this.loadStockAdditionHistory();
+    // Initialize empty table with instruction message
+    this.renderStockAdditionHistory([]);
   },
 
   // Fungsi untuk mengisi tanggal hari ini
@@ -492,7 +494,8 @@ export const aksesorisSaleHandler = {
     });
   },
 
-  // IMPROVED: Fungsi untuk mengambil data kode aksesoris dari Firestore dengan caching yang efisien
+  // OPTIMIZED: Fungsi untuk mengambil data kode aksesoris dengan cache invalidate-on-change
+  // Cache tidak expire berdasarkan waktu, hanya di-refresh saat CRUD operation
   async fetchKodeAksesoris() {
     try {
       const cacheKey = "kodeAksesoris_all";
@@ -727,7 +730,7 @@ export const aksesorisSaleHandler = {
     }
   },
 
-  // IMPROVED: Fungsi untuk menyimpan data penambahan stok dengan cache invalidation
+  // OPTIMIZED: Simpan data dan invalidate cache terkait saja
   async simpanData() {
     try {
       // Show loading indicator
@@ -861,7 +864,7 @@ export const aksesorisSaleHandler = {
     }
   },
 
-  // IMPROVED: Fungsi untuk memperbarui stok aksesoris dengan cache invalidation
+  // OPTIMIZED: Update stok dan invalidate cache - hanya refresh data yang berubah
   async updateStokAksesoris(items) {
     try {
       console.log(`🔄 Starting stock update for ${items.length} items`);
@@ -1042,7 +1045,8 @@ export const aksesorisSaleHandler = {
     return laporanHTML;
   },
 
-  // IMPROVED: Fungsi untuk memuat riwayat penambahan stok dengan caching yang efisien
+  // OPTIMIZED: Fungsi untuk memuat riwayat penambahan stok dengan cache invalidate-on-change
+  // Cache bertahan lama dan hanya di-refresh saat ada perubahan data (simpan/update/delete)
   async loadStockAdditionHistory() {
     try {
       const filterDateStart = document.getElementById("filterDateStart");
@@ -1050,8 +1054,8 @@ export const aksesorisSaleHandler = {
 
       // Validasi elemen ada dan memiliki value
       if (!filterDateStart || !filterDateEnd || !filterDateStart.value || !filterDateEnd.value) {
-        console.log("Filter tanggal belum diset, menggunakan tanggal hari ini");
-        this.setDefaultFilterDates();
+        console.log("Filter tanggal belum diset, menampilkan pesan instruksi");
+        this.renderStockAdditionHistory([]);
         return;
       }
 
@@ -1077,12 +1081,7 @@ export const aksesorisSaleHandler = {
       // Create cache key
       const cacheKey = `stockAdditions_${filterDateStart.value}_${filterDateEnd.value}`;
 
-      // Cek apakah rentang tanggal mencakup hari ini untuk menentukan TTL
-      const today = new Date();
-      const includesCurrentDay = startDate <= today && today <= endDate;
-      const ttl = includesCurrentDay ? CACHE_TTL_TODAY : CACHE_TTL_STANDARD;
-
-      // Cek cache terlebih dahulu
+      // Cek cache terlebih dahulu (cache bertahan lama, invalidate saat CRUD)
       const cachedData = getCacheWithValidation(cacheKey);
       if (cachedData) {
         console.log("Using cached stock addition history");
@@ -1120,8 +1119,8 @@ export const aksesorisSaleHandler = {
         }
       });
 
-      // Simpan ke cache
-      setCacheWithTimestamp(cacheKey, historyData, ttl);
+      // Simpan ke cache dengan TTL panjang (akan di-invalidate saat ada perubahan data)
+      setCacheWithTimestamp(cacheKey, historyData, CACHE_TTL_STANDARD);
 
       // Simpan data untuk laporan
       this.laporanData = historyData;
@@ -1147,9 +1146,6 @@ export const aksesorisSaleHandler = {
 
     if (filterDateStart) filterDateStart.value = formattedDate;
     if (filterDateEnd) filterDateEnd.value = formattedDate;
-
-    // Load data setelah set tanggal
-    setTimeout(() => this.loadStockAdditionHistory(), 100);
   },
 
   // Render riwayat penambahan stok ke tabel
@@ -1167,9 +1163,9 @@ export const aksesorisSaleHandler = {
     if (!historyData || historyData.length === 0) {
       tableBody.innerHTML = `
         <tr>
-          <td colspan="4" class="text-center text-muted py-4">
-            <i class="fas fa-inbox fa-2x mb-2 d-block"></i>
-            <span>Tidak ada data penambahan stok pada periode ini</span>
+          <td colspan="4" class="text-center text-muted py-5">
+            <i class="fas fa-calendar-alt fa-2x mb-3 opacity-50"></i>
+            <div class="h6">Pilih rentang tanggal dan klik tombol "Tampilkan" untuk melihat riwayat</div>
           </td>
         </tr>
       `;
@@ -1322,7 +1318,7 @@ export const aksesorisSaleHandler = {
     this.modalKelolaKode.show();
   },
 
-  // IMPROVED: Fungsi untuk memuat data kode barang dengan caching yang efisien
+  // OPTIMIZED: Fungsi untuk memuat data kode barang dengan cache invalidate-on-change
   async loadKodeBarang(kategori) {
     try {
       const tableId =
@@ -1455,7 +1451,7 @@ export const aksesorisSaleHandler = {
     this.modalFormKode.show();
   },
 
-  // IMPROVED: Fungsi untuk menyimpan kode barang dengan cache invalidation
+  // OPTIMIZED: Simpan kode barang dan invalidate cache terkait
   async simpanKodeBarang() {
     // Validasi form
     if (!this.validateKodeBarangForm()) {
@@ -1556,7 +1552,7 @@ export const aksesorisSaleHandler = {
     }
   },
 
-  // IMPROVED: Ganti confirm di deleteKodeBarang dengan cache invalidation
+  // OPTIMIZED: Hapus kode barang dan invalidate cache terkait
   async deleteKodeBarang(docId, kategori) {
     const confirmed = await this.showConfirmation("Apakah Anda yakin ingin menghapus kode ini?");
     if (!confirmed) {
@@ -1705,13 +1701,9 @@ export const aksesorisSaleHandler = {
   },
 };
 
-// IMPROVED: Auto cleanup expired cache setiap 5 menit
-setInterval(() => {
-  aksesorisSaleHandler.cleanupExpiredCache();
-}, 5 * 60 * 1000);
-
-// IMPROVED: Cleanup cache saat halaman akan ditutup
+// Cache cleanup hanya dilakukan saat halaman ditutup untuk membersihkan sessionStorage
 window.addEventListener("beforeunload", () => {
+  // Hanya cleanup jika perlu, tidak paksa karena cache masih valid
   aksesorisSaleHandler.cleanupExpiredCache();
 });
 
@@ -1750,40 +1742,6 @@ document.addEventListener("DOMContentLoaded", function () {
 
   // Tambahkan tombol setelah DOM selesai dimuat
   setTimeout(addRefreshCacheButton, 1000);
-
-  // IMPROVED: Tambahkan indikator cache status jika diperlukan
-  const addCacheStatusIndicator = () => {
-    const existingIndicator = document.getElementById("cacheStatusIndicator");
-    if (existingIndicator) return;
-
-    const statusContainer = document.querySelector(".card-footer") || document.querySelector(".card-body");
-
-    if (statusContainer) {
-      const indicator = document.createElement("small");
-      indicator.id = "cacheStatusIndicator";
-      indicator.className = "text-muted d-block mt-2";
-      indicator.innerHTML = '<i class="fas fa-database"></i> <span id="cacheStatusText">Cache aktif</span>';
-
-      // Update status setiap 30 detik
-      const updateCacheStatus = () => {
-        const cacheInfo = aksesorisSaleHandler.getCacheStatus();
-        const activeCache = cacheInfo.filter((info) => !info.expired).length;
-        const expiredCache = cacheInfo.filter((info) => info.expired).length;
-
-        const statusText = document.getElementById("cacheStatusText");
-        if (statusText) {
-          statusText.textContent = `Cache: ${activeCache} aktif, ${expiredCache} expired`;
-        }
-      };
-
-      statusContainer.appendChild(indicator);
-      updateCacheStatus();
-      setInterval(updateCacheStatus, 30000);
-    }
-  };
-
-  // Tambahkan indikator setelah DOM selesai dimuat
-  setTimeout(addCacheStatusIndicator, 1500);
 });
 
 // IMPROVED: Export fungsi cache management untuk debugging
