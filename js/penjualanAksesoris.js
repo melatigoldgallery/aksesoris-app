@@ -1612,28 +1612,29 @@ const penjualanHandler = {
       const updatePromises = [];
 
       for (const item of items) {
-        const kode = item.kodeText;
-        if (!kode || kode === "-") continue;
-
         if (salesType === "manual") {
-          // Untuk penjualan manual
+          // ✅ Penjualan manual: HANYA catat transaksi kodeLock sebagai gantiLock
+          // ❌ Kode barang (item.kodeText) TIDAK dicatat ke transaksi stok
+
           if (item.kodeLock && item.kodeLock !== "-") {
-            // Kode aksesoris yang dipilih - mengurangi stok sebagai ganti lock
-            const currentStock = this.getStockForItem(item.kodeLock);
+            const currentStockLock = this.getStockForItem(item.kodeLock);
             const jumlah = parseInt(item.jumlah) || 1;
-            const newStock = Math.max(0, currentStock - jumlah);
+            const newStockLock = Math.max(0, currentStockLock - jumlah);
 
             updatePromises.push(
               this.processSingleStockUpdate(item.kodeLock, {
                 item: { ...item, kodeText: item.kodeLock, nama: `Ganti lock untuk ${item.nama}` },
-                currentStock,
-                newStock,
+                currentStock: currentStockLock,
+                newStock: newStockLock,
                 jumlah,
                 isGantiLock: true,
               })
             );
           }
         } else {
+          // Untuk penjualan aksesoris, kotak, dan silver
+          const kode = item.kodeText;
+          if (!kode || kode === "-") continue;
           // Untuk penjualan aksesoris dan kotak
           const currentStock = this.getStockForItem(kode);
           const jumlah = parseInt(item.jumlah) || 1;
@@ -1841,8 +1842,33 @@ const penjualanHandler = {
               text-align: left;
               padding: 1mm 2mm;
             }
-            .receipt .tanggal {
-            margin-left: 10px
+            .info-header {
+              display: flex;
+              justify-content: space-between;
+              margin: 2mm 0;
+              font-size: 11px;
+              padding: 0;
+            }
+            .nama-barang {
+              font-weight: bold;
+              white-space: nowrap;
+              overflow: hidden;
+              text-overflow: ellipsis;
+              border-bottom: 1px dotted #ccc;
+              padding: 2mm 0;
+              margin: 0;
+            }
+            .detail-barang {
+              display: flex;
+              justify-content: space-between;
+              font-size: 11px;
+              padding: 1mm 0;
+              margin: 0 0 2mm 0;
+            }
+            .item-separator {
+              border-bottom: 1px dotted #888;
+              padding-bottom: 2mm;
+              margin-bottom: 2mm;
             }
             .text-center {
               text-align: center;
@@ -1870,32 +1896,33 @@ const penjualanHandler = {
             <h4>JL. DIPONEGORO NO. 116</h4>
             <h4>NOTA PENJUALAN ${transaction.salesType.toUpperCase()}</h4>
             <hr>
-            <p class="tanggal">Tanggal: ${transaction.tanggal}<br>Sales: ${transaction.sales}</p>
+            <div class="info-header">
+              <span>Tanggal: ${transaction.tanggal}</span>
+              <span>Sales: ${transaction.sales}</span>
+            </div>
             <hr>
-            <table>
-              <tr>
-                <th>Kode</th>
-                <th>Nama</th>
-                <th>Kadar</th>
-                <th>Gr</th>
-                <th>Harga</th>
-              </tr>
+            <div>
       `;
 
     let hasKeterangan = false;
     let keteranganText = "";
 
-    transaction.items.forEach((item) => {
+    transaction.items.forEach((item, index) => {
       const itemHarga = parseInt(item.totalHarga) || 0;
+      const isLastItem = index === transaction.items.length - 1;
+      const separatorClass = !isLastItem ? " item-separator" : "";
+
       receiptHTML += `
-          <tr>
-            <td>${item.kodeText || "-"}</td>
-            <td>${item.nama || "-"}</td>
-            <td>${item.kadar || "-"}</td>
-            <td>${item.berat || "-"}</td>
-            <td class="text-right">${utils.formatRupiah(itemHarga)}</td>
-          </tr>
-        `;
+      <div class="${separatorClass}">
+        <div class="nama-barang">${item.nama || "-"}</div>
+        <div class="detail-barang">
+          <span>${item.kodeText || "-"}</span>
+          <span>${item.kadar || "-"}</span>
+          <span>${item.berat || "-"} gr</span>
+          <span>${utils.formatRupiah(itemHarga)}</span>
+        </div>
+      </div>
+    `;
 
       if (item.keterangan && item.keterangan.trim() !== "") {
         hasKeterangan = true;
@@ -1905,11 +1932,14 @@ const penjualanHandler = {
 
     const totalHarga = parseInt(transaction.totalHarga.replace(/\./g, "")) || 0;
     receiptHTML += `
-              <tr>
-                <td colspan="4" class="text-right"><strong>Total:</strong></td>
-                <td class="text-right"><strong>${utils.formatRupiah(totalHarga)}</strong></td>
-              </tr>
-            </table>
+        </div>
+        <hr>
+        <table style="width: 100%; margin-top: 2mm;">
+          <tr style="border-top: 2px solid #000;">
+            <td style="text-align: right; padding-right: 2mm;"><strong>Total:</strong></td>
+            <td style="text-align: right;"><strong>${utils.formatRupiah(totalHarga)}</strong></td>
+          </tr>
+        </table>
       `;
 
     // PERBAIKAN: Add DP information dengan logika yang benar

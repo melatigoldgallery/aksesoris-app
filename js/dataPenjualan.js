@@ -1634,25 +1634,57 @@ class OptimizedDataPenjualanApp {
 
       console.log(`🔍 Processing cancellation for: ${transactionDate.toDateString()}`);
 
-      const isGantiLock = transaction.isGantiLock || transaction.jenisPenjualan === "gantiLock";
+      // ✅ Enhanced logging untuk debugging
+      console.log(`📊 Transaction Analysis:`, {
+        id: transaction.id,
+        jenis: transaction.jenisPenjualan,
+        isGantiLock: transaction.isGantiLock,
+        itemCount: transaction.items.length,
+        items: transaction.items.map((item) => ({
+          nama: item.nama,
+          kodeText: item.kodeText,
+          kodeLock: item.kodeLock,
+          hasValidLock: !!(item.kodeLock && item.kodeLock !== "-"),
+        })),
+      });
+
+      // ✅ Deteksi apakah ini penjualan manual
+      const isManualSale =
+        transaction.jenisPenjualan === "manual" ||
+        transaction.isGantiLock ||
+        transaction.jenisPenjualan === "gantiLock";
 
       for (const item of transaction.items) {
         let kodeToSearch, jenisToSearch;
 
-        if (isGantiLock) {
-          // ✅ GANTI LOCK: gunakan kode lock yang digunakan
-          kodeToSearch = item.kodeLock; // LSG, dll
-          jenisToSearch = "ganti lock";
+        if (isManualSale) {
+          // ✅ Penjualan Manual - cek apakah ada kodeLock
+
+          if (!item.kodeLock || item.kodeLock === "-") {
+            // ❌ MANUAL TANPA KODE LOCK - skip (tidak perlu restore)
+            console.log(`⏭️ Manual sale without kodeLock, no stock restore needed:`, {
+              nama: item.nama,
+              kodeText: item.kodeText,
+              kodeLock: item.kodeLock,
+            });
+            continue;
+          }
+
+          // ✅ MANUAL DENGAN KODE LOCK - restore stok lock
+          kodeToSearch = item.kodeLock;
+          jenisToSearch = "gantiLock"; // ✅ CRITICAL FIX: konsisten dengan save (camelCase)
         } else {
-          // ✅ PENJUALAN NORMAL: gunakan kode barang
-          kodeToSearch = item.kodeText || item.barcode || item.kodeLock;
+          // ✅ PENJUALAN NORMAL (aksesoris/kotak/silver)
+
+          kodeToSearch = item.kodeText || item.barcode;
+
+          if (!kodeToSearch || kodeToSearch === "-") {
+            console.warn(`⚠️ No valid kode for normal sale, skipping:`, item);
+            continue;
+          }
+
           jenisToSearch =
             transaction.statusPembayaran === "Free" || transaction.metodeBayar === "free" ? "free" : "laku";
-        }
-
-        if (!kodeToSearch) {
-          console.warn(`⚠️ No kode found for item:`, item);
-          continue;
         }
 
         console.log(`🔄 Processing: ${kodeToSearch} (${jenisToSearch})`);
@@ -1788,7 +1820,10 @@ class OptimizedDataPenjualanApp {
         .receipt hr { border-top: 1px dashed #000; }
         .receipt table { width: 100%; border-collapse: collapse; }
         .receipt th, .receipt td { text-align: left; padding: 1mm 2mm; }
-        .tanggal {margin-left: 10px}
+        .info-header { display: flex; justify-content: space-between; margin: 2mm 0; font-size: 11px; padding: 0; }
+        .nama-barang { font-weight: bold; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding: 2mm 0; margin: 0; }
+        .detail-barang { display: flex; justify-content: space-between; font-size: 11px; padding: 1mm 0; margin: 0 0 2mm 0; }
+        .item-separator { border-bottom: 1px dotted #888; padding-bottom: 2mm; margin-bottom: 2mm; }
         .text-center { text-align: center; }
         .text-right { text-align: right; }
         .keterangan { font-style: italic; font-size: 14px; margin-top: 2mm; border-top: 1px dotted #000; padding-top: 2mm; }
@@ -1801,31 +1836,32 @@ class OptimizedDataPenjualanApp {
         <h4>JL. DIPONEGORO NO. 116</h4>
         <h4>NOTA PENJUALAN ${salesType.toUpperCase()}</h4>
         <hr>
-        <p class="tanggal">Tanggal: ${tanggal}<br>Sales: ${transaction.sales || "-"}</p>
+        <div class="info-header">
+          <span>Tanggal: ${tanggal}</span>
+          <span>Sales: ${transaction.sales || "-"}</span>
+        </div>
         <hr>
-        <table>
-          <tr>
-            <th>Kode</th>
-            <th>Nama</th>
-            <th>Kadar</th>
-            <th>Gr</th>
-            <th>Harga</th>
-          </tr>
+        <div>
   `;
 
     let hasKeterangan = false;
     let keteranganText = "";
 
-    transaction.items?.forEach((item) => {
+    transaction.items?.forEach((item, index) => {
       const itemHarga = parseInt(item.totalHarga || 0);
+      const isLastItem = index === transaction.items.length - 1;
+      const separatorClass = !isLastItem ? " item-separator" : "";
+
       receiptHTML += `
-      <tr>
-        <td>${item.kodeText || "-"}</td>
-        <td>${item.nama || "-"}</td>
-        <td>${item.kadar || "-"}</td>
-        <td>${item.berat || "-"}</td>
-        <td class="text-right">${utils.formatRupiah(itemHarga)}</td>
-      </tr>
+      <div class="${separatorClass}">
+        <div class="nama-barang">${item.nama || "-"}</div>
+        <div class="detail-barang">
+          <span>${item.kodeText || "-"}</span>
+          <span>${item.kadar || "-"}</span>
+          <span>${item.berat || "-"} gr</span>
+          <span>${utils.formatRupiah(itemHarga)}</span>
+        </div>
+      </div>
     `;
 
       if (item.keterangan && item.keterangan.trim() !== "") {
@@ -1836,9 +1872,12 @@ class OptimizedDataPenjualanApp {
 
     const totalHarga = parseInt(transaction.totalHarga || 0);
     receiptHTML += `
-          <tr>
-            <td colspan="4" class="text-right"><strong>Total:</strong></td>
-            <td class="text-right"><strong>${utils.formatRupiah(totalHarga)}</strong></td>
+        </div>
+        <hr>
+        <table style="width: 100%; margin-top: 2mm;">
+          <tr style="border-top: 2px solid #000;">
+            <td style="text-align: right; padding-right: 2mm;"><strong>Total:</strong></td>
+            <td style="text-align: right;"><strong>${utils.formatRupiah(totalHarga)}</strong></td>
           </tr>
         </table>
   `;

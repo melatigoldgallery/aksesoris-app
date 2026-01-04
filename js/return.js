@@ -26,6 +26,15 @@ const showAlert = (message, title = "Informasi", type = "info") => {
   });
 };
 
+// Helper function untuk parse tanggal dd/mm/yyyy ke Date object
+const parseDate = (dateString) => {
+  if (!dateString) return null;
+  const parts = dateString.split("/");
+  if (parts.length !== 3) return null;
+  // parts[0] = day, parts[1] = month, parts[2] = year
+  return new Date(parts[2], parts[1] - 1, parts[0]);
+};
+
 const returnHandler = {
   stockData: [],
   stockListener: null,
@@ -35,52 +44,65 @@ const returnHandler = {
   isDeleting: false,
   deletePassword: "smlt116",
 
-  async filterRiwayatReturn() {
-    const selectedDate = $("#filterDate").val();
-    if (!selectedDate) {
-      showAlert("Mohon pilih tanggal", "Warning", "warning");
-      return;
-    }
-    this.loadRiwayatReturn(selectedDate);
-  },
-
   async init() {
     try {
+      this.initDatePickers();
       await this.setupEventListeners();
       this.setupRealTimeListeners();
       this.setDefaultDate();
       this.setDefaultFilterDates();
-      await this.loadRiwayatReturn();
+      // Tidak auto-load, user harus klik tombol Tampilkan
     } catch (error) {
       console.error("Error initializing return handler:", error);
       showAlert("Terjadi kesalahan saat memuat halaman", "Error", "error");
     }
   },
 
+  // Initialize date pickers
+  initDatePickers() {
+    $(".datepicker").datepicker({
+      format: "dd/mm/yyyy",
+      autoclose: true,
+      language: "id",
+      todayHighlight: true,
+      endDate: "0d", // Tidak bisa pilih tanggal masa depan
+    });
+  },
+
   // Set default filter date
   setDefaultFilterDates() {
     const today = new Date();
-    $("#filterDate").val(today.toISOString().split("T")[0]);
+    const day = String(today.getDate()).padStart(2, "0");
+    const month = String(today.getMonth() + 1).padStart(2, "0");
+    const year = today.getFullYear();
+    const formattedToday = `${day}/${month}/${year}`;
+    $("#filterStartDate").val(formattedToday);
+    $("#filterEndDate").val(formattedToday);
   },
 
   // Load riwayat return
-  async loadRiwayatReturn(selectedDate = null) {
+  async loadRiwayatReturn(startDate = null, endDate = null) {
     try {
       const returnRef = collection(firestore, "returnBarang");
-      let returnQuery = returnRef;
 
-      if (selectedDate) {
-        // Convert to Date object to handle time zones properly
-        const date = new Date(selectedDate);
-        const startOfDay = new Date(date.getFullYear(), date.getMonth(), date.getDate());
-        const endOfDay = new Date(date.getFullYear(), date.getMonth(), date.getDate(), 23, 59, 59);
-
-        returnQuery = query(
-          returnRef,
-          where("tanggal", ">=", startOfDay.toISOString()),
-          where("tanggal", "<=", endOfDay.toISOString())
-        );
+      // Jika tidak ada parameter, tidak load data
+      if (!startDate || !endDate) {
+        this.riwayatData = [];
+        this.renderRiwayatReturn();
+        return;
       }
+
+      // Convert to Date object to handle time zones properly
+      const start = new Date(startDate);
+      const end = new Date(endDate);
+      const startOfDay = new Date(start.getFullYear(), start.getMonth(), start.getDate());
+      const endOfDay = new Date(end.getFullYear(), end.getMonth(), end.getDate(), 23, 59, 59);
+
+      const returnQuery = query(
+        returnRef,
+        where("tanggal", ">=", startOfDay.toISOString()),
+        where("tanggal", "<=", endOfDay.toISOString())
+      );
 
       const snapshot = await getDocs(returnQuery);
       this.riwayatData = snapshot.docs.map((doc) => ({
@@ -110,6 +132,18 @@ const returnHandler = {
     }
 
     this.riwayatData.forEach((data) => {
+      // Format tanggal untuk display
+      let displayDate = data.tanggal;
+      try {
+        const date = new Date(data.tanggal);
+        const day = String(date.getDate()).padStart(2, "0");
+        const month = String(date.getMonth() + 1).padStart(2, "0");
+        const year = date.getFullYear();
+        displayDate = `${day}/${month}/${year}`;
+      } catch (e) {
+        console.error("Error formatting date:", e);
+      }
+
       // Handle multiple items in detailReturn
       data.detailReturn.forEach((item, index) => {
         // Hanya tampilkan tombol hapus pada row pertama untuk setiap return
@@ -128,7 +162,7 @@ const returnHandler = {
 
         $tbody.append(`
         <tr>
-          <td>${data.tanggal}</td>
+          <td>${displayDate}</td>
           <td>${data.namaSales}</td>
           <td>${data.jenisReturn}</td>
           <td>${item.kode}</td>
@@ -150,12 +184,27 @@ const returnHandler = {
       return;
     }
 
-    const selectedDate = $("#filterDate").val();
-    const formattedDate = new Date(selectedDate).toLocaleDateString("id-ID", {
+    const startDate = $("#filterStartDate").val();
+    const endDate = $("#filterEndDate").val();
+
+    if (!startDate || !endDate) {
+      showAlert("Mohon pilih tanggal mulai dan tanggal akhir terlebih dahulu", "Warning", "warning");
+      return;
+    }
+
+    const formattedStartDate = new Date(startDate).toLocaleDateString("id-ID", {
       day: "numeric",
       month: "long",
       year: "numeric",
     });
+
+    const formattedEndDate = new Date(endDate).toLocaleDateString("id-ID", {
+      day: "numeric",
+      month: "long",
+      year: "numeric",
+    });
+
+    const dateRange = startDate === endDate ? formattedStartDate : `${formattedStartDate} - ${formattedEndDate}`;
 
     let printContent = `
       <!DOCTYPE html>
@@ -173,7 +222,7 @@ const returnHandler = {
         <body>
           <div class="header">
             <h2>Laporan Return Barang</h2>
-            <p>Tanggal: ${formattedDate}</p>
+            <p>Periode: ${dateRange}</p>
           </div>
           <table>
             <thead>
@@ -191,10 +240,22 @@ const returnHandler = {
     `;
 
     this.riwayatData.forEach((data) => {
+      // Format tanggal untuk display
+      let displayDate = data.tanggal;
+      try {
+        const date = new Date(data.tanggal);
+        const day = String(date.getDate()).padStart(2, "0");
+        const month = String(date.getMonth() + 1).padStart(2, "0");
+        const year = date.getFullYear();
+        displayDate = `${day}/${month}/${year}`;
+      } catch (e) {
+        console.error("Error formatting date:", e);
+      }
+
       data.detailReturn.forEach((item) => {
         printContent += `
           <tr>
-            <td>${data.tanggal}</td>
+            <td>${displayDate}</td>
             <td>${data.namaSales}</td>
             <td>${data.jenisReturn}</td>
             <td>${item.kode}</td>
@@ -225,12 +286,33 @@ const returnHandler = {
 
   // Filter riwayat return
   filterRiwayatReturn() {
-    const selectedDate = $("#filterDate").val();
-    if (!selectedDate) {
-      showAlert("Mohon pilih tanggal", "Warning", "warning");
+    const startDateStr = $("#filterStartDate").val();
+    const endDateStr = $("#filterEndDate").val();
+
+    if (!startDateStr || !endDateStr) {
+      showAlert("Mohon pilih tanggal mulai dan tanggal akhir", "Warning", "warning");
       return;
     }
-    this.loadRiwayatReturn(selectedDate);
+
+    // Parse tanggal dari format dd/mm/yyyy
+    const startDate = parseDate(startDateStr);
+    const endDate = parseDate(endDateStr);
+
+    if (!startDate || !endDate) {
+      showAlert("Format tanggal tidak valid", "Warning", "warning");
+      return;
+    }
+
+    if (startDate > endDate) {
+      showAlert("Tanggal mulai tidak boleh lebih besar dari tanggal akhir", "Warning", "warning");
+      return;
+    }
+
+    // Konversi ke format ISO untuk query
+    const startISO = startDate.toISOString().split("T")[0];
+    const endISO = endDate.toISOString().split("T")[0];
+
+    this.loadRiwayatReturn(startISO, endISO);
   },
 
   // Setup event listeners
@@ -246,16 +328,6 @@ const returnHandler = {
     // Filter and print buttons
     $("#btnTampilkan").on("click", () => this.filterRiwayatReturn());
     $("#btnPrintLaporan").on("click", () => this.printLaporanReturn());
-
-    // Add filter function
-    async function filterRiwayatReturn() {
-      const selectedDate = $("#filterDate").val();
-      if (!selectedDate) {
-        showAlert("Mohon pilih tanggal", "Warning", "warning");
-        return;
-      }
-      await this.loadRiwayatReturn(selectedDate);
-    }
 
     // Pilih barang button
     $("#btnPilihBarang").on("click", async () => {
@@ -333,52 +405,58 @@ const returnHandler = {
     });
   },
 
-  // Load master data (kode, nama, kategori) - NO STOCK FIELDS
+  // Load master data and calculate stock from transactions (single source of truth)
   async loadStockData(type) {
     try {
-      // Get master data only (no stock fields - stock from transactions)
+      console.log(`🔍 Loading stock data for type: ${type}`);
+
+      // 1. Get master data (kode, nama, kategori) from stokAksesoris
       const stockRef = collection(firestore, "stokAksesoris");
       const snapshot = await getDocs(stockRef);
+      const masterData = snapshot.docs.map((doc) => ({
+        id: doc.id,
+        ...doc.data(),
+      }));
 
-      // Log raw data for debugging
-      console.log(
-        "Raw Firestore data:",
-        snapshot.docs.map((doc) => doc.data())
-      );
+      console.log(`📦 Loaded ${masterData.length} master items`);
 
-      this.stockData = snapshot.docs.map((doc) => {
-        const data = doc.data();
-        return { id: doc.id, ...data };
-      });
+      // 2. Calculate real stock from transactions (single source of truth)
+      const stockMap = await StockService.calculateAllStocksBatch();
+      console.log(`📊 Calculated stock for ${stockMap.size} items`);
 
-      // Filter based on type
-      this.stockData = this.stockData.filter((item) => {
-        // Check both kategori and jenis fields
-        const itemType = (item.kategori || item.jenis || "").toLowerCase();
-        const isMatchingType =
-          type === "kotak" ? itemType.includes("kotak") : itemType.includes("aksesoris") || itemType === "";
+      // 3. Merge master data with calculated stock
+      const mergedData = masterData.map((item) => ({
+        ...item,
+        stok: stockMap.get(item.kode) || 0, // Real stock from transactions
+      }));
 
-        // Check stock
-        const hasStock = (parseInt(item.stok) || 0) > 0; // Legacy field for backward compatibility
+      // 4. Filter by type and stock > 0
+      this.stockData = mergedData.filter((item) => {
+        const itemKategori = (item.kategori || item.jenis || "").toLowerCase();
 
-        // Log item details for debugging
-        console.log(`Item ${item.kode}:`, {
-          type: itemType,
-          matches: isMatchingType,
-          stock: hasStock,
-          stok: item.stok,
-        });
+        // Match type (support kotak, aksesoris, silver)
+        const matchesType =
+          type === "kotak"
+            ? itemKategori.includes("kotak")
+            : type === "aksesoris"
+            ? itemKategori.includes("aksesoris")
+            : type === "silver"
+            ? itemKategori.includes("silver")
+            : false;
 
-        return isMatchingType && hasStock;
+        const hasStock = item.stok > 0;
+
+        if (matchesType) {
+          console.log(`✓ ${item.kode}: kategori=${itemKategori}, stock=${item.stok}`);
+        }
+
+        return matchesType && hasStock;
       });
 
       this.populateStockTable();
-
-      // Log filtered results
-      console.log(`Loaded ${this.stockData.length} items for type: ${type}`);
-      console.log("Filtered data:", this.stockData);
+      console.log(`✅ Loaded ${this.stockData.length} items for type '${type}' with stock > 0`);
     } catch (error) {
-      console.error("Error loading stock data:", error);
+      console.error("❌ Error loading stock data:", error);
       showAlert("Gagal memuat data stok", "Error", "error");
     }
   },
@@ -391,26 +469,22 @@ const returnHandler = {
     if (!this.stockData || this.stockData.length === 0) {
       $tbody.append(`
         <tr>
-          <td colspan="3" class="text-center">Tidak ada data</td>
+          <td colspan="2" class="text-center">Tidak ada data dengan stok tersedia</td>
         </tr>
       `);
       return;
     }
 
     this.stockData.forEach((item) => {
-      const stok = parseInt(item.stok) || 0; // Legacy field
-      if (stok > 0) {
-        $tbody.append(`
-          <tr data-id="${item.id}" data-kode="${item.kode}">
-            <td>${item.kode}</td>
-            <td>${item.nama || "-"}</td>
-          </tr>
-        `);
-      }
+      $tbody.append(`
+        <tr data-id="${item.id}" data-kode="${item.kode}">
+          <td>${item.kode}</td>
+          <td>${item.nama || "-"}</td>
+        </tr>
+      `);
     });
 
-    // Log untuk debugging
-    console.log(`Populated table with ${this.stockData.length} items`);
+    console.log(`📋 Populated table with ${this.stockData.length} items`);
   },
 
   // Add return row
@@ -450,19 +524,14 @@ const returnHandler = {
   // Set default date
   setDefaultDate() {
     const today = new Date();
-    // Format tanggal ke YYYY-MM-DD
+    // Format tanggal ke dd/mm/yyyy
     const year = today.getFullYear();
     const month = String(today.getMonth() + 1).padStart(2, "0");
     const day = String(today.getDate()).padStart(2, "0");
-    const formattedDate = `${year}-${month}-${day}`;
+    const formattedDate = `${day}/${month}/${year}`;
 
     // Set nilai default untuk input tanggal
     $("#tanggalReturn").val(formattedDate);
-    $("#filterDate").val(formattedDate); // Set juga untuk filter tanggal
-
-    // Set max date ke hari ini untuk mencegah pemilihan tanggal masa depan
-    $("#tanggalReturn").attr("max", formattedDate);
-    $("#filterDate").attr("max", formattedDate);
   },
 
   // Validate return
@@ -567,10 +636,19 @@ const returnHandler = {
       $("#btnSimpanReturn").prop("disabled", true);
 
       // Prepare return data
-      const selectedDate = $("#tanggalReturn").val();
+      const selectedDateStr = $("#tanggalReturn").val();
+      const selectedDate = parseDate(selectedDateStr);
+
+      if (!selectedDate) {
+        showAlert("Format tanggal tidak valid", "Error", "error");
+        return;
+      }
+
+      // Format tanggal ke ISO string untuk Firestore
+      const isoDate = selectedDate.toISOString();
 
       const returnData = {
-        tanggal: selectedDate,
+        tanggal: isoDate,
         namaSales: $("#sales").val().trim(),
         jenisReturn: $("#jenisReturn").val(),
         detailReturn: [],
@@ -692,7 +770,9 @@ const returnHandler = {
 
       // Hide modal and refresh data
       $("#modalKonfirmasiHapus").modal("hide");
-      await this.loadRiwayatReturn($("#filterDate").val());
+      const startDate = $("#filterStartDate").val();
+      const endDate = $("#filterEndDate").val();
+      await this.loadRiwayatReturn(startDate, endDate);
     } catch (error) {
       console.error("Error deleting return data:", error);
       showAlert("Gagal menghapus data return", "Error", "error");
