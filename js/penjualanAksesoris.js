@@ -556,7 +556,7 @@ const penjualanHandler = {
     });
 
     // Button events
-    $("#btnTambah").on("click", () => this.showStockModal());
+    $("#btnTambah").on("click", async () => await this.showStockModal());
     $("#btnTambahBaris").on("click", () => this.addNewRow("manual"));
     $("#btnSimpanPenjualan").on("click", () => this.saveTransaction());
     $("#btnBatal").on("click", () => this.resetForm());
@@ -630,7 +630,7 @@ const penjualanHandler = {
       const tbody = $(`${selector} tbody`);
       tbody.empty();
 
-      // FILTER: Hanya tampilkan yang stoknya > 0
+      // Filter dengan kategori string
       const items = this.stockData.filter((item) => item.kategori === category);
 
       console.log(`📦 ${category}: ${items.length} items found`);
@@ -653,6 +653,7 @@ const penjualanHandler = {
     const lockTable = $("#tableLock tbody");
     lockTable.empty();
 
+    // Filter lock items (kategori aksesoris)
     const lockItems = this.stockData.filter((item) => item.kategori === "aksesoris");
 
     if (lockItems.length === 0) {
@@ -734,15 +735,32 @@ const penjualanHandler = {
   },
 
   // Show stock modal based on sales type
-  showStockModal() {
+  async showStockModal() {
     const salesType = $("#jenisPenjualan").val();
 
-    if (salesType === "aksesoris") {
-      $("#modalPilihAksesoris").modal("show");
-    } else if (salesType === "kotak") {
-      $("#modalPilihKotak").modal("show");
-    } else if (salesType === "silver") {
-      $("#modalPilihSilver").modal("show");
+    // FIXED: Force reload data terbaru dari Firestore sebelum buka modal
+    // Clear cache agar data selalu fresh
+    simpleCache.remove("stockData");
+
+    try {
+      utils.showLoading(true);
+      await this.loadStockData();
+      utils.showLoading(false);
+
+      console.log("✅ Data di-refresh, membuka modal...");
+
+      // Buka modal sesuai jenis penjualan
+      if (salesType === "aksesoris") {
+        $("#modalPilihAksesoris").modal("show");
+      } else if (salesType === "kotak") {
+        $("#modalPilihKotak").modal("show");
+      } else if (salesType === "silver") {
+        $("#modalPilihSilver").modal("show");
+      }
+    } catch (error) {
+      utils.showLoading(false);
+      console.error("Error refreshing data:", error);
+      utils.showAlert("Gagal memuat data terbaru: " + error.message, "Error", "error");
     }
   },
 
