@@ -226,6 +226,7 @@ const penjualanHandler = {
     this.setupSmartListeners();
 
     this.updateUIForSalesType("aksesoris");
+    this.toggleJenisManualField("aksesoris");
     $("#sales").focus();
 
     console.log(`📊 Reads usage: ${readsMonitor.getUsagePercent()}%`);
@@ -547,7 +548,16 @@ const penjualanHandler = {
   setupEventListeners() {
     // Sales type change
     $("#jenisPenjualan").on("change", (e) => {
-      this.updateUIForSalesType(e.target.value);
+      const salesType = e.target.value;
+      this.updateUIForSalesType(salesType);
+      this.toggleJenisManualField(salesType);
+    });
+
+    // Jenis manual validation
+    $("#jenisManual").on("change", function () {
+      if ($(this).val()) {
+        $(this).removeClass("is-invalid").addClass("is-valid");
+      }
     });
 
     // Payment method change
@@ -616,6 +626,21 @@ const penjualanHandler = {
   setDefaultDate() {
     const today = new Date();
     $("#tanggal").val(utils.formatDate(today));
+  },
+
+  // Toggle jenisManual field visibility
+  toggleJenisManualField(salesType) {
+    const container = $("#jenisManualContainer");
+    const select = $("#jenisManual");
+
+    if (salesType === "manual") {
+      container.show();
+      select.prop("required", true);
+    } else {
+      container.hide();
+      select.prop("required", false);
+      select.val("").removeClass("is-invalid is-valid");
+    }
   },
 
   // Populate stock tables
@@ -1408,6 +1433,18 @@ const penjualanHandler = {
       }
 
       const salesType = $("#jenisPenjualan").val();
+
+      // Validasi jenisManual jika penjualan manual
+      if (salesType === "manual") {
+        const jenisManual = $("#jenisManual").val();
+        if (!jenisManual) {
+          utils.showAlert("Jenis Manual harus dipilih!");
+          $("#jenisManual").addClass("is-invalid").focus();
+          return;
+        }
+        $("#jenisManual").removeClass("is-invalid");
+      }
+
       const tableSelector =
         salesType === "aksesoris"
           ? "#tableAksesorisDetail"
@@ -1466,6 +1503,11 @@ const penjualanHandler = {
         items: items,
       };
 
+      // Tambah jenisManual jika penjualan manual
+      if (salesType === "manual") {
+        transactionData.jenisManual = $("#jenisManual").val();
+      }
+
       // Mark as ganti lock if applicable
       if (salesType === "manual" && items.some((item) => item.kodeLock)) {
         transactionData.isGantiLock = true;
@@ -1503,8 +1545,8 @@ const penjualanHandler = {
       // Update stock
       await this.updateStock(salesType, items);
 
-      // Duplikasi ke mutasiKode jika transaksi manual
-      if (transactionData.jenisPenjualan === "manual") {
+      // Duplikasi ke mutasiKode hanya jika manual DAN perlu-mutasi
+      if (transactionData.jenisPenjualan === "manual" && transactionData.jenisManual === "perlu-mutasi") {
         await this.duplicateToMutasiKode(transactionData, docRef.id);
       }
 
@@ -2324,6 +2366,10 @@ const penjualanHandler = {
       $("#sales").val("").removeClass("is-valid is-invalid");
       $("#customerName").val("");
       $("#customerPhone").val("");
+
+      // Reset jenisManual
+      $("#jenisManual").val("").removeClass("is-valid is-invalid");
+      $("#jenisManualContainer").hide();
 
       // Clear all tables
       $("#tableAksesorisDetail tbody, #tableKotakDetail tbody, #tableManualDetail tbody").empty();

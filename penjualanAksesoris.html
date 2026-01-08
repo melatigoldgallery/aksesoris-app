@@ -292,15 +292,6 @@
               <div class="card-body">
                 <form class="row g-3">
                   <div class="col-md-2">
-                    <label for="jenisPenjualan" class="form-label">Jenis Penjualan</label>
-                    <select class="form-select" id="jenisPenjualan">
-                      <option value="aksesoris" selected>Aksesoris</option>
-                      <option value="kotak">Kotak</option>
-                      <option value="silver">Silver</option>
-                      <option value="manual">Penjualan Manual</option>
-                    </select>
-                  </div>
-                  <div class="col-md-2">
                     <label for="tanggal" class="form-label">Tanggal</label>
                     <div class="input-group">
                       <input type="text" class="form-control" id="tanggal" placeholder="Masukkan tanggal" />
@@ -312,6 +303,27 @@
                         <i class="fa-solid fa-calendar-days"></i>
                       </span>
                     </div>
+                  </div>
+                  <div class="col-md-2">
+                    <label for="jenisPenjualan" class="form-label">Jenis Penjualan</label>
+                    <select class="form-select" id="jenisPenjualan">
+                      <option value="aksesoris" selected>Aksesoris</option>
+                      <option value="kotak">Kotak</option>
+                      <option value="silver">Silver</option>
+                      <option value="manual">Penjualan Manual</option>
+                    </select>
+                  </div>
+                  <div class="col-md-2" id="jenisManualContainer" style="display: none">
+                    <label for="jenisManual" class="form-label">
+                      Jenis Manual
+                      <span class="text-danger">*</span>
+                    </label>
+                    <select class="form-select" id="jenisManual" required>
+                      <option value="">Pilih Jenis Manual</option>
+                      <option value="perlu-mutasi">Perlu Mutasi</option>
+                      <option value="tidak-perlu-mutasi">Tidak Perlu Mutasi</option>
+                    </select>
+                    <div class="invalid-feedback">Jenis manual harus dipilih</div>
                   </div>
                   <div class="col-md-2">
                     <label for="sales" class="form-label">
