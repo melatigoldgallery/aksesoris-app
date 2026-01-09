@@ -226,6 +226,7 @@ const penjualanHandler = {
     this.setupSmartListeners();
 
     this.updateUIForSalesType("aksesoris");
+    this.toggleJenisManualField("aksesoris");
     $("#sales").focus();
 
     console.log(`📊 Reads usage: ${readsMonitor.getUsagePercent()}%`);
@@ -547,7 +548,16 @@ const penjualanHandler = {
   setupEventListeners() {
     // Sales type change
     $("#jenisPenjualan").on("change", (e) => {
-      this.updateUIForSalesType(e.target.value);
+      const salesType = e.target.value;
+      this.updateUIForSalesType(salesType);
+      this.toggleJenisManualField(salesType);
+    });
+
+    // Jenis manual validation
+    $("#jenisManual").on("change", function () {
+      if ($(this).val()) {
+        $(this).removeClass("is-invalid").addClass("is-valid");
+      }
     });
 
     // Payment method change
@@ -556,7 +566,7 @@ const penjualanHandler = {
     });
 
     // Button events
-    $("#btnTambah").on("click", () => this.showStockModal());
+    $("#btnTambah").on("click", async () => await this.showStockModal());
     $("#btnTambahBaris").on("click", () => this.addNewRow("manual"));
     $("#btnSimpanPenjualan").on("click", () => this.saveTransaction());
     $("#btnBatal").on("click", () => this.resetForm());
@@ -618,6 +628,21 @@ const penjualanHandler = {
     $("#tanggal").val(utils.formatDate(today));
   },
 
+  // Toggle jenisManual field visibility
+  toggleJenisManualField(salesType) {
+    const container = $("#jenisManualContainer");
+    const select = $("#jenisManual");
+
+    if (salesType === "manual") {
+      container.show();
+      select.prop("required", true);
+    } else {
+      container.hide();
+      select.prop("required", false);
+      select.val("").removeClass("is-invalid is-valid");
+    }
+  },
+
   // Populate stock tables
   populateStockTables() {
     const categories = {
@@ -630,7 +655,7 @@ const penjualanHandler = {
       const tbody = $(`${selector} tbody`);
       tbody.empty();
 
-      // FILTER: Hanya tampilkan yang stoknya > 0
+      // Filter dengan kategori string
       const items = this.stockData.filter((item) => item.kategori === category);
 
       console.log(`📦 ${category}: ${items.length} items found`);
@@ -653,6 +678,7 @@ const penjualanHandler = {
     const lockTable = $("#tableLock tbody");
     lockTable.empty();
 
+    // Filter lock items (kategori aksesoris)
     const lockItems = this.stockData.filter((item) => item.kategori === "aksesoris");
 
     if (lockItems.length === 0) {
@@ -734,15 +760,32 @@ const penjualanHandler = {
   },
 
   // Show stock modal based on sales type
-  showStockModal() {
+  async showStockModal() {
     const salesType = $("#jenisPenjualan").val();
 
-    if (salesType === "aksesoris") {
-      $("#modalPilihAksesoris").modal("show");
-    } else if (salesType === "kotak") {
-      $("#modalPilihKotak").modal("show");
-    } else if (salesType === "silver") {
-      $("#modalPilihSilver").modal("show");
+    // FIXED: Force reload data terbaru dari Firestore sebelum buka modal
+    // Clear cache agar data selalu fresh
+    simpleCache.remove("stockData");
+
+    try {
+      utils.showLoading(true);
+      await this.loadStockData();
+      utils.showLoading(false);
+
+      console.log("✅ Data di-refresh, membuka modal...");
+
+      // Buka modal sesuai jenis penjualan
+      if (salesType === "aksesoris") {
+        $("#modalPilihAksesoris").modal("show");
+      } else if (salesType === "kotak") {
+        $("#modalPilihKotak").modal("show");
+      } else if (salesType === "silver") {
+        $("#modalPilihSilver").modal("show");
+      }
+    } catch (error) {
+      utils.showLoading(false);
+      console.error("Error refreshing data:", error);
+      utils.showAlert("Gagal memuat data terbaru: " + error.message, "Error", "error");
     }
   },
 
@@ -1390,6 +1433,18 @@ const penjualanHandler = {
       }
 
       const salesType = $("#jenisPenjualan").val();
+
+      // Validasi jenisManual jika penjualan manual
+      if (salesType === "manual") {
+        const jenisManual = $("#jenisManual").val();
+        if (!jenisManual) {
+          utils.showAlert("Jenis Manual harus dipilih!");
+          $("#jenisManual").addClass("is-invalid").focus();
+          return;
+        }
+        $("#jenisManual").removeClass("is-invalid");
+      }
+
       const tableSelector =
         salesType === "aksesoris"
           ? "#tableAksesorisDetail"
@@ -1448,6 +1503,11 @@ const penjualanHandler = {
         items: items,
       };
 
+      // Tambah jenisManual jika penjualan manual
+      if (salesType === "manual") {
+        transactionData.jenisManual = $("#jenisManual").val();
+      }
+
       // Mark as ganti lock if applicable
       if (salesType === "manual" && items.some((item) => item.kodeLock)) {
         transactionData.isGantiLock = true;
@@ -1485,8 +1545,8 @@ const penjualanHandler = {
       // Update stock
       await this.updateStock(salesType, items);
 
-      // Duplikasi ke mutasiKode jika transaksi manual
-      if (transactionData.jenisPenjualan === "manual") {
+      // Duplikasi ke mutasiKode hanya jika manual DAN perlu-mutasi
+      if (transactionData.jenisPenjualan === "manual" && transactionData.jenisManual === "perlu-mutasi") {
         await this.duplicateToMutasiKode(transactionData, docRef.id);
       }
 
@@ -2306,6 +2366,10 @@ const penjualanHandler = {
       $("#sales").val("").removeClass("is-valid is-invalid");
       $("#customerName").val("");
       $("#customerPhone").val("");
+
+      // Reset jenisManual
+      $("#jenisManual").val("").removeClass("is-valid is-invalid");
+      $("#jenisManualContainer").hide();
 
       // Clear all tables
       $("#tableAksesorisDetail tbody, #tableKotakDetail tbody, #tableManualDetail tbody").empty();

@@ -17,8 +17,6 @@ import {
 import StockService from "./services/stockService.js";
 
 // ===== OPTIMIZED CACHE MANAGEMENT =====
-// Cache hanya di-invalidate saat ada perubahan data (CRUD), bukan berdasarkan waktu
-// Menggunakan stokAksesorisTransaksi sebagai single source of truth
 const CACHE_TTL_STANDARD = 24 * 60 * 60 * 1000; // 24 jam - cache bertahan lama
 const CACHE_TTL_TODAY = 24 * 60 * 60 * 1000; // 24 jam - sama, karena invalidate saat CRUD
 const CACHE_TTL_STOCK = 24 * 60 * 60 * 1000; // 24 jam - sama, karena invalidate saat CRUD
@@ -58,13 +56,11 @@ function setCacheWithTimestamp(key, data, ttl = CACHE_TTL_STANDARD) {
 function getCacheWithValidation(key) {
   const now = Date.now();
 
-  // Cek memory cache terlebih dahulu
   if (cacheStorage.kodeAksesoris.has(key) && cacheStorage.timestamps.has(key)) {
     const meta = cacheStorage.timestamps.get(key);
     if (now - meta.timestamp < meta.ttl) {
       return cacheStorage.kodeAksesoris.get(key);
     } else {
-      // Cache expired, hapus dari memory
       cacheStorage.kodeAksesoris.delete(key);
       cacheStorage.timestamps.delete(key);
     }
@@ -76,7 +72,6 @@ function getCacheWithValidation(key) {
     if (cached) {
       const parsedCache = JSON.parse(cached);
       if (now - parsedCache.timestamp < parsedCache.ttl) {
-        // Restore ke memory cache
         cacheStorage.kodeAksesoris.set(key, parsedCache.data);
         cacheStorage.timestamps.set(key, {
           timestamp: parsedCache.timestamp,
@@ -84,7 +79,6 @@ function getCacheWithValidation(key) {
         });
         return parsedCache.data;
       } else {
-        // Cache expired, hapus dari sessionStorage
         sessionStorage.removeItem(`cache_${key}`);
       }
     }
@@ -98,7 +92,6 @@ function getCacheWithValidation(key) {
 // Fungsi untuk menghapus cache
 function invalidateCache(pattern = null) {
   if (pattern) {
-    // Hapus cache yang sesuai dengan pattern
     for (const key of cacheStorage.kodeAksesoris.keys()) {
       if (key.includes(pattern)) {
         cacheStorage.kodeAksesoris.delete(key);
@@ -107,11 +100,8 @@ function invalidateCache(pattern = null) {
       }
     }
   } else {
-    // Hapus semua cache
     cacheStorage.kodeAksesoris.clear();
     cacheStorage.timestamps.clear();
-
-    // Hapus dari sessionStorage
     for (let i = sessionStorage.length - 1; i >= 0; i--) {
       const key = sessionStorage.key(i);
       if (key && key.startsWith("cache_")) {
@@ -123,7 +113,6 @@ function invalidateCache(pattern = null) {
 
 // Utility functions
 export const aksesorisSaleHandler = {
-  // Simplified cache properties
   cache: {
     lastUpdate: null,
   },
@@ -140,27 +129,14 @@ export const aksesorisSaleHandler = {
 
   // Fungsi inisialisasi
   async init() {
-    // Inisialisasi elemen DOM
     this.initDomElements();
-
-    // Fetch data kode aksesoris dari Firestore (dengan caching)
     await this.loadKodeAksesorisData();
-
-    // Inisialisasi modal
     this.initModals();
-
-    // Pasang event listener
     this.attachEventListeners();
-
-    // Inisialisasi tabel
     const selectKategori = document.getElementById("jenis-aksesoris");
     const tbody = document.querySelector("#tableTambahAksesoris tbody");
     this.handleCategoryChange(selectKategori.value, tbody);
-
-    // Set tanggal hari ini
     this.setTodayDate();
-
-    // Initialize empty table with instruction message
     this.renderStockAdditionHistory([]);
   },
 
@@ -172,14 +148,10 @@ export const aksesorisSaleHandler = {
     const year = today.getFullYear();
 
     const formattedDate = `${day}/${month}/${year}`;
-
-    // Set tanggal input utama
     const tanggalInput = document.getElementById("tanggal");
     if (tanggalInput) {
       tanggalInput.value = formattedDate;
     }
-
-    // Set filter tanggal mulai dan akhir ke hari ini
     const filterDateStart = document.getElementById("filterDateStart");
     const filterDateEnd = document.getElementById("filterDateEnd");
     if (filterDateStart) filterDateStart.value = formattedDate;
@@ -200,7 +172,6 @@ export const aksesorisSaleHandler = {
       filterDateEnd: document.getElementById("filterDateEnd"),
     };
 
-    // Validasi elemen DOM (hanya log warning untuk elemen opsional)
     const requiredElements = ["selectKategori", "btnTambahAksesoris", "tbody", "btnSimpanData"];
     for (const [key, element] of Object.entries(elements)) {
       if (!element && requiredElements.includes(key)) {
@@ -343,14 +314,11 @@ export const aksesorisSaleHandler = {
         this.printLaporanTambahBarang();
       });
     }
-
-    // Initialize datepicker untuk filter tanggal
     this.initFilterDatepickers();
   },
 
   // Method untuk inisialisasi datepicker filter
   initFilterDatepickers() {
-    // Datepicker untuk filter start
     $("#filterDateStart").datepicker({
       format: "dd/mm/yyyy",
       autoclose: true,
@@ -358,7 +326,6 @@ export const aksesorisSaleHandler = {
       todayHighlight: true,
     });
 
-    // Datepicker untuk filter end
     $("#filterDateEnd").datepicker({
       format: "dd/mm/yyyy",
       autoclose: true,
@@ -366,7 +333,6 @@ export const aksesorisSaleHandler = {
       todayHighlight: true,
     });
 
-    // Calendar icon click handlers
     $(".input-group-text").on("click", function () {
       $(this).siblings("input").datepicker("show");
     });
@@ -374,7 +340,6 @@ export const aksesorisSaleHandler = {
 
   // Fungsi untuk memasang event listener pencarian
   attachSearchListeners() {
-    // Search untuk kotak
     const searchKotak = document.getElementById("searchKotak");
     const clearSearchKotak = document.getElementById("clearSearchKotak");
 
@@ -393,7 +358,6 @@ export const aksesorisSaleHandler = {
       });
     }
 
-    // Search untuk aksesoris
     const searchAksesoris = document.getElementById("searchAksesoris");
     const clearSearchAksesoris = document.getElementById("clearSearchAksesoris");
 
@@ -444,15 +408,13 @@ export const aksesorisSaleHandler = {
     const lowerSearchText = searchText.toLowerCase();
 
     rows.forEach((row) => {
-      const kodeCell = row.cells[1]; // Kolom kode
-      const namaCell = row.cells[2]; // Kolom nama
+      const kodeCell = row.cells[1]; 
+      const namaCell = row.cells[2]; 
 
       if (!kodeCell || !namaCell) return;
 
       const kodeText = kodeCell.textContent.toLowerCase();
       const namaText = namaCell.textContent.toLowerCase();
-
-      // Tampilkan baris jika kode atau nama mengandung teks pencarian
       if (kodeText.includes(lowerSearchText) || namaText.includes(lowerSearchText)) {
         row.style.display = "";
       } else {
@@ -460,12 +422,10 @@ export const aksesorisSaleHandler = {
       }
     });
 
-    // Tampilkan pesan jika tidak ada hasil
     const tbody = table.querySelector("tbody");
     const visibleRows = [...rows].filter((row) => row.style.display !== "none");
 
     if (visibleRows.length === 0 && searchText) {
-      // Cek apakah sudah ada pesan "tidak ada hasil"
       const noResultRow = [...rows].find((row) => row.classList.contains("no-result-row"));
 
       if (!noResultRow) {
@@ -475,7 +435,6 @@ export const aksesorisSaleHandler = {
         tbody.appendChild(newRow);
       }
     } else {
-      // Hapus pesan "tidak ada hasil" jika ada
       const noResultRow = tbody.querySelector(".no-result-row");
       if (noResultRow) {
         noResultRow.remove();
@@ -494,22 +453,16 @@ export const aksesorisSaleHandler = {
     });
   },
 
-  // OPTIMIZED: Fungsi untuk mengambil data kode aksesoris dengan cache invalidate-on-change
   // Cache tidak expire berdasarkan waktu, hanya di-refresh saat CRUD operation
   async fetchKodeAksesoris() {
     try {
       const cacheKey = "kodeAksesoris_all";
-
-      // Cek cache terlebih dahulu
       const cachedData = getCacheWithValidation(cacheKey);
       if (cachedData) {
         console.log("Using cached kode aksesoris data");
         return cachedData;
       }
-
       console.log("Fetching fresh kode aksesoris data");
-
-      // Fetch data dari Firestore
       const [kotakSnapshot, aksesorisSnapshot, silverSnapshot] = await Promise.all([
         getDocs(collection(firestore, "kodeAksesoris", "kategori", "kotak")),
         getDocs(collection(firestore, "kodeAksesoris", "kategori", "aksesoris")),
@@ -548,8 +501,6 @@ export const aksesorisSaleHandler = {
       });
 
       const result = { OPSI_KOTAK, OPSI_AKSESORIS, OPSI_SILVER };
-
-      // Simpan ke cache dengan TTL standar (data ini jarang berubah)
       setCacheWithTimestamp(cacheKey, result, CACHE_TTL_STANDARD);
 
       return result;
@@ -565,7 +516,7 @@ export const aksesorisSaleHandler = {
 
   // Fungsi untuk menangani perubahan kategori
   handleCategoryChange(kategori, tbody) {
-    tbody.innerHTML = ""; // Clear table
+    tbody.innerHTML = ""; 
     const options =
       kategori === "1"
         ? this.OPSI_KOTAK
@@ -595,8 +546,6 @@ export const aksesorisSaleHandler = {
   async loadKodeBarangData(docId, kategori) {
     try {
       const cacheKey = `kodeBarang_${kategori}_${docId}`;
-
-      // Cek cache terlebih dahulu
       const cachedData = getCacheWithValidation(cacheKey);
       if (cachedData) {
         document.getElementById("textKode").value = cachedData.text;
@@ -611,8 +560,6 @@ export const aksesorisSaleHandler = {
         const data = docSnap.data();
         document.getElementById("textKode").value = data.text;
         document.getElementById("namaKode").value = data.nama;
-
-        // Simpan ke cache
         setCacheWithTimestamp(cacheKey, data, CACHE_TTL_STANDARD);
       } else {
         console.error("Dokumen tidak ditemukan!");
@@ -733,16 +680,11 @@ export const aksesorisSaleHandler = {
   // OPTIMIZED: Simpan data dan invalidate cache terkait saja
   async simpanData() {
     try {
-      // Show loading indicator
       this.showLoading(true);
-
-      // Validasi data
       if (!this.validateTransactionData()) {
         this.showLoading(false);
         return;
       }
-
-      // Kumpulkan data dari tabel
       const items = this.collectItemsData();
       if (!items) {
         this.showLoading(false);
@@ -755,23 +697,15 @@ export const aksesorisSaleHandler = {
       // IMPROVED: Invalidate related caches
       invalidateCache("stockAdditionHistory");
       invalidateCache("stockData");
-
-      // Hitung total item yang ditambahkan
       const totalItems = items.reduce((total, item) => total + item.jumlah, 0);
       const kategoriText = this.elements.selectKategori.value === "1" ? "Kotak" : "Aksesoris";
-
-      // Tampilkan notifikasi sukses dengan detail
       this.showSuccessNotification(`
               ${totalItems} item ${kategoriText} berhasil ditambahkan!
               
               Detail:
               ${items.map((item) => `• ${item.nama} (${item.kodeText}): ${item.jumlah} pcs`).join("\n")}
             `);
-
-      // Reload riwayat penambahan stok
       this.loadStockAdditionHistory();
-
-      // Reset form
       this.resetForm();
 
       this.showLoading(false);
@@ -834,12 +768,38 @@ export const aksesorisSaleHandler = {
     return isValid ? items : null;
   },
 
-  // OPTIMIZED: Update stok via StockService - single source of truth
+  // Fungsi untuk membuat objek data penambahan stok
+  createStockAdditionData(items) {
+    const tanggal = document.getElementById("tanggal").value;
+    const jenisAksesoris = document.getElementById("jenis-aksesoris");
+    const jenisText = jenisAksesoris.options[jenisAksesoris.selectedIndex].text;
+
+    return {
+      tanggal: tanggal,
+      jenisAksesoris: jenisAksesoris.value,
+      jenisText: jenisText,
+      items: items,
+      timestamp: serverTimestamp(),
+      totalItems: items.reduce((total, item) => total + item.jumlah, 0),
+    };
+  },
+
+  // Fungsi untuk menyimpan data penambahan stok ke Firestore
+  async saveStockAdditionToFirestore(data) {
+    try {
+      const docRef = await addDoc(collection(firestore, "stockAdditions"), data);
+      console.log("Data berhasil disimpan dengan ID:", docRef.id);
+      return docRef.id;
+    } catch (error) {
+      console.error("Gagal menyimpan data:", error);
+      throw error;
+    }
+  },
+
+  // OPTIMIZED: Update stok dan invalidate cache - hanya refresh data yang berubah
   async updateStokAksesoris(items) {
     try {
       console.log(`🔄 Starting stock update for ${items.length} items`);
-
-      // Invalidate stock cache sebelum update
       invalidateCache("stockData");
 
       const tanggal = document.getElementById("tanggal").value;
@@ -863,7 +823,6 @@ export const aksesorisSaleHandler = {
 
       console.log(`✅ All stock updates completed (${items.length} items)`);
 
-      // Force clear cache lagi setelah selesai
       invalidateCache("stockData");
     } catch (error) {
       console.error("Error updating stok aksesoris:", error);
@@ -900,8 +859,6 @@ export const aksesorisSaleHandler = {
   generateLaporanHTML() {
     const filterDateStart = document.getElementById("filterDateStart").value;
     const filterDateEnd = document.getElementById("filterDateEnd").value;
-
-    // Group data by kategori
     const groupedData = this.laporanData.reduce((acc, item) => {
       const kategori = item.jenisText || "Lainnya";
       if (!acc[kategori]) acc[kategori] = [];
@@ -909,7 +866,6 @@ export const aksesorisSaleHandler = {
       return acc;
     }, {});
 
-    // Hitung total
     const totalItems = this.laporanData.reduce((sum, item) => sum + (item.jumlah || 0), 0);
 
     let laporanHTML = `
@@ -948,7 +904,6 @@ export const aksesorisSaleHandler = {
         </div>
     `;
 
-    // Tambahkan data per kategori
     Object.entries(groupedData).forEach(([kategori, items]) => {
       const subtotal = items.reduce((sum, item) => sum + (item.jumlah || 0), 0);
 
@@ -1027,15 +982,12 @@ export const aksesorisSaleHandler = {
     try {
       const filterDateStart = document.getElementById("filterDateStart");
       const filterDateEnd = document.getElementById("filterDateEnd");
-
-      // Validasi elemen ada dan memiliki value
       if (!filterDateStart || !filterDateEnd || !filterDateStart.value || !filterDateEnd.value) {
         console.log("Filter tanggal belum diset, menampilkan pesan instruksi");
         this.renderStockAdditionHistory([]);
         return;
       }
 
-      // Parse tanggal filter dengan validasi
       const startParts = filterDateStart.value.split("/");
       const endParts = filterDateEnd.value.split("/");
 
@@ -1045,8 +997,6 @@ export const aksesorisSaleHandler = {
 
       const startDate = new Date(startParts[2], startParts[1] - 1, startParts[0]);
       const endDate = new Date(endParts[2], endParts[1] - 1, endParts[0]);
-
-      // Validasi tanggal valid
       if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
         throw new Error("Tanggal tidak valid");
       }
@@ -1105,11 +1055,7 @@ export const aksesorisSaleHandler = {
 
       // Simpan ke cache dengan TTL panjang
       setCacheWithTimestamp(cacheKey, historyData, CACHE_TTL_STANDARD);
-
-      // Simpan data untuk laporan
       this.laporanData = historyData;
-
-      // Render data
       this.renderStockAdditionHistory(historyData);
     } catch (error) {
       console.error("Error loading stock addition history:", error);
@@ -1132,8 +1078,6 @@ export const aksesorisSaleHandler = {
     if (filterDateStart) filterDateStart.value = formattedDate;
     if (filterDateEnd) filterDateEnd.value = formattedDate;
   },
-
-  // Render riwayat penambahan stok ke tabel
   renderStockAdditionHistory(historyData = []) {
     const tableBody = document.querySelector("#tableRiwayatTambahStok tbody");
 
@@ -1141,8 +1085,6 @@ export const aksesorisSaleHandler = {
       console.error("Table body element not found");
       return;
     }
-
-    // Clear existing content
     tableBody.innerHTML = "";
 
     if (!historyData || historyData.length === 0) {
@@ -1156,8 +1098,6 @@ export const aksesorisSaleHandler = {
       `;
       return;
     }
-
-    // Render data
     historyData.forEach((item) => {
       const row = document.createElement("tr");
       row.innerHTML = `
@@ -1279,18 +1219,11 @@ export const aksesorisSaleHandler = {
 
   // Fungsi untuk mereset form
   resetForm() {
-    // Set tanggal hari ini
     this.setTodayDate();
-
-    // Reset jenis aksesoris
     document.getElementById("jenis-aksesoris").value = "Pilih Kategori";
-
-    // Reset tabel
     const tbody = document.querySelector("#tableTambahAksesoris tbody");
     tbody.innerHTML = "";
     this.tambahBaris(document.getElementById("jenis-aksesoris").value, tbody);
-
-    // Reset total items
     document.getElementById("total-items").textContent = "0";
   },
 
@@ -1298,7 +1231,6 @@ export const aksesorisSaleHandler = {
 
   // Fungsi untuk menampilkan modal kelola kode
   showKelolaKodeModal() {
-    // Load data kode barang untuk kategori default (kotak)
     this.loadKodeBarang("kotak");
     this.modalKelolaKode.show();
   },
@@ -1316,11 +1248,7 @@ export const aksesorisSaleHandler = {
       }
 
       tableBody.innerHTML = '<tr><td colspan="5" class="text-center">Loading...</td></tr>';
-
-      // Create cache key
       const cacheKey = `kodeBarang_${kategori}`;
-
-      // Cek cache terlebih dahulu
       const cachedData = getCacheWithValidation(cacheKey);
       if (cachedData) {
         console.log(`Using cached ${kategori} data`);
@@ -1346,10 +1274,7 @@ export const aksesorisSaleHandler = {
         });
       });
 
-      // Simpan ke cache
       setCacheWithTimestamp(cacheKey, kodeData, CACHE_TTL_STANDARD);
-
-      // Render table
       this.renderKodeBarangTable(tableBody, kodeData, kategori);
     } catch (error) {
       console.error("Error loading kode barang:", error);
@@ -1384,16 +1309,12 @@ export const aksesorisSaleHandler = {
         </tr>
       `;
     });
-
     tableBody.innerHTML = html;
-
-    // Pasang event listener untuk tombol edit dan delete
     this.attachKodeBarangActionListeners(tableBody, kategori);
   },
 
   // Fungsi untuk memasang event listener pada tombol aksi kode barang
   attachKodeBarangActionListeners(tableBody, kategori) {
-    // Event listener untuk tombol edit
     const editButtons = tableBody.querySelectorAll(".btn-edit");
     editButtons.forEach((button) => {
       button.addEventListener("click", () => {
@@ -1402,7 +1323,6 @@ export const aksesorisSaleHandler = {
       });
     });
 
-    // Event listener untuk tombol delete
     const deleteButtons = tableBody.querySelectorAll(".btn-delete");
     deleteButtons.forEach((button) => {
       button.addEventListener("click", () => {
@@ -1414,42 +1334,30 @@ export const aksesorisSaleHandler = {
 
   // Fungsi untuk menampilkan form modal tambah kode
   showFormKodeModal(kategori, docId = null) {
-    // Reset form
     document.getElementById("formKodeBarang").reset();
     document.getElementById("kategoriKode").value = kategori;
-
-    // Set judul modal
     const modalTitle = document.getElementById("modalFormKodeLabel");
     if (modalTitle) {
       modalTitle.textContent = docId ? "Edit Kode Barang" : "Tambah Kode Baru";
     }
-
-    // Jika edit, set docId
     if (docId) {
       document.getElementById("docId").value = docId;
       this.loadKodeBarangData(docId, kategori);
     } else {
       document.getElementById("docId").value = "";
     }
-
-    // Tampilkan modal
     this.modalFormKode.show();
   },
 
   // OPTIMIZED: Simpan kode barang dan invalidate cache terkait
   async simpanKodeBarang() {
-    // Validasi form
     if (!this.validateKodeBarangForm()) {
       return;
     }
-
-    // Ambil data dari form
     const docId = document.getElementById("docId").value;
     const kategori = document.getElementById("kategoriKode").value;
     const text = document.getElementById("textKode").value;
     const nama = document.getElementById("namaKode").value;
-
-    // Pastikan semua field memiliki nilai valid
     const data = {
       text: text || "",
       nama: nama || "",
@@ -1457,25 +1365,17 @@ export const aksesorisSaleHandler = {
 
     try {
       if (docId) {
-        // Update existing document
         await this.updateKodeBarang(docId, kategori, data);
       } else {
-        // Add new document
         await this.addKodeBarang(kategori, data);
       }
 
       // IMPROVED: Invalidate related caches
       invalidateCache("kodeAksesoris");
       invalidateCache(`kodeBarang_${kategori}`);
-
-      // Reload data
       this.modalFormKode.hide();
       this.loadKodeBarang(kategori);
-
-      // Reload kode aksesoris data for the main form
       await this.loadKodeAksesorisData();
-
-      // Update dropdown options if category is active
       const selectKategori = document.getElementById("jenis-aksesoris");
       if (
         selectKategori &&
@@ -1518,6 +1418,16 @@ export const aksesorisSaleHandler = {
   async addKodeBarang(kategori, data) {
     try {
       await addDoc(collection(firestore, "kodeAksesoris", "kategori", kategori), data);
+      
+      // FIXED: Simpan kategori sebagai string (kotak, aksesoris, silver)
+      await addDoc(collection(firestore, "stokAksesoris"), {
+        kode: data.text,
+        nama: data.nama,
+        kategori: kategori,  // Langsung pakai nama kategori
+      });
+      invalidateCache("stockData");
+
+      console.log(`✅ Kode ${data.text} berhasil ditambahkan dan tersinkronisasi`);
       this.showSuccessNotification("Data berhasil ditambahkan!");
     } catch (error) {
       console.error("Error adding kode barang:", error);
@@ -1530,6 +1440,18 @@ export const aksesorisSaleHandler = {
     try {
       const docRef = doc(firestore, "kodeAksesoris", "kategori", kategori, docId);
       await updateDoc(docRef, data);
+      const stockQuery = query(collection(firestore, "stokAksesoris"), where("kode", "==", data.text), limit(1));
+      const stockSnapshot = await getDocs(stockQuery);
+
+      if (!stockSnapshot.empty) {
+        const stockDocRef = doc(firestore, "stokAksesoris", stockSnapshot.docs[0].id);
+        await updateDoc(stockDocRef, {
+          nama: data.nama,
+        });
+        console.log(`✅ Kode ${data.text} berhasil diupdate di stokAksesoris`);
+      }
+      invalidateCache("stockData");
+
       this.showSuccessNotification("Data berhasil diperbarui!");
     } catch (error) {
       console.error("Error updating kode barang:", error);
@@ -1543,23 +1465,28 @@ export const aksesorisSaleHandler = {
     if (!confirmed) {
       return;
     }
-
     try {
       const docRef = doc(firestore, "kodeAksesoris", "kategori", kategori, docId);
+      const docSnap = await getDoc(docRef);
+      const kodeData = docSnap.data();
       await deleteDoc(docRef);
-      this.showSuccessNotification("Data berhasil dihapus!");
+      if (kodeData && kodeData.text) {
+        const stockQuery = query(collection(firestore, "stokAksesoris"), where("kode", "==", kodeData.text), limit(1));
+        const stockSnapshot = await getDocs(stockQuery);
 
-      // IMPROVED: Invalidate related caches
+        if (!stockSnapshot.empty) {
+          await deleteDoc(doc(firestore, "stokAksesoris", stockSnapshot.docs[0].id));
+          console.log(`✅ Kode ${kodeData.text} berhasil dihapus dari stokAksesoris`);
+        }
+      }
+
+      this.showSuccessNotification("Data berhasil dihapus!");
       invalidateCache("kodeAksesoris");
       invalidateCache(`kodeBarang_${kategori}`);
+      invalidateCache("stockData");
 
-      // Reload data
       this.loadKodeBarang(kategori);
-
-      // Reload kode aksesoris data for the main form
       await this.loadKodeAksesorisData();
-
-      // Update dropdown options if category is active
       const selectKategori = document.getElementById("jenis-aksesoris");
       if (
         selectKategori &&
@@ -1574,8 +1501,6 @@ export const aksesorisSaleHandler = {
       this.showErrorNotification("Gagal menghapus data: " + error.message);
     }
   },
-
-  // Fungsi untuk mengedit kode barang
   async editKodeBarang(docId, kategori) {
     this.showFormKodeModal(kategori, docId);
   },
@@ -1583,32 +1508,24 @@ export const aksesorisSaleHandler = {
   // IMPROVED: Fungsi untuk mengatur stok awal hari berikutnya dengan cache invalidation
   async setNextDayStartingStock() {
     try {
-      // Ambil semua data stok
       const stockSnapshot = await getDocs(collection(firestore, "stokAksesoris"));
-
-      // Update stok awal untuk setiap item
       const batch = firestore.batch();
 
       stockSnapshot.forEach((stockDoc) => {
         const stockData = stockDoc.data();
         const docRef = doc(firestore, "stokAksesoris", stockDoc.id);
 
-        // Set stok awal = stok akhir hari sebelumnya
         batch.update(docRef, {
           stokAwal: stockData.stokAkhir || 0,
-          tambahStok: 0, // Reset tambah stok
-          laku: 0, // Reset laku
-          free: 0, // Reset free
-          gantiLock: 0, // Reset ganti lock
+          tambahStok: 0,
+          laku: 0, 
+          free: 0, 
+          gantiLock: 0, 
           lastUpdate: serverTimestamp(),
         });
       });
-
-      // Commit batch update
       await batch.commit();
       console.log("Stok awal hari berikutnya berhasil diatur");
-
-      // IMPROVED: Invalidate stock cache setelah update
       invalidateCache("stockData");
       invalidateCache("stockAdditions");
     } catch (error) {
@@ -1620,13 +1537,8 @@ export const aksesorisSaleHandler = {
   // IMPROVED: Tambahkan fungsi untuk force refresh cache
   async forceRefreshCache() {
     try {
-      // Hapus semua cache
       invalidateCache();
-
-      // Reload data utama
       await this.loadKodeAksesorisData();
-
-      // Reload riwayat jika ada filter tanggal
       const filterDateStart = document.getElementById("filterDateStart");
       const filterDateEnd = document.getElementById("filterDateEnd");
 
@@ -1654,7 +1566,7 @@ export const aksesorisSaleHandler = {
         key: key,
         age: ageMinutes,
         expired: isExpired,
-        ttl: Math.floor(meta.ttl / (1000 * 60)), // TTL in minutes
+        ttl: Math.floor(meta.ttl / (1000 * 60)),
       });
     }
 
@@ -1686,23 +1598,16 @@ export const aksesorisSaleHandler = {
   },
 };
 
-// Cache cleanup hanya dilakukan saat halaman ditutup untuk membersihkan sessionStorage
 window.addEventListener("beforeunload", () => {
-  // Hanya cleanup jika perlu, tidak paksa karena cache masih valid
   aksesorisSaleHandler.cleanupExpiredCache();
 });
 
-// IMPROVED: Tambahkan event listener untuk tombol refresh cache jika ada
 document.addEventListener("DOMContentLoaded", function () {
-  // Initialize handler
   aksesorisSaleHandler.init();
 
-  // IMPROVED: Tambahkan tombol refresh cache jika belum ada
   const addRefreshCacheButton = () => {
     const existingButton = document.getElementById("refreshCacheBtn");
     if (existingButton) return;
-
-    // Cari container yang sesuai untuk menambahkan tombol
     const buttonContainer =
       document.querySelector(".card-header .d-flex") ||
       document.querySelector(".btn-group") ||
@@ -1724,12 +1629,9 @@ document.addEventListener("DOMContentLoaded", function () {
       buttonContainer.appendChild(refreshButton);
     }
   };
-
-  // Tambahkan tombol setelah DOM selesai dimuat
   setTimeout(addRefreshCacheButton, 1000);
 });
 
-// IMPROVED: Export fungsi cache management untuk debugging
 window.aksesorisCacheDebug = {
   getStatus: () => aksesorisSaleHandler.getCacheStatus(),
   cleanup: () => aksesorisSaleHandler.cleanupExpiredCache(),
