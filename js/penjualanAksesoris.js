@@ -1799,8 +1799,8 @@ const penjualanHandler = {
         A: "Anting",
         G: "Gelang",
         S: "Giwang",
-        Z: "HALA",
-        V: "HALA",
+        Z: "HALA & SDW",
+        V: "HALA & SDW",
       };
       const duplicatePromises = [];
 

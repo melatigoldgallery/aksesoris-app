@@ -6,6 +6,9 @@ import {
   collection,
   updateDoc,
   getDocs,
+  query,
+  where,
+  orderBy,
 } from "https://www.gstatic.com/firebasejs/10.4.0/firebase-firestore.js";
 
 const mainCategories = [
@@ -13,13 +16,11 @@ const mainCategories = [
   "LIONTIN",
   "ANTING",
   "CINCIN",
-  "HALA",
+  "HALA & SDW",
   "GELANG",
   "GIWANG",
-  "KENDARI",
+  "KENDARI & EMAS BALI",
   "BERLIAN",
-  "SDW",
-  "EMAS_BALI",
 ];
 const colorTypes = ["HIJAU", "BIRU", "PUTIH", "PINK", "KUNING"];
 const colorMapping = { HIJAU: "Hijau", BIRU: "Biru", PUTIH: "Putih", PINK: "Pink", KUNING: "Kuning" };
@@ -34,6 +35,9 @@ const halaJewelryMapping = {
   SA: "Giwang",
   GA: "Gelang",
 };
+
+// Kategori yang memiliki detail jenis perhiasan (seperti HALA)
+const categoriesWithJewelryTypes = ["HALA & SDW", "KENDARI & EMAS BALI"];
 
 const summaryCategories = [
   "brankas",
@@ -149,16 +153,16 @@ function computeCurrentSummarySnapshot() {
         categoryBreakdown[cat] = { total: catTotal, details: colorBreakdown };
         totalAcrossAllDocs += catTotal;
       }
-      // Handle HALA with jewelry type details
-      else if (mainCat === "HALA" && node.details) {
-        const halaBreakdown = {};
+      // Handle categories with jewelry type details (HALA & SDW, KENDARI & EMAS BALI)
+      else if (categoriesWithJewelryTypes.includes(mainCat) && node.details) {
+        const jewelryBreakdown = {};
         let catTotal = 0;
         halaJewelryTypes.forEach((type) => {
           const qty = parseInt(node.details[type]) || 0;
-          halaBreakdown[type] = qty;
+          jewelryBreakdown[type] = qty;
           catTotal += qty;
         });
-        categoryBreakdown[cat] = { total: catTotal, details: halaBreakdown };
+        categoryBreakdown[cat] = { total: catTotal, details: jewelryBreakdown };
         totalAcrossAllDocs += catTotal;
       }
       // Handle other categories (simple quantity)
@@ -493,10 +497,11 @@ function initDailyReportPage() {
 
     let totalFisik = 0;
 
-    const isKalungLiontinHala = mainCat === "KALUNG" || mainCat === "LIONTIN" || mainCat === "HALA";
+    const hasDetailedBreakdown =
+      mainCat === "KALUNG" || mainCat === "LIONTIN" || categoriesWithJewelryTypes.includes(mainCat);
     const todayKey2 = formatDateKey(new Date());
     const isToday = (dateVal || todayKey2) === todayKey2;
-    const showDetailEye = isKalungLiontinHala;
+    const showDetailEye = hasDetailedBreakdown;
     const showEditAction = !isToday;
     if (thead) {
       thead.innerHTML = `
@@ -541,10 +546,10 @@ function initDailyReportPage() {
         const node = stockDataSnapshot[cat] && stockDataSnapshot[cat][mainCat];
         if (node) {
           const isKalungLiontin = mainCat === "KALUNG" || mainCat === "LIONTIN";
-          const isHala = mainCat === "HALA";
+          const hasJewelryTypes = categoriesWithJewelryTypes.includes(mainCat);
           if (isKalungLiontin && node.details) {
             qty = colorTypes.reduce((sum, color) => sum + (parseInt(node.details[color]) || 0), 0);
-          } else if (isHala && node.details) {
+          } else if (hasJewelryTypes && node.details) {
             qty = halaJewelryTypes.reduce((sum, type) => sum + (parseInt(node.details[type]) || 0), 0);
           } else {
             qty = parseInt(node.quantity) || 0;
@@ -690,7 +695,7 @@ function renderWarnaModal({
   tbody.innerHTML = "";
   let totalF = 0;
   const isKalungLiontin = mainCat === "KALUNG" || mainCat === "LIONTIN";
-  const isHala = mainCat === "HALA";
+  const hasJewelryTypes = categoriesWithJewelryTypes.includes(mainCat);
 
   let details = {};
   let existingTotal = 0;
@@ -737,7 +742,7 @@ function renderWarnaModal({
         : `<td>${colorMapping[t]}</td><td class="text-center">${fis}</td>`;
       tbody.appendChild(tr);
     });
-  } else if (isHala) {
+  } else if (hasJewelryTypes) {
     halaJewelryTypes.forEach((t) => {
       // Gunakan details dari breakdown, fallback ke live hanya jika hari ini
       const fis = parseInt(details[t] ?? (isToday && !hasBreakdownData ? liveDetails[t] : 0) ?? 0) || 0;
@@ -767,7 +772,7 @@ function renderWarnaModal({
       const targetDateKey = dateKey || formatDateKey(new Date());
       const docRef = doc(firestore, "daily_stock_reports", targetDateKey);
       let payload = { total: 0 };
-      if (isKalungLiontin || isHala) {
+      if (isKalungLiontin || hasJewelryTypes) {
         const inputs = Array.from(document.querySelectorAll("#modalDetailWarna .warna-input"));
         const det = {};
         let sum = 0;
@@ -917,3 +922,591 @@ function showToast(message, type = "success") {
 }
 
 document.addEventListener("DOMContentLoaded", initDailyReportPage);
+
+// ==================== EXPORT LAPORAN DETAIL BULANAN ====================
+
+/**
+ * Handle export laporan detail bulanan
+ */
+async function handleExportDetailBulanan() {
+  const monthInput = document.getElementById("exportMonthInput");
+  if (!monthInput || !monthInput.value) {
+    showToast("Pilih bulan yang akan diexport", "error");
+    return;
+  }
+
+  const selectedMonth = monthInput.value;
+  const [year, month] = selectedMonth.split("-");
+  const monthYear = getMonthName(parseInt(month), year);
+
+  try {
+    showToast("Memproses data... Mohon tunggu", "success");
+
+    // Query daily_stock_reports
+    const startDateStr = `${year}-${month.padStart(2, "0")}-01`;
+    const lastDay = new Date(parseInt(year), parseInt(month), 0).getDate();
+    const endDateStr = `${year}-${month.padStart(2, "0")}-${lastDay.toString().padStart(2, "0")}`;
+
+    const q = query(
+      collection(firestore, "daily_stock_reports"),
+      where("date", ">=", startDateStr),
+      where("date", "<=", endDateStr),
+      orderBy("date", "desc")
+    );
+    const querySnapshot = await getDocs(q);
+
+    if (querySnapshot.empty) {
+      showToast(`Tidak ada data untuk bulan ${monthYear}`, "error");
+      return;
+    }
+
+    const data = querySnapshot.docs.map((doc) => ({
+      id: doc.id,
+      ...doc.data(),
+    }));
+
+    // Query daily_stock_logs for detailed logs
+    const logsQuery = query(
+      collection(firestore, "daily_stock_logs"),
+      where("date", ">=", startDateStr),
+      where("date", "<=", endDateStr),
+      orderBy("date", "desc")
+    );
+    const logsSnapshot = await getDocs(logsQuery);
+    const logsData = logsSnapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+
+    // Group logs by main category
+    const groupedLogs = groupLogsByMainCategory(logsData);
+
+    // Transform data for Excel
+    const categorizedData = {};
+    mainCategories.forEach((cat) => {
+      categorizedData[cat] = [];
+    });
+
+    data.forEach((item) => {
+      const date = item.date;
+      const breakdown = item.breakdown || {};
+      const categoryItems = item.items || {};
+
+      mainCategories.forEach((mainCat) => {
+        const categoryBreakdown = breakdown[mainCat] || {};
+        const categoryItem = categoryItems[mainCat] || { total: 0, komputer: 0, status: "-" };
+        const rowData = { Tanggal: date };
+        let total = 0;
+
+        summaryCategories.forEach((docType) => {
+          const docData = categoryBreakdown[docType] || {};
+          const qty = docData.total || 0;
+          rowData[docType] = qty;
+          total += qty;
+        });
+
+        rowData.TOTAL = total;
+        rowData.Komputer = categoryItem.komputer || 0;
+        rowData.Status = categoryItem.status || "-";
+        categorizedData[mainCat].push(rowData);
+      });
+    });
+
+    // Create Excel file
+    const filename = `Laporan_Stok_Detail_${monthYear.replace(" ", "_")}.xlsx`;
+    await createStocksDetailReportWithExcelJS(categorizedData, filename, groupedLogs, monthYear);
+
+    showToast(`Export berhasil: ${filename}`, "success");
+  } catch (error) {
+    console.error("Error exporting data:", error);
+    showToast("Gagal mengexport data: " + error.message, "error");
+  }
+}
+
+/**
+ * Create stocks detail report with ExcelJS
+ */
+async function createStocksDetailReportWithExcelJS(categorizedData, filename, groupedLogs, monthYear) {
+  const ExcelJS = window.ExcelJS;
+  const workbook = new ExcelJS.Workbook();
+
+  const docHeaders = [
+    "Tanggal",
+    "DP",
+    "Admin",
+    "Brankas",
+    "Display",
+    "Rusak",
+    "Batu Lepas",
+    "Manual",
+    "Custom",
+    "Posting",
+    "TOTAL",
+    "Komputer",
+    "Status",
+  ];
+  const docMapping = {
+    DP: "DP",
+    admin: "Admin",
+    brankas: "Brankas",
+    "barang-display": "Display",
+    "barang-rusak": "Rusak",
+    "batu-lepas": "Batu Lepas",
+    manual: "Manual",
+    "contoh-custom": "Custom",
+    posting: "Posting",
+  };
+
+  const worksheet = workbook.addWorksheet("Laporan Stok Detail");
+  let currentRow = 1;
+  const totalCols = docHeaders.length;
+
+  // Main Title
+  const titleRow = worksheet.addRow(["LAPORAN STOK DETAIL BULANAN"]);
+  worksheet.mergeCells(currentRow, 1, currentRow, totalCols);
+  titleRow.height = 35;
+  titleRow.getCell(1).style = {
+    font: { bold: true, size: 18, color: { argb: "FFFFFFFF" } },
+    alignment: { horizontal: "center", vertical: "middle" },
+    fill: { type: "pattern", pattern: "solid", fgColor: { argb: "FF2E5090" } },
+  };
+  currentRow++;
+
+  // Month subtitle
+  const monthRow = worksheet.addRow([`Bulan: ${monthYear}`]);
+  worksheet.mergeCells(currentRow, 1, currentRow, totalCols);
+  monthRow.height = 25;
+  monthRow.getCell(1).style = {
+    font: { bold: true, size: 14 },
+    alignment: { horizontal: "center", vertical: "middle" },
+    fill: { type: "pattern", pattern: "solid", fgColor: { argb: "FFD9E1F2" } },
+  };
+  currentRow++;
+
+  // Empty row
+  worksheet.addRow([]);
+  currentRow++;
+
+  // Loop each category
+  mainCategories.forEach((mainCat) => {
+    const categoryData = categorizedData[mainCat] || [];
+
+    if (categoryData.length === 0) return;
+
+    // Category header
+    const catHeaderRow = worksheet.addRow([mainCat]);
+    worksheet.mergeCells(currentRow, 1, currentRow, totalCols);
+    catHeaderRow.height = 30;
+    catHeaderRow.getCell(1).style = {
+      font: { bold: true, size: 14, color: { argb: "FFFFFFFF" } },
+      alignment: { horizontal: "left", vertical: "middle" },
+      fill: { type: "pattern", pattern: "solid", fgColor: { argb: "FF4472C4" } },
+    };
+    currentRow++;
+
+    // Table headers
+    const headerRow = worksheet.addRow(docHeaders);
+    headerRow.height = 25;
+    headerRow.eachCell((cell) => {
+      cell.style = {
+        font: { bold: true, size: 11, color: { argb: "FFFFFFFF" } },
+        alignment: { horizontal: "center", vertical: "middle" },
+        fill: { type: "pattern", pattern: "solid", fgColor: { argb: "FF5B9BD5" } },
+        border: {
+          top: { style: "thin" },
+          bottom: { style: "thin" },
+          left: { style: "thin" },
+          right: { style: "thin" },
+        },
+      };
+    });
+    currentRow++;
+
+    // Data rows
+    categoryData.forEach((rowData) => {
+      const total = rowData.TOTAL || 0;
+      const komputer = rowData.Komputer || 0;
+      const status = rowData.Status || "-";
+
+      const dataRow = worksheet.addRow([
+        rowData.Tanggal,
+        rowData.DP || 0,
+        rowData.admin || 0,
+        rowData.brankas || 0,
+        rowData["barang-display"] || 0,
+        rowData["barang-rusak"] || 0,
+        rowData["batu-lepas"] || 0,
+        rowData.manual || 0,
+        rowData["contoh-custom"] || 0,
+        rowData.posting || 0,
+        total,
+        komputer,
+        status,
+      ]);
+
+      // Style cells
+      dataRow.eachCell((cell, colNum) => {
+        cell.style = {
+          font: { size: 10 },
+          alignment: {
+            horizontal: colNum === 1 ? "center" : colNum === totalCols ? "center" : "right",
+            vertical: "middle",
+          },
+          border: {
+            top: { style: "thin" },
+            bottom: { style: "thin" },
+            left: { style: "thin" },
+            right: { style: "thin" },
+          },
+          numFmt: colNum > 1 && colNum < totalCols ? "#,##0" : undefined,
+        };
+
+        // Highlight TOTAL column
+        if (colNum === totalCols - 2) {
+          cell.style.font = { bold: true, size: 10 };
+          cell.style.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFF2F2F2" } };
+        }
+
+        // Highlight Komputer column
+        if (colNum === totalCols - 1) {
+          cell.style.font = { bold: true, size: 10 };
+          cell.style.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFE7F3FF" } };
+        }
+
+        // Conditional formatting for Status
+        if (colNum === totalCols) {
+          cell.style.font = { bold: true, size: 10 };
+          const statusLower = String(status).toLowerCase();
+
+          if (statusLower === "klop" || statusLower.includes("sesuai")) {
+            cell.style.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFC6EFCE" } };
+            cell.style.font.color = { argb: "FF006100" };
+          } else if (statusLower.includes("kurang")) {
+            cell.style.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFFFC7CE" } };
+            cell.style.font.color = { argb: "FF9C0006" };
+          } else if (statusLower.includes("lebih")) {
+            cell.style.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFFFEB9C" } };
+            cell.style.font.color = { argb: "FF9C6500" };
+          }
+        }
+      });
+      currentRow++;
+    });
+
+    // Empty row after category
+    worksheet.addRow([]);
+    currentRow++;
+  });
+
+  // Set column widths
+  worksheet.getColumn(1).width = 12; // Tanggal
+  for (let i = 2; i <= totalCols - 3; i++) {
+    worksheet.getColumn(i).width = 10; // Dokumen columns
+  }
+  worksheet.getColumn(totalCols - 2).width = 12; // TOTAL
+  worksheet.getColumn(totalCols - 1).width = 12; // Komputer
+  worksheet.getColumn(totalCols).width = 14; // Status
+
+  // Create Sheet 2 if logs data available
+  if (groupedLogs) {
+    await createLogsDetailSheet(workbook, groupedLogs, monthYear);
+  }
+
+  // Generate and download file
+  const buffer = await workbook.xlsx.writeBuffer();
+  const blob = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+  saveAs(blob, filename);
+}
+
+/**
+ * Create logs detail sheet (Sheet 2)
+ */
+async function createLogsDetailSheet(workbook, groupedLogs, monthYear) {
+  const locations = [
+    { key: "DP", label: "DP" },
+    { key: "admin", label: "Admin" },
+    { key: "brankas", label: "Brankas" },
+    { key: "barang-display", label: "Display" },
+    { key: "barang-rusak", label: "Rusak" },
+    { key: "batu-lepas", label: "Batu Lepas" },
+    { key: "manual", label: "Manual" },
+    { key: "contoh-custom", label: "Custom" },
+    { key: "posting", label: "Posting" },
+  ];
+
+  const worksheet = workbook.addWorksheet("Laporan Stok Detail Bulanan");
+  let currentRow = 1;
+  const totalCols = 20; // Tanggal + (9 locations × 2) + TOTAL
+
+  // Main Title
+  const titleRow = worksheet.addRow(["LAPORAN STOK DETAIL BULANAN MELATI BAWAH"]);
+  worksheet.mergeCells(currentRow, 1, currentRow, totalCols);
+  titleRow.height = 35;
+  titleRow.getCell(1).style = {
+    font: { bold: true, size: 18, color: { argb: "FFFFFFFF" } },
+    alignment: { horizontal: "center", vertical: "middle" },
+    fill: { type: "pattern", pattern: "solid", fgColor: { argb: "FF2E5090" } },
+  };
+  currentRow++;
+
+  // Month subtitle
+  const monthRow = worksheet.addRow([`Bulan: ${monthYear}`]);
+  worksheet.mergeCells(currentRow, 1, currentRow, totalCols);
+  monthRow.height = 25;
+  monthRow.getCell(1).style = {
+    font: { bold: true, size: 14 },
+    alignment: { horizontal: "center", vertical: "middle" },
+    fill: { type: "pattern", pattern: "solid", fgColor: { argb: "FFD9E1F2" } },
+  };
+  currentRow++;
+
+  // Empty row
+  worksheet.addRow([]);
+  currentRow++;
+
+  // Loop each category
+  mainCategories.forEach((mainCat) => {
+    const categoryData = groupedLogs[mainCat] || [];
+
+    if (categoryData.length === 0) return;
+
+    // Category header
+    const catHeaderRow = worksheet.addRow([mainCat]);
+    worksheet.mergeCells(currentRow, 1, currentRow, totalCols);
+    catHeaderRow.height = 30;
+    catHeaderRow.getCell(1).style = {
+      font: { bold: true, size: 14, color: { argb: "FFFFFFFF" } },
+      alignment: { horizontal: "left", vertical: "middle" },
+      fill: { type: "pattern", pattern: "solid", fgColor: { argb: "FF4472C4" } },
+    };
+    currentRow++;
+
+    // Build dynamic headers
+    const headers = ["Tanggal"];
+    locations.forEach((loc) => {
+      headers.push(loc.label, `${loc.label} Ket`);
+    });
+    headers.push("TOTAL");
+
+    const headerRow = worksheet.addRow(headers);
+    headerRow.height = 25;
+    headerRow.eachCell((cell) => {
+      cell.style = {
+        font: { bold: true, size: 10, color: { argb: "FFFFFFFF" } },
+        alignment: { horizontal: "center", vertical: "middle", wrapText: true },
+        fill: { type: "pattern", pattern: "solid", fgColor: { argb: "FF5B9BD5" } },
+        border: {
+          top: { style: "thin" },
+          bottom: { style: "thin" },
+          left: { style: "thin" },
+          right: { style: "thin" },
+        },
+      };
+    });
+    currentRow++;
+
+    // Data rows
+    categoryData.forEach((rowData) => {
+      const rowValues = [rowData.Tanggal];
+      locations.forEach((loc) => {
+        rowValues.push(rowData[loc.key] || 0, rowData[`${loc.key}_ket`] || "");
+      });
+      rowValues.push(rowData.TOTAL || 0);
+
+      const dataRow = worksheet.addRow(rowValues);
+      dataRow.height = 60;
+
+      dataRow.eachCell((cell, colNum) => {
+        const isKeteranganCol = colNum > 1 && (colNum - 1) % 2 === 0;
+
+        cell.style = {
+          font: { size: 9 },
+          alignment: {
+            horizontal: isKeteranganCol ? "left" : colNum === 1 ? "center" : "right",
+            vertical: "top",
+            wrapText: true,
+          },
+          border: {
+            top: { style: "thin" },
+            bottom: { style: "thin" },
+            left: { style: "thin" },
+            right: { style: "thin" },
+          },
+          numFmt: !isKeteranganCol && colNum > 1 ? "#,##0" : undefined,
+        };
+
+        // Highlight TOTAL column
+        if (colNum === totalCols) {
+          cell.style.font = { bold: true, size: 10 };
+          cell.style.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFF2F2F2" } };
+        }
+      });
+      currentRow++;
+    });
+
+    // Empty row
+    worksheet.addRow([]);
+    currentRow++;
+  });
+
+  // Set column widths
+  worksheet.getColumn(1).width = 12;
+  for (let i = 2; i <= totalCols; i++) {
+    const isKeteranganCol = (i - 1) % 2 === 0;
+    worksheet.getColumn(i).width = isKeteranganCol ? 40 : 10;
+  }
+}
+
+/**
+ * Group logs by main category
+ */
+function groupLogsByMainCategory(logsData) {
+  const formatLogEntry = (log) => {
+    const before = log.before ?? 0;
+    const after = log.after ?? 0;
+    const action = log.action || "update";
+    const userName = log.userName || "user";
+    const keterangan = log.keterangan || "";
+
+    const actionMap = {
+      tambah: "menambah",
+      kurangi: "mengurangi",
+      update: "mengupdate",
+    };
+
+    const actionText = actionMap[action] || action;
+    const quantity = Math.abs(after - before);
+
+    return `stok awal ${before} ${userName} ${actionText} ${quantity} : ${keterangan}`;
+  };
+
+  const locations = [
+    "DP",
+    "admin",
+    "brankas",
+    "barang-display",
+    "barang-rusak",
+    "batu-lepas",
+    "manual",
+    "contoh-custom",
+    "posting",
+  ];
+
+  const grouped = {};
+
+  // Initialize structure
+  mainCategories.forEach((cat) => {
+    grouped[cat] = [];
+  });
+
+  // Group by date
+  const dateMap = new Map();
+
+  // Flatten logs array from documents
+  logsData.forEach((doc) => {
+    const docDate = doc.date;
+    const logsArray = Array.isArray(doc.logs) ? doc.logs : [];
+
+    logsArray.forEach((log) => {
+      const mainCategory = log.jenis;
+      const location = log.lokasi;
+      const after = log.after;
+      const keterangan = log.keterangan;
+
+      if (!mainCategory || !mainCategories.includes(mainCategory)) {
+        return;
+      }
+
+      if (!location || !locations.includes(location)) {
+        return;
+      }
+
+      const key = `${mainCategory}_${docDate}`;
+      if (!dateMap.has(key)) {
+        dateMap.set(key, { date: docDate, mainCategory, data: {} });
+      }
+
+      const entry = dateMap.get(key);
+      if (!entry.data[location]) {
+        entry.data[location] = {
+          after: 0,
+          logs: [],
+        };
+      }
+
+      entry.data[location].logs.push({
+        before: log.before ?? 0,
+        after: after || 0,
+        action: log.action || "update",
+        userName: log.userName || "user",
+        keterangan: keterangan || "",
+      });
+
+      entry.data[location].after = after || 0;
+    });
+  });
+
+  // Convert to array format
+  dateMap.forEach((entry) => {
+    const rowData = { Tanggal: entry.date };
+    let total = 0;
+
+    locations.forEach((loc) => {
+      const locData = entry.data[loc];
+      if (locData) {
+        rowData[loc] = locData.after;
+        rowData[`${loc}_ket`] = locData.logs.map((log) => formatLogEntry(log)).join("\n");
+        total += locData.after;
+      } else {
+        rowData[loc] = 0;
+        rowData[`${loc}_ket`] = "";
+      }
+    });
+
+    rowData.TOTAL = total;
+    grouped[entry.mainCategory].push(rowData);
+  });
+
+  // Sort by date
+  mainCategories.forEach((cat) => {
+    grouped[cat].sort((a, b) => a.Tanggal.localeCompare(b.Tanggal));
+  });
+
+  return grouped;
+}
+
+/**
+ * Get month name in Indonesian
+ */
+function getMonthName(month, year) {
+  const monthNames = [
+    "Januari",
+    "Februari",
+    "Maret",
+    "April",
+    "Mei",
+    "Juni",
+    "Juli",
+    "Agustus",
+    "September",
+    "Oktober",
+    "November",
+    "Desember",
+  ];
+  const monthIndex = parseInt(month) - 1;
+  return `${monthNames[monthIndex]} ${year}`;
+}
+
+// Event listener for export button
+document.addEventListener("DOMContentLoaded", () => {
+  const btnExport = document.getElementById("btnExportDetailBulanan");
+  if (btnExport) {
+    btnExport.addEventListener("click", handleExportDetailBulanan);
+  }
+
+  // Set default month to last month
+  const exportMonthInput = document.getElementById("exportMonthInput");
+  if (exportMonthInput) {
+    const now = new Date();
+    const lastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    const lastMonthStr = lastMonth.toISOString().slice(0, 7);
+    exportMonthInput.value = lastMonthStr;
+  }
+});

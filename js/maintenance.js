@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Maintenance System for Melati Gold Shop
  * Handles data exports and cleanup with enhanced caching
  */
@@ -292,7 +292,6 @@ class MaintenanceSystem {
 
     // Export buttons
     this.btnExportPenjualan = document.getElementById("btnExportPenjualan");
-    this.btnExportStocks = document.getElementById("btnExportStocks");
     this.btnExportRestokBarang = document.getElementById("btnExportRestokBarang");
 
     // Data management elements
@@ -311,7 +310,6 @@ class MaintenanceSystem {
     const criticalElements = [
       { name: "exportMonthInput", element: this.exportMonthInput },
       { name: "btnExportPenjualan", element: this.btnExportPenjualan },
-      { name: "btnExportStocks", element: this.btnExportStocks },
       { name: "btnExportRestokBarang", element: this.btnExportRestokBarang },
       { name: "dataTableBody", element: this.dataTableBody },
     ];
@@ -335,9 +333,6 @@ class MaintenanceSystem {
     // Export buttons
     if (this.btnExportPenjualan) {
       this.btnExportPenjualan.addEventListener("click", () => this.handleExportData("penjualanAksesoris"));
-    }
-    if (this.btnExportStocks) {
-      this.btnExportStocks.addEventListener("click", () => this.handleExportData("stocks"));
     }
     if (this.btnExportRestokBarang) {
       this.btnExportRestokBarang.addEventListener("click", () => this.handleExportData("restokBarang"));
@@ -1287,19 +1282,6 @@ class MaintenanceSystem {
         if (collectionName === "stokAksesoris") {
           // For stokAksesoris, get all current stock (no date filtering)
           querySnapshot = await getDocs(collection(this.firestore, collectionName));
-        } else if (collectionName === "stocks") {
-          // For stocks detail, query from daily_stock_reports with breakdown
-          const startDateStr = `${year}-${month.padStart(2, "0")}-01`;
-          const lastDay = new Date(parseInt(year), parseInt(month), 0).getDate();
-          const endDateStr = `${year}-${month.padStart(2, "0")}-${lastDay.toString().padStart(2, "0")}`;
-
-          const q = query(
-            collection(this.firestore, "daily_stock_reports"),
-            where("date", ">=", startDateStr),
-            where("date", "<=", endDateStr),
-            orderBy("date", "desc")
-          );
-          querySnapshot = await getDocs(q);
         } else if (collectionName === "restokBarang") {
           // For restokBarang, filter by tanggal field (YYYY-MM-DD format)
           const startDateStr = `${year}-${month.padStart(2, "0")}-01`;
@@ -1375,65 +1357,6 @@ class MaintenanceSystem {
           };
           break;
 
-        case "stocks":
-          // Group data by main category for detailed report
-          const mainCategories = [
-            "KALUNG",
-            "LIONTIN",
-            "ANTING",
-            "CINCIN",
-            "HALA",
-            "GELANG",
-            "GIWANG",
-            "KENDARI",
-            "BERLIAN",
-            "SDW",
-            "EMAS_BALI",
-          ];
-          const summaryCategories = [
-            "DP",
-            "admin",
-            "brankas",
-            "barang-display",
-            "barang-rusak",
-            "batu-lepas",
-            "manual",
-            "contoh-custom",
-            "posting",
-          ];
-
-          // Initialize categorized data structure
-          if (!transformedData.categorizedData) {
-            transformedData.categorizedData = {};
-            mainCategories.forEach((cat) => {
-              transformedData.categorizedData[cat] = [];
-            });
-          }
-
-          const date = item.date;
-          const breakdown = item.breakdown || {};
-          const categoryItems = item.items || {};
-
-          mainCategories.forEach((mainCat) => {
-            const categoryBreakdown = breakdown[mainCat] || {};
-            const categoryItem = categoryItems[mainCat] || { total: 0, komputer: 0, status: "-" };
-            const rowData = { Tanggal: date };
-            let total = 0;
-
-            summaryCategories.forEach((docType) => {
-              const docData = categoryBreakdown[docType] || {};
-              const qty = docData.total || 0;
-              rowData[docType] = qty;
-              total += qty;
-            });
-
-            rowData.TOTAL = total;
-            rowData.Komputer = categoryItem.komputer || 0;
-            rowData.Status = categoryItem.status || "-";
-            transformedData.categorizedData[mainCat].push(rowData);
-          });
-          break;
-
         case "restokBarang":
           row = {
             Tanggal: item.tanggal || "",
@@ -1449,646 +1372,12 @@ class MaintenanceSystem {
       }
 
       // Only push row if it's not from stocks (stocks handles its own push)
-      if (collectionName !== "stocks" && Object.keys(row).length > 0) {
+      if (Object.keys(row).length > 0) {
         transformedData.push(row);
       }
     }
 
-    // Return categorized data for stocks, regular array for others
-    if (collectionName === "stocks" && transformedData.categorizedData) {
-      return transformedData.categorizedData;
-    }
     return transformedData;
-  }
-
-  /**
-   * Fetch logs data from daily_stock_logs collection for specific month
-   */
-  async fetchLogsDataForMonth(monthStr) {
-    try {
-      const cacheKey = `logs_${monthStr}`;
-      let data = this.cache.get(cacheKey);
-
-      if (!data) {
-        const [year, month] = monthStr.split("-");
-        const startDateStr = `${year}-${month.padStart(2, "0")}-01`;
-        const lastDay = new Date(parseInt(year), parseInt(month), 0).getDate();
-        const endDateStr = `${year}-${month.padStart(2, "0")}-${lastDay.toString().padStart(2, "0")}`;
-
-        console.log(`Fetching logs for ${monthStr}: ${startDateStr} to ${endDateStr}`);
-
-        const q = query(
-          collection(this.firestore, "daily_stock_logs"),
-          where("date", ">=", startDateStr),
-          where("date", "<=", endDateStr),
-          orderBy("date", "asc")
-        );
-
-        const querySnapshot = await getDocs(q);
-        data = querySnapshot.docs.map((doc) => ({
-          id: doc.id,
-          ...doc.data(),
-        }));
-
-        console.log(`Fetched ${data.length} log entries from daily_stock_logs`);
-        if (data.length > 0) {
-          console.log("Sample log entry:", data[0]);
-        }
-
-        // Cache for 10 minutes
-        this.cache.set(cacheKey, data);
-      } else {
-        console.log(`Using cached logs data: ${data.length} entries`);
-      }
-
-      return data;
-    } catch (error) {
-      console.error("Error fetching logs data:", error);
-      throw error;
-    }
-  }
-
-  /**
-   * Group logs data by category, date, and location
-   */
-  groupLogsData(logsData) {
-    console.log(`Grouping ${logsData.length} log documents...`);
-
-    // Helper function to format log entry
-    const formatLogEntry = (log) => {
-      const actionMap = {
-        tambah: "menambah",
-        kurang: "mengurangi",
-        edit: "mengedit",
-        update: "mengupdate",
-      };
-
-      const before = log.before ?? 0;
-      const after = log.after ?? 0;
-      const userName = log.userName || "user";
-      const action = log.action || "update";
-      const keterangan = log.keterangan || "";
-
-      const actionText = actionMap[action] || action;
-      const quantity = Math.abs(after - before);
-
-      return `stok awal ${before} ${userName} ${actionText} ${quantity} : ${keterangan}`;
-    };
-
-    const mainCategories = [
-      "KALUNG",
-      "LIONTIN",
-      "ANTING",
-      "CINCIN",
-      "HALA",
-      "GELANG",
-      "GIWANG",
-      "KENDARI",
-      "BERLIAN",
-      "SDW",
-      "EMAS_BALI",
-    ];
-
-    const locations = [
-      "DP",
-      "admin",
-      "brankas",
-      "barang-display",
-      "barang-rusak",
-      "batu-lepas",
-      "manual",
-      "contoh-custom",
-      "posting",
-    ];
-
-    const grouped = {};
-
-    // Initialize structure
-    mainCategories.forEach((cat) => {
-      grouped[cat] = [];
-    });
-
-    // Group by date
-    const dateMap = new Map();
-
-    // Flatten logs array from documents
-    let totalLogs = 0;
-    logsData.forEach((doc) => {
-      const docDate = doc.date;
-      const logsArray = Array.isArray(doc.logs) ? doc.logs : [];
-
-      console.log(`Document ${docDate}: ${logsArray.length} log entries`);
-      totalLogs += logsArray.length;
-
-      logsArray.forEach((log, logIdx) => {
-        // Use correct field names: jenis (not mainCategory), lokasi (not location)
-        const mainCategory = log.jenis;
-        const location = log.lokasi;
-        const after = log.after;
-        const keterangan = log.keterangan;
-
-        // Debug: Print first log entry to see structure
-        if (logIdx === 0) {
-          console.log("Sample log entry:", log);
-          console.log(`  jenis: "${mainCategory}" (in list: ${mainCategories.includes(mainCategory)})`);
-          console.log(`  lokasi: "${location}" (in list: ${locations.includes(location)})`);
-          console.log(`  after: ${after}, keterangan: "${keterangan}"`);
-        }
-
-        if (!mainCategory || !mainCategories.includes(mainCategory)) {
-          console.warn(`Skipped log: jenis "${mainCategory}" not in list`);
-          return;
-        }
-
-        if (!location || !locations.includes(location)) {
-          console.warn(`Warning: lokasi "${location}" not in locations array`);
-          return;
-        }
-
-        const key = `${mainCategory}_${docDate}`;
-        if (!dateMap.has(key)) {
-          dateMap.set(key, { date: docDate, mainCategory, data: {} });
-        }
-
-        const entry = dateMap.get(key);
-        // Store all log entries for each location (not just last one)
-        if (!entry.data[location]) {
-          entry.data[location] = {
-            after: 0,
-            logs: [],
-          };
-        }
-
-        // Add this log entry to the array with all necessary fields
-        entry.data[location].logs.push({
-          before: log.before ?? 0,
-          after: after || 0,
-          action: log.action || "update",
-          userName: log.userName || "user",
-          keterangan: keterangan || "",
-        });
-
-        // Update final after value
-        entry.data[location].after = after || 0;
-      });
-    });
-
-    console.log(`Total flattened logs: ${totalLogs}`);
-
-    // Convert to array format
-    dateMap.forEach((entry) => {
-      const rowData = { Tanggal: entry.date };
-      let total = 0;
-
-      locations.forEach((loc) => {
-        const locData = entry.data[loc];
-        if (locData) {
-          rowData[loc] = locData.after;
-          // Format each log entry and join with newline
-          rowData[`${loc}_ket`] = locData.logs.map((log) => formatLogEntry(log)).join("\n");
-          total += locData.after;
-        } else {
-          rowData[loc] = 0;
-          rowData[`${loc}_ket`] = "";
-        }
-      });
-
-      rowData.TOTAL = total;
-      grouped[entry.mainCategory].push(rowData);
-    });
-
-    // Sort by date
-    mainCategories.forEach((cat) => {
-      grouped[cat].sort((a, b) => a.Tanggal.localeCompare(b.Tanggal));
-    });
-
-    // Log summary
-    let totalRows = 0;
-    mainCategories.forEach((cat) => {
-      const count = grouped[cat].length;
-      totalRows += count;
-      if (count > 0) {
-        console.log(`${cat}: ${count} rows`);
-      }
-    });
-    console.log(`Total grouped rows: ${totalRows}`);
-
-    return grouped;
-  }
-
-  /**
-   * Create logs detail sheet (Sheet 2)
-   */
-  async createLogsDetailSheet(workbook, groupedLogs, monthYear) {
-    console.log("Creating Sheet 2: Laporan Stok Detail Bulanan");
-
-    const mainCategories = [
-      "KALUNG",
-      "LIONTIN",
-      "ANTING",
-      "CINCIN",
-      "HALA",
-      "GELANG",
-      "GIWANG",
-      "KENDARI",
-      "BERLIAN",
-      "SDW",
-      "EMAS_BALI",
-    ];
-
-    const locations = [
-      { key: "DP", label: "DP" },
-      { key: "admin", label: "Admin" },
-      { key: "brankas", label: "Brankas" },
-      { key: "barang-display", label: "Display" },
-      { key: "barang-rusak", label: "Rusak" },
-      { key: "batu-lepas", label: "Batu Lepas" },
-      { key: "manual", label: "Manual" },
-      { key: "contoh-custom", label: "Custom" },
-      { key: "posting", label: "Posting" },
-    ];
-
-    const worksheet = workbook.addWorksheet("Laporan Stok Detail Bulanan");
-    let currentRow = 1;
-    const totalCols = 20; // Tanggal + (9 locations × 2) + TOTAL
-
-    // Main Title
-    const titleRow = worksheet.addRow(["LAPORAN STOK DETAIL BULANAN MELATI BAWAH"]);
-    worksheet.mergeCells(currentRow, 1, currentRow, totalCols);
-    titleRow.height = 35;
-    titleRow.getCell(1).style = {
-      font: { bold: true, size: 18, color: { argb: "FFFFFFFF" } },
-      alignment: { horizontal: "center", vertical: "middle" },
-      fill: { type: "pattern", pattern: "solid", fgColor: { argb: "FF2E5090" } },
-    };
-    currentRow++;
-
-    // Month subtitle
-    const monthRow = worksheet.addRow([`Bulan: ${monthYear}`]);
-    worksheet.mergeCells(currentRow, 1, currentRow, totalCols);
-    monthRow.height = 25;
-    monthRow.getCell(1).style = {
-      font: { bold: true, size: 14 },
-      alignment: { horizontal: "center", vertical: "middle" },
-      fill: { type: "pattern", pattern: "solid", fgColor: { argb: "FFD9E1F2" } },
-    };
-    currentRow++;
-
-    // Empty row
-    worksheet.addRow([]);
-    currentRow++;
-
-    // Loop each category
-    mainCategories.forEach((mainCat) => {
-      const categoryData = groupedLogs[mainCat] || [];
-
-      if (categoryData.length === 0) return;
-
-      // Category header
-      const catHeaderRow = worksheet.addRow([mainCat]);
-      worksheet.mergeCells(currentRow, 1, currentRow, totalCols);
-      catHeaderRow.height = 30;
-      catHeaderRow.getCell(1).style = {
-        font: { bold: true, size: 14, color: { argb: "FFFFFFFF" } },
-        alignment: { horizontal: "left", vertical: "middle" },
-        fill: { type: "pattern", pattern: "solid", fgColor: { argb: "FF4472C4" } },
-      };
-      currentRow++;
-
-      // Column headers (20 columns)
-      const headers = ["Tanggal"];
-      locations.forEach((loc) => {
-        headers.push(loc.label);
-        headers.push("Keterangan");
-      });
-      headers.push("TOTAL");
-
-      const headerRow = worksheet.addRow(headers);
-      headerRow.height = 25;
-      headers.forEach((header, idx) => {
-        headerRow.getCell(idx + 1).style = {
-          font: { bold: true, size: 11, color: { argb: "FFFFFFFF" } },
-          alignment: { horizontal: "center", vertical: "middle" },
-          fill: { type: "pattern", pattern: "solid", fgColor: { argb: "FF5B9BD5" } },
-          border: {
-            top: { style: "thin" },
-            bottom: { style: "thin" },
-            left: { style: "thin" },
-            right: { style: "thin" },
-          },
-        };
-      });
-      currentRow++;
-
-      // Data rows
-      categoryData.forEach((rowData) => {
-        const row = [rowData.Tanggal];
-        locations.forEach((loc) => {
-          row.push(rowData[loc.key] || 0);
-          row.push(rowData[`${loc.key}_ket`] || "");
-        });
-        row.push(rowData.TOTAL || 0);
-
-        const dataRow = worksheet.addRow(row);
-
-        // Style cells
-        dataRow.eachCell((cell, colNum) => {
-          const isValueCol = colNum === 1 || colNum === totalCols || (colNum - 1) % 2 === 1;
-          const isKetCol = colNum > 1 && colNum < totalCols && (colNum - 1) % 2 === 0;
-
-          cell.style = {
-            font: { size: 10, bold: colNum === totalCols },
-            alignment: {
-              horizontal: colNum === 1 ? "center" : isKetCol ? "left" : "center",
-              vertical: "top",
-              wrapText: isKetCol, // Enable text wrapping for keterangan columns
-            },
-            border: {
-              top: { style: "thin" },
-              bottom: { style: "thin" },
-              left: { style: "thin" },
-              right: { style: "thin" },
-            },
-            numFmt: isValueCol && colNum > 1 ? "#,##0" : undefined,
-          };
-
-          // Highlight TOTAL column
-          if (colNum === totalCols) {
-            cell.style.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFF2F2F2" } };
-          }
-        });
-        currentRow++;
-      });
-
-      // Empty row after category
-      worksheet.addRow([]);
-      currentRow++;
-    });
-
-    // Set column widths
-    worksheet.getColumn(1).width = 12; // Tanggal
-    for (let i = 2; i < totalCols; i += 2) {
-      worksheet.getColumn(i).width = 10; // Value columns
-      worksheet.getColumn(i + 1).width = 40; // Keterangan columns
-    }
-    worksheet.getColumn(totalCols).width = 12; // TOTAL
-  }
-
-  /**
-   * Create Excel file and trigger download
-   */
-  async createExcelFile(data, filename, collectionName = null) {
-    // Special handling for stocks detail report with ExcelJS
-    if (collectionName === "stocks" || filename.includes("stocks")) {
-      await this.createStocksDetailReportWithExcelJS(data, filename);
-    } else {
-      // Standard Excel creation with XLSX.js for other collections
-      const wb = XLSX.utils.book_new();
-      const ws = XLSX.utils.json_to_sheet(data);
-
-      // Auto-size columns
-      const colWidths = [];
-      if (data.length > 0) {
-        Object.keys(data[0]).forEach((key) => {
-          const maxLength = Math.max(key.length, ...data.map((row) => String(row[key] || "").length));
-          colWidths.push({ wch: Math.min(maxLength + 2, 50) });
-        });
-        ws["!cols"] = colWidths;
-      }
-
-      // Add worksheet to workbook
-      XLSX.utils.book_append_sheet(wb, ws, "Data");
-
-      // Write file
-      XLSX.writeFile(wb, filename);
-    }
-  }
-
-  /**
-   * Create stocks detail report with breakdown per document
-   */
-  async createStocksDetailReportWithExcelJS(categorizedData, filename) {
-    const mainCategories = [
-      "KALUNG",
-      "LIONTIN",
-      "ANTING",
-      "CINCIN",
-      "HALA",
-      "GELANG",
-      "GIWANG",
-      "KENDARI",
-      "BERLIAN",
-      "SDW",
-      "EMAS_BALI",
-    ];
-
-    const docHeaders = [
-      "Tanggal",
-      "DP",
-      "Admin",
-      "Brankas",
-      "Display",
-      "Rusak",
-      "Batu Lepas",
-      "Manual",
-      "Custom",
-      "Posting",
-      "TOTAL",
-      "Komputer",
-      "Status",
-    ];
-    const docMapping = {
-      DP: "DP",
-      admin: "Admin",
-      brankas: "Brankas",
-      "barang-display": "Display",
-      "barang-rusak": "Rusak",
-      "batu-lepas": "Batu Lepas",
-      manual: "Manual",
-      "contoh-custom": "Custom",
-      posting: "Posting",
-    };
-
-    // Extract month from filename
-    const monthMatch = filename.match(/(\d{4})-(\d{2})/);
-    const monthYear = monthMatch ? this.getMonthName(monthMatch[2], monthMatch[1]) : "";
-    const monthStr = monthMatch ? `${monthMatch[1]}-${monthMatch[2]}` : "";
-
-    const workbook = new ExcelJS.Workbook();
-
-    // Fetch and prepare Sheet 2 data (logs detail)
-    let groupedLogs = null;
-    if (monthStr) {
-      try {
-        const logsData = await this.fetchLogsDataForMonth(monthStr);
-        groupedLogs = this.groupLogsData(logsData);
-      } catch (error) {
-        console.warn("Could not fetch logs data for Sheet 2:", error);
-      }
-    }
-    const worksheet = workbook.addWorksheet("Stocks Detail");
-
-    let currentRow = 1;
-    const totalCols = docHeaders.length;
-
-    // Main Title
-    const titleRow = worksheet.addRow(["LAPORAN STOK HARIAN MELATI BAWAH"]);
-    worksheet.mergeCells(currentRow, 1, currentRow, totalCols);
-    titleRow.height = 35;
-    titleRow.getCell(1).style = {
-      font: { bold: true, size: 18, color: { argb: "FFFFFFFF" } },
-      alignment: { horizontal: "center", vertical: "middle" },
-      fill: { type: "pattern", pattern: "solid", fgColor: { argb: "FF2E5090" } },
-    };
-    currentRow++;
-
-    // Month subtitle
-    const monthRow = worksheet.addRow([`Bulan: ${monthYear}`]);
-    worksheet.mergeCells(currentRow, 1, currentRow, totalCols);
-    monthRow.height = 25;
-    monthRow.getCell(1).style = {
-      font: { bold: true, size: 14 },
-      alignment: { horizontal: "center", vertical: "middle" },
-      fill: { type: "pattern", pattern: "solid", fgColor: { argb: "FFD9E1F2" } },
-    };
-    currentRow++;
-
-    // Empty row
-    worksheet.addRow([]);
-    currentRow++;
-
-    // Loop each category
-    mainCategories.forEach((mainCat) => {
-      const categoryData = categorizedData[mainCat] || [];
-
-      if (categoryData.length === 0) return;
-
-      // Category header
-      const catHeaderRow = worksheet.addRow([mainCat]);
-      worksheet.mergeCells(currentRow, 1, currentRow, totalCols);
-      catHeaderRow.height = 30;
-      catHeaderRow.getCell(1).style = {
-        font: { bold: true, size: 14, color: { argb: "FFFFFFFF" } },
-        alignment: { horizontal: "center", vertical: "middle" },
-        fill: { type: "pattern", pattern: "solid", fgColor: { argb: "FF4472C4" } },
-      };
-      currentRow++;
-
-      // Column headers
-      const headerRow = worksheet.addRow(docHeaders);
-      headerRow.height = 25;
-      docHeaders.forEach((header, idx) => {
-        headerRow.getCell(idx + 1).style = {
-          font: { bold: true, size: 11, color: { argb: "FFFFFFFF" } },
-          alignment: { horizontal: "center", vertical: "middle" },
-          fill: { type: "pattern", pattern: "solid", fgColor: { argb: "FF5B9BD5" } },
-          border: {
-            top: { style: "thin" },
-            bottom: { style: "thin" },
-            left: { style: "thin" },
-            right: { style: "thin" },
-          },
-        };
-      });
-      currentRow++;
-
-      // Data rows
-      categoryData.forEach((rowData) => {
-        const total = rowData.TOTAL || 0;
-        const komputer = rowData.Komputer || 0;
-        const status = rowData.Status || "-";
-
-        const dataRow = worksheet.addRow([
-          rowData.Tanggal,
-          rowData.DP || 0,
-          rowData.admin || 0,
-          rowData.brankas || 0,
-          rowData["barang-display"] || 0,
-          rowData["barang-rusak"] || 0,
-          rowData["batu-lepas"] || 0,
-          rowData.manual || 0,
-          rowData["contoh-custom"] || 0,
-          rowData.posting || 0,
-          total,
-          komputer,
-          status,
-        ]);
-
-        // Style cells
-        dataRow.eachCell((cell, colNum) => {
-          cell.style = {
-            font: { size: 10 },
-            alignment: {
-              horizontal: colNum === 1 ? "center" : colNum === totalCols ? "center" : "right",
-              vertical: "middle",
-            },
-            border: {
-              top: { style: "thin" },
-              bottom: { style: "thin" },
-              left: { style: "thin" },
-              right: { style: "thin" },
-            },
-            numFmt: colNum > 1 && colNum < totalCols ? "#,##0" : undefined,
-          };
-
-          // Highlight TOTAL column
-          if (colNum === totalCols - 2) {
-            // TOTAL
-            cell.style.font = { bold: true, size: 10 };
-            cell.style.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFF2F2F2" } };
-          }
-
-          // Highlight Komputer column
-          if (colNum === totalCols - 1) {
-            // Komputer
-            cell.style.font = { bold: true, size: 10 };
-            cell.style.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFE7F3FF" } };
-          }
-
-          // Conditional formatting for Status
-          if (colNum === totalCols) {
-            // Status
-            cell.style.font = { bold: true, size: 10 };
-            const statusLower = String(status).toLowerCase();
-
-            if (statusLower === "klop" || statusLower.includes("sesuai")) {
-              cell.style.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFC6EFCE" } };
-              cell.style.font.color = { argb: "FF006100" };
-            } else if (statusLower.includes("kurang")) {
-              cell.style.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFFFC7CE" } };
-              cell.style.font.color = { argb: "FF9C0006" };
-            } else if (statusLower.includes("lebih")) {
-              cell.style.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFFFEB9C" } };
-              cell.style.font.color = { argb: "FF9C6500" };
-            }
-          }
-        });
-        currentRow++;
-      });
-
-      // Empty row after category
-      worksheet.addRow([]);
-      currentRow++;
-    });
-
-    // Set column widths
-    worksheet.getColumn(1).width = 12; // Tanggal
-    for (let i = 2; i <= totalCols - 3; i++) {
-      worksheet.getColumn(i).width = 10; // Dokumen columns
-    }
-    worksheet.getColumn(totalCols - 2).width = 12; // TOTAL
-    worksheet.getColumn(totalCols - 1).width = 12; // Komputer
-    worksheet.getColumn(totalCols).width = 14; // Status
-
-    // Create Sheet 2 if logs data available
-    if (groupedLogs) {
-      await this.createLogsDetailSheet(workbook, groupedLogs, monthYear);
-    }
-
-    // Generate and download file
-    const buffer = await workbook.xlsx.writeBuffer();
-    const blob = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
-    saveAs(blob, filename);
   }
 
   /**
@@ -2219,19 +1508,12 @@ class MaintenanceSystem {
             const batch = writeBatch(this.firestore);
             const startIndex = j * batchSize;
             const endIndex = Math.min(startIndex + batchSize, docs.length);
-            const batchDocs = docs.slice(startIndex, endIndex);
 
-            batchDocs.forEach((docSnapshot) => {
-              batch.delete(docSnapshot.ref);
-            });
+            for (let k = startIndex; k < endIndex; k++) {
+              batch.delete(docs[k].ref);
+            }
 
             await batch.commit();
-
-            const progress = (i / collections.length + (j + 1) / totalBatches / collections.length) * 100;
-            // Small delay between batches
-            if (j < totalBatches - 1) {
-              await new Promise((resolve) => setTimeout(resolve, 100));
-            }
           }
 
           totalDeleted += docs.length;
@@ -2319,6 +1601,17 @@ class MaintenanceSystem {
   }
 }
 
+// Initialize the maintenance system when page loads
+document.addEventListener("DOMContentLoaded", () => {
+  window.maintenanceSystem = new MaintenanceSystem();
+
+  // Cleanup listeners on page unload
+  window.addEventListener("beforeunload", () => {
+    if (window.maintenanceSystem) {
+      window.maintenanceSystem.cleanupAllListeners();
+    }
+  });
+});
 // Initialize the maintenance system when page loads
 document.addEventListener("DOMContentLoaded", () => {
   window.maintenanceSystem = new MaintenanceSystem();

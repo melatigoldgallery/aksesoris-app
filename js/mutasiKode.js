@@ -249,8 +249,8 @@ const jenisBarang = {
   A: "Anting",
   G: "Gelang",
   S: "Giwang",
-  Z: "HALA",
-  V: "HALA",
+  Z: "HALA & SDW",
+  V: "HALA & SDW",
 };
 
 // State untuk menyimpan data kode

@@ -229,11 +229,18 @@ class OptimizedStockReport {
   // Tambahkan method baru untuk mengambil data return
   async fetchReturnData(selectedDate) {
     try {
-      // Format tanggal ke YYYY-MM-DD sesuai struktur data di Firestore
-      const formattedDate = selectedDate.toISOString().split("T")[0];
+      // Format tanggal untuk range query (karena tanggal disimpan sebagai ISO string lengkap)
+      const startOfDay = new Date(selectedDate);
+      startOfDay.setHours(0, 0, 0, 0);
+      const endOfDay = new Date(selectedDate);
+      endOfDay.setHours(23, 59, 59, 999);
 
       const returnRef = collection(firestore, "returnBarang");
-      const q = query(returnRef, where("tanggal", "==", formattedDate));
+      const q = query(
+        returnRef,
+        where("tanggal", ">=", startOfDay.toISOString()),
+        where("tanggal", "<=", endOfDay.toISOString())
+      );
 
       const snapshot = await getDocs(q);
       const returnMap = new Map();

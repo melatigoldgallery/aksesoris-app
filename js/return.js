@@ -677,8 +677,18 @@ const returnHandler = {
       showAlert("Data return berhasil disimpan dan stok telah diperbarui", "Sukses", "success");
       this.resetForm();
 
-      // Refresh data if needed
-      await this.loadRiwayatReturn();
+      // Refresh data dengan filter tanggal yang aktif
+      const startDateStr = $("#filterStartDate").val();
+      const endDateStr = $("#filterEndDate").val();
+      if (startDateStr && endDateStr) {
+        const startDate = parseDate(startDateStr);
+        const endDate = parseDate(endDateStr);
+        if (startDate && endDate) {
+          const startISO = startDate.toISOString().split("T")[0];
+          const endISO = endDate.toISOString().split("T")[0];
+          await this.loadRiwayatReturn(startISO, endISO);
+        }
+      }
     } catch (error) {
       console.error("Error saving return:", error);
       showAlert("Gagal menyimpan data return", "Error", "error");
