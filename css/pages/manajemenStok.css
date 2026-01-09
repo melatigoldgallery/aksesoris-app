@@ -13,9 +13,9 @@
 
 /* Enhanced colors */
 .kalung-card {
-  background: linear-gradient(135deg, #fff8e1 0%, #ff4f2f 100%);
-  --line-start: #fb5a5a;
-  --line-end: #fec3b9;
+  background: linear-gradient(135deg, #eef7ff 0%, #068fff 100%);
+  --line-start: #1c9cff;
+  --line-end: #9fd4ff;
 }
 .liontin-card {
   background: linear-gradient(135deg, #f1f8e9 0%, #89ff01 100%);
@@ -33,29 +33,29 @@
   --line-end: #9fd4ff;
 }
 .hala-card {
-  background: linear-gradient(135deg, #fff3e0 0%, #ffcc02 100%);
-  --line-start: #ffcc02;
-  --line-end: #f4dc7b;
+  background: linear-gradient(135deg, #eef7ff 0%, #068fff 100%);
+  --line-start: #1c9cff;
+  --line-end: #9fd4ff;
 }
 .gelang-card {
-  background: linear-gradient(135deg, #fff8e1 0%, #ff4f2f 100%);
-  --line-start: #fb5a5a;
-  --line-end: #fec3b9;
-}
-.giwang-card {
   background: linear-gradient(135deg, #f1f8e9 0%, #89ff01 100%);
   --line-start: #b3ff3a;
   --line-end: #d0f7a3;
 }
+.giwang-card {
+  background: linear-gradient(135deg, #fff3e0 0%, #ffcc02 100%);
+  --line-start: #ffcc02;
+  --line-end: #f4dc7b;
+}
 .kendari-card {
-  background: linear-gradient(135deg, #fff8e1 0%, #ff4f2f 100%);
-  --line-start: #fb5a5a;
-  --line-end: #fec3b9;
+  background: linear-gradient(135deg, #fff3e0 0%, #ffcc02 100%);
+  --line-start: #ffcc02;
+  --line-end: #f4dc7b;
 }
 .berlian-card {
-  background: linear-gradient(135deg, #eef7ff 0%, #068fff 100%);
-  --line-start: #1c9cff;
-  --line-end: #9fd4ff;
+  background: linear-gradient(135deg, #f1f8e9 0%, #89ff01 100%);
+  --line-start: #b3ff3a;
+  --line-end: #d0f7a3;
 }
 .sdw-card {
   background: linear-gradient(135deg, #f1f8e9 0%, #89ff01 100%);
@@ -139,9 +139,6 @@
   transform: translateY(-3px);
   box-shadow: 0 6px 16px rgba(89, 102, 224, 0.15);
 }
-
-
-
 
 .nav-tabs .nav-link i {
   margin-right: 8px;
@@ -232,7 +229,7 @@
   border: none;
   color: #35393d;
   font-weight: bold;
-  padding: 18px 15px;
+  padding: 10px;
   text-transform: uppercase;
   font-size: 1rem;
   letter-spacing: 0.5px;
@@ -367,18 +364,25 @@
   border: 1px solid rgba(255, 255, 255, 0.8);
 }
 
+.stock-summary .row {
+  row-gap: 15px;
+}
+
 .stock-card {
   width: 100%;
   min-height: 140px;
-  height: auto;
+  height: 100%;
   border-radius: 15px;
   padding: 15px 10px;
-  margin-bottom: 10px;
+  margin-bottom: 0;
   box-shadow: 0 6px 20px rgba(0, 0, 0, 0.1);
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   position: relative;
   overflow: hidden;
   border: none;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
 }
 
 .stock-card::before {
@@ -428,10 +432,6 @@
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.2);
   overflow: hidden;
 }
-.modal-body .badge.bg-light.text-dark.border {
-  font-weight: 500;
-  background: #f8f9fa !important;
-}
 
 .modal-header {
   background: linear-gradient(135deg, #5966e0 0%, #4c63d2 100%);
@@ -446,7 +446,7 @@
 }
 
 .modal-body {
-  padding: 30px;
+  padding: 10px;
   background: #fafbfc;
 }
 
@@ -574,144 +574,169 @@
   font-size: 0.65rem;
   letter-spacing: 0.3px;
 }
-.tab-content .table .badge {
-  font-size: 0.65rem;
-  padding: 4px 6px;
-}
 
 .stock-card .number {
   font-size: 1.9rem;
 }
 
-#modalTambahStok .modal-dialog,
-#modalKurangiStok .modal-dialog,
+/* Modal Update & Detail - Ukuran Seragam */
 #modalUpdateStok .modal-dialog,
-#modalTambahStokHala .modal-dialog,
-#modalKurangiStokHala .modal-dialog,
-#modalUpdateStokHala .modal-dialog,
 #modalUpdateKomputer .modal-dialog,
-#modalDetailHala .modal-dialog,
-#modalTambahStokKalung .modal-dialog,
-#modalKurangiStokKalung .modal-dialog,
-#modalDetailKalung .modal-dialog,
+#modalUpdateKomputerWarna .modal-dialog {
+  max-width: 450px;
+}
+
 #modalUpdateStokKalung .modal-dialog,
-#modalTambahStokLiontin .modal-dialog,
-#modalKurangiStokLiontin .modal-dialog,
-#modalDetailLiontin .modal-dialog,
 #modalUpdateStokLiontin .modal-dialog,
-#modalUpdateKomputerWarna .modal-dialog,
+#modalUpdateStokHala .modal-dialog {
+  max-width: 450px;
+}
+
+#modalDetailKalung .modal-dialog,
+#modalDetailLiontin .modal-dialog,
+#modalDetailHala .modal-dialog,
 #modalDetailWarna .modal-dialog,
 #modalDetailJenis .modal-dialog {
   max-width: 450px;
 }
 
 #modalRiwayat .modal-dialog {
-  max-width: 750px;
+  max-width: 600px;
 }
 
-#modalKurangiStokHala .modal-dialog,
-#modalUpdateStokHala .modal-dialog {
-  max-width: 500px;
+/* Styling untuk tabel riwayat */
+#modalRiwayat .table thead th {
+  background-color: #f8f9fa;
+  font-weight: 600;
+  font-size: 14px;
+  padding: 0;
+  vertical-align: middle;
+  border-bottom: 2px solid #dee2e6;
+  text-align: center;
 }
 
-#modalTambahStok .modal-content,
-#modalKurangiStok .modal-content,
+#modalRiwayat .table tbody td {
+  padding: 10px 8px;
+  vertical-align: middle;
+  font-size: 13px;
+}
+
+/* Lebar kolom yang proporsional */
+#modalRiwayat .table thead th:nth-child(1),
+#modalRiwayat .table tbody td:nth-child(1) {
+  width: 20px;
+  text-align: center;
+}
+
+#modalRiwayat .table thead th:nth-child(2),
+#modalRiwayat .table tbody td:nth-child(2) {
+  width: 80px;
+  text-align: left;
+}
+
+#modalRiwayat .table thead th:nth-child(3),
+#modalRiwayat .table tbody td:nth-child(3) {
+  width: 70px;
+  text-align: center;
+}
+
+#modalRiwayat .table thead th:nth-child(4),
+#modalRiwayat .table tbody td:nth-child(4) {
+  width: 60px;
+  text-align: center;
+}
+
+#modalRiwayat .table thead th:nth-child(5),
+#modalRiwayat .table tbody td:nth-child(5) {
+  width: 130px;
+  text-align: left;
+  padding-left: 12px;
+}
+
+/* Styling untuk badge status */
+#modalRiwayat .badge {
+  padding: 5px 10px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+/* Modal Content Styling */
 #modalUpdateStok .modal-content,
-#modalTambahStokHala .modal-content,
-#modalKurangiStokHala .modal-content,
 #modalUpdateStokHala .modal-content,
-#modalUpdateKomputer .modal-content {
+#modalUpdateStokKalung .modal-content,
+#modalUpdateStokLiontin .modal-content,
+#modalUpdateKomputer .modal-content,
+#modalUpdateKomputerWarna .modal-content {
   border-radius: 12px;
 }
 
-#modalTambahStok .modal-header,
-#modalKurangiStok .modal-header,
+/* Modal Header Styling */
 #modalUpdateStok .modal-header,
-#modalTambahStokHala .modal-header,
-#modalKurangiStokHala .modal-header,
 #modalUpdateStokHala .modal-header,
-#modalUpdateKomputer .modal-header,
-#modalTambahStokKalung .modal-header,
-#modalKurangiStokKalung .modal-header,
-#modalDetailKalung .modal-header,
 #modalUpdateStokKalung .modal-header,
-#modalTambahStokLiontin .modal-header,
-#modalKurangiStokLiontin .modal-header,
-#modalDetailLiontin .modal-header,
 #modalUpdateStokLiontin .modal-header,
-#modalDetailWarna .modal-header {
+#modalUpdateKomputer .modal-header,
+#modalUpdateKomputerWarna .modal-header,
+#modalDetailKalung .modal-header,
+#modalDetailLiontin .modal-header,
+#modalDetailHala .modal-header,
+#modalDetailWarna .modal-header,
+#modalDetailJenis .modal-header {
   padding: 10px 14px;
 }
 
-#modalTambahStok .modal-title,
-#modalKurangiStok .modal-title,
+/* Modal Title Styling */
 #modalUpdateStok .modal-title,
-#modalTambahStokHala .modal-title,
-#modalKurangiStokHala .modal-title,
 #modalUpdateStokHala .modal-title,
-#modalUpdateKomputer .modal-title {
+#modalUpdateStokKalung .modal-title,
+#modalUpdateStokLiontin .modal-title,
+#modalUpdateKomputer .modal-title,
+#modalUpdateKomputerWarna .modal-title {
   font-size: 1rem;
   font-weight: 600;
 }
 
-#modalTambahStok .modal-body,
-#modalKurangiStok .modal-body,
+/* Modal Body Styling */
 #modalUpdateStok .modal-body,
-#modalTambahStokHala .modal-body,
-#modalKurangiStokHala .modal-body,
 #modalUpdateStokHala .modal-body,
-#modalUpdateKomputer .modal-body {
+#modalUpdateStokKalung .modal-body,
+#modalUpdateStokLiontin .modal-body,
+#modalUpdateKomputer .modal-body,
+#modalUpdateKomputerWarna .modal-body {
   padding: 10px 14px;
   font-size: 0.95rem;
 }
 
-#modalTambahStok .modal-footer,
-#modalKurangiStok .modal-footer,
+/* Modal Footer Styling */
 #modalUpdateStok .modal-footer,
-#modalTambahStokHala .modal-footer,
-#modalKurangiStokHala .modal-footer,
 #modalUpdateStokHala .modal-footer,
-#modalUpdateKomputer .modal-footer {
+#modalUpdateStokKalung .modal-footer,
+#modalUpdateStokLiontin .modal-footer,
+#modalUpdateKomputer .modal-footer,
+#modalUpdateKomputerWarna .modal-footer {
   padding: 10px 14px;
 }
 
-#modalTambahStok .form-label,
-#modalKurangiStok .form-label,
+/* Form Label Styling */
 #modalUpdateStok .form-label,
-#modalTambahStokHala .form-label,
-#modalKurangiStokHala .form-label,
 #modalUpdateStokHala .form-label,
+#modalUpdateStokKalung .form-label,
+#modalUpdateStokLiontin .form-label,
 #modalUpdateKomputer .form-label,
-#modalUpdateStokKalung .form-label {
+#modalUpdateKomputerWarna .form-label {
   font-size: 0.75rem;
   margin-bottom: 0px;
 }
 
-#modalTambahStok .form-control,
-#modalKurangiStok .form-control,
+/* Form Control Styling */
 #modalUpdateStok .form-control,
-#modalTambahStokHala .form-control,
-#modalKurangiStokHala .form-control,
 #modalUpdateStokHala .form-control,
-#modalUpdateKomputer .form-control,
 #modalUpdateStokKalung .form-control,
-#modalTambahStokKalung .form-control,
 #modalUpdateStokLiontin .form-control,
-#modalTambahStokLiontin .form-control,
-#modalUpdateKomputerWarna .form-control,
-#modalTambahStokKomputerWarna .form-control {
+#modalUpdateKomputer .form-control,
+#modalUpdateKomputerWarna .form-control {
   padding: 8px 10px;
   font-size: 0.88rem;
-}
-
-/* === Bulk HALA Reduce Enhancements === */
-.hala-bulk-table .current-stock {
-  font-weight: 600;
-  color: #dc3545; /* emphasize current stock in reduce modal */
-}
-.hala-bulk-table .hala-reduce-qty-input:focus {
-  box-shadow: 0 0 0 0.2rem rgba(255, 193, 7, 0.35);
-  border-color: #ffc107;
 }
 
 /* Nonaktifkan scroll di kontainer modal saat terbuka */
@@ -733,5 +758,34 @@
   overflow: visible !important; /* matikan overflow-x:auto bawaan */
 }
 .jenis-column {
-font-size: 1.8rem;
+  font-size: 1.8rem;
+}
+
+/* Toast Notification Styles */
+.toast-notification {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  background: white;
+  padding: 15px 20px;
+  border-radius: 10px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.15);
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  transform: translateX(400px);
+  transition: transform 0.3s ease;
+  font-weight: 500;
+}
+.toast-notification.success {
+  border-left: 4px solid #28a745;
+  color: #28a745;
+}
+.toast-notification.error {
+  border-left: 4px solid #dc3545;
+  color: #dc3545;
+}
+.toast-notification.show {
+  transform: translateX(0);
 }

@@ -18,7 +18,7 @@ import StockService from "./services/stockService.js";
 
 // ===== OPTIMIZED CACHE MANAGEMENT =====
 // Cache hanya di-invalidate saat ada perubahan data (CRUD), bukan berdasarkan waktu
-// Ini mengurangi Firestore reads secara signifikan
+// Menggunakan stokAksesorisTransaksi sebagai single source of truth
 const CACHE_TTL_STANDARD = 24 * 60 * 60 * 1000; // 24 jam - cache bertahan lama
 const CACHE_TTL_TODAY = 24 * 60 * 60 * 1000; // 24 jam - sama, karena invalidate saat CRUD
 const CACHE_TTL_STOCK = 24 * 60 * 60 * 1000; // 24 jam - sama, karena invalidate saat CRUD
@@ -749,12 +749,11 @@ export const aksesorisSaleHandler = {
         return;
       }
 
-      // Buat objek data penambahan stok
       // ✅ Update stok aksesoris via StockService (single source of truth)
       await this.updateStokAksesoris(items);
 
       // IMPROVED: Invalidate related caches
-      invalidateCache("stockAdditions");
+      invalidateCache("stockAdditionHistory");
       invalidateCache("stockData");
 
       // Hitung total item yang ditambahkan
@@ -835,36 +834,7 @@ export const aksesorisSaleHandler = {
     return isValid ? items : null;
   },
 
-  // Fungsi untuk membuat objek data penambahan stok
-  createStockAdditionData(items) {
-    const tanggal = document.getElementById("tanggal").value;
-    const jenisAksesoris = document.getElementById("jenis-aksesoris");
-    const jenisText = jenisAksesoris.options[jenisAksesoris.selectedIndex].text;
-
-    return {
-      tanggal: tanggal,
-      jenisAksesoris: jenisAksesoris.value,
-      jenisText: jenisText,
-      items: items,
-      timestamp: serverTimestamp(),
-      totalItems: items.reduce((total, item) => total + item.jumlah, 0),
-    };
-  },
-
-  // Fungsi untuk menyimpan data penambahan stok ke Firestore
-  async saveStockAdditionToFirestore(data) {
-    try {
-      // Simpan ke koleksi stockAdditions
-      const docRef = await addDoc(collection(firestore, "stockAdditions"), data);
-      console.log("Data berhasil disimpan dengan ID:", docRef.id);
-      return docRef.id;
-    } catch (error) {
-      console.error("Gagal menyimpan data:", error);
-      throw error;
-    }
-  },
-
-  // OPTIMIZED: Update stok dan invalidate cache - hanya refresh data yang berubah
+  // OPTIMIZED: Update stok via StockService - single source of truth
   async updateStokAksesoris(items) {
     try {
       console.log(`🔄 Starting stock update for ${items.length} items`);
@@ -872,16 +842,22 @@ export const aksesorisSaleHandler = {
       // Invalidate stock cache sebelum update
       invalidateCache("stockData");
 
+      const tanggal = document.getElementById("tanggal").value;
+      const currentUser = localStorage.getItem("currentUser") || "Admin";
+
       for (const item of items) {
         console.log(`📦 Updating stock for ${item.kodeText} (+${item.jumlah})`);
 
-        // ✅ Gunakan StockService - single source of truth
+        // ✅ Gunakan StockService - single source of truth dengan field lengkap
         await StockService.updateStock({
           kode: item.kodeText,
+          nama: item.nama,
+          kategori: item.kategori,
           jenis: "stockAddition",
           jumlah: parseInt(item.jumlah) || 0,
           keterangan: `Tambah stok: ${item.nama}`,
-          sales: "System",
+          sales: currentUser,
+          tanggal: tanggal,
         });
       }
 
@@ -1045,8 +1021,8 @@ export const aksesorisSaleHandler = {
     return laporanHTML;
   },
 
-  // OPTIMIZED: Fungsi untuk memuat riwayat penambahan stok dengan cache invalidate-on-change
-  // Cache bertahan lama dan hanya di-refresh saat ada perubahan data (simpan/update/delete)
+  // OPTIMIZED: Fungsi untuk memuat riwayat penambahan stok dari stokAksesorisTransaksi
+  // Membaca dari single source of truth dengan filter jenis stockAddition
   async loadStockAdditionHistory() {
     try {
       const filterDateStart = document.getElementById("filterDateStart");
@@ -1079,9 +1055,9 @@ export const aksesorisSaleHandler = {
       endDate.setHours(23, 59, 59, 999);
 
       // Create cache key
-      const cacheKey = `stockAdditions_${filterDateStart.value}_${filterDateEnd.value}`;
+      const cacheKey = `stockAdditionHistory_${filterDateStart.value}_${filterDateEnd.value}`;
 
-      // Cek cache terlebih dahulu (cache bertahan lama, invalidate saat CRUD)
+      // Cek cache terlebih dahulu
       const cachedData = getCacheWithValidation(cacheKey);
       if (cachedData) {
         console.log("Using cached stock addition history");
@@ -1090,12 +1066,15 @@ export const aksesorisSaleHandler = {
         return;
       }
 
-      // Query data dari Firestore
-      const stockAdditionsRef = collection(firestore, "stockAdditions");
+      console.log("📥 Loading stock addition history from stokAksesorisTransaksi...");
+
+      // ✅ Query dari stokAksesorisTransaksi dengan filter jenis stockAddition
+      const transactionsRef = collection(firestore, "stokAksesorisTransaksi");
       const q = query(
-        stockAdditionsRef,
-        where("timestamp", ">=", startDate),
-        where("timestamp", "<=", endDate),
+        transactionsRef,
+        where("jenis", "==", "stockAddition"),
+        where("timestamp", ">=", Timestamp.fromDate(startDate)),
+        where("timestamp", "<=", Timestamp.fromDate(endDate)),
         orderBy("timestamp", "desc")
       );
 
@@ -1104,22 +1083,27 @@ export const aksesorisSaleHandler = {
 
       snapshot.forEach((doc) => {
         const data = doc.data();
-        if (data.items && data.items.length) {
-          data.items.forEach((item) => {
-            historyData.push({
-              id: doc.id,
-              timestamp: data.timestamp,
-              tanggal: data.tanggal,
-              jenisText: data.jenisText,
-              kodeText: item.kodeText,
-              nama: item.nama,
-              jumlah: item.jumlah,
-            });
-          });
-        }
+
+        // Determine kategori untuk jenisText
+        let jenisText = "Lainnya";
+        if (data.kategori === "kotak") jenisText = "Kotak";
+        else if (data.kategori === "aksesoris") jenisText = "Aksesoris";
+        else if (data.kategori === "silver") jenisText = "Silver";
+
+        historyData.push({
+          id: doc.id,
+          timestamp: data.timestamp,
+          tanggal: data.tanggal || "-",
+          jenisText: jenisText,
+          kodeText: data.kode,
+          nama: data.nama || data.keterangan || "-",
+          jumlah: data.jumlah || 0,
+        });
       });
 
-      // Simpan ke cache dengan TTL panjang (akan di-invalidate saat ada perubahan data)
+      console.log(`✅ Loaded ${historyData.length} stock addition records`);
+
+      // Simpan ke cache dengan TTL panjang
       setCacheWithTimestamp(cacheKey, historyData, CACHE_TTL_STANDARD);
 
       // Simpan data untuk laporan
@@ -1129,7 +1113,8 @@ export const aksesorisSaleHandler = {
       this.renderStockAdditionHistory(historyData);
     } catch (error) {
       console.error("Error loading stock addition history:", error);
-      this.renderStockAdditionHistory([]); // Render tabel kosong dengan pesan error
+      this.showErrorNotification("Gagal memuat riwayat: " + error.message);
+      this.renderStockAdditionHistory([]);
     }
   },
 

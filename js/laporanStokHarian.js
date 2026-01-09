@@ -124,24 +124,67 @@ function formatDateKey(date) {
 }
 
 function computeCurrentSummarySnapshot() {
-  const snapshot = {};
+  const snapshot = { items: {}, breakdown: {} };
+
   mainCategories.forEach((mainCat) => {
-    let total = 0;
+    const categoryBreakdown = {};
+    let totalAcrossAllDocs = 0;
+
     summaryCategories.forEach((cat) => {
-      if (stockDataSnapshot[cat] && stockDataSnapshot[cat][mainCat]) {
-        total += parseInt(stockDataSnapshot[cat][mainCat].quantity) || 0;
+      const node = stockDataSnapshot[cat] && stockDataSnapshot[cat][mainCat];
+      if (!node) {
+        categoryBreakdown[cat] = { total: 0 };
+        return;
+      }
+
+      // Handle KALUNG, LIONTIN with color details
+      if ((mainCat === "KALUNG" || mainCat === "LIONTIN") && node.details) {
+        const colorBreakdown = {};
+        let catTotal = 0;
+        colorTypes.forEach((color) => {
+          const qty = parseInt(node.details[color]) || 0;
+          colorBreakdown[color] = qty;
+          catTotal += qty;
+        });
+        categoryBreakdown[cat] = { total: catTotal, details: colorBreakdown };
+        totalAcrossAllDocs += catTotal;
+      }
+      // Handle HALA with jewelry type details
+      else if (mainCat === "HALA" && node.details) {
+        const halaBreakdown = {};
+        let catTotal = 0;
+        halaJewelryTypes.forEach((type) => {
+          const qty = parseInt(node.details[type]) || 0;
+          halaBreakdown[type] = qty;
+          catTotal += qty;
+        });
+        categoryBreakdown[cat] = { total: catTotal, details: halaBreakdown };
+        totalAcrossAllDocs += catTotal;
+      }
+      // Handle other categories (simple quantity)
+      else {
+        const qty = parseInt(node.quantity) || 0;
+        categoryBreakdown[cat] = { total: qty };
+        totalAcrossAllDocs += qty;
       }
     });
+
+    snapshot.breakdown[mainCat] = categoryBreakdown;
+
+    // Compute komputer and status
     let komputer = 0;
     if (stockDataSnapshot["stok-komputer"] && stockDataSnapshot["stok-komputer"][mainCat]) {
       komputer = parseInt(stockDataSnapshot["stok-komputer"][mainCat].quantity) || 0;
     }
+
     let status;
-    if (total === komputer) status = "Klop";
-    else if (total < komputer) status = `Kurang ${komputer - total}`;
-    else status = `Lebih ${total - komputer}`;
-    snapshot[mainCat] = { total, komputer, status };
+    if (totalAcrossAllDocs === komputer) status = "Klop";
+    else if (totalAcrossAllDocs < komputer) status = `Kurang ${komputer - totalAcrossAllDocs}`;
+    else status = `Lebih ${totalAcrossAllDocs - komputer}`;
+
+    snapshot.items[mainCat] = { total: totalAcrossAllDocs, komputer, status };
   });
+
   return snapshot;
 }
 
@@ -149,13 +192,14 @@ async function saveDailyStockSnapshot(selectedDate) {
   const dateKey = formatDateKey(selectedDate);
   if (!dateKey) throw new Error("Tanggal tidak valid");
   await getStockSnapshot();
-  const data = computeCurrentSummarySnapshot();
+  const snapshotData = computeCurrentSummarySnapshot();
   const docRef = doc(firestore, "daily_stock_reports", dateKey);
   const existing = await getDoc(docRef);
   const payload = {
     date: dateKey,
     createdAt: new Date().toISOString(),
-    items: data,
+    items: snapshotData.items,
+    breakdown: snapshotData.breakdown,
   };
   await setDoc(docRef, payload, { merge: true });
   return { overwritten: existing.exists(), payload };
@@ -179,13 +223,19 @@ async function ensureYesterdaySnapshotIfMissing() {
   const snap = await getDoc(ref);
   if (!snap.exists()) {
     await getStockSnapshot();
-    const data = computeCurrentSummarySnapshot();
+    const snapshotData = computeCurrentSummarySnapshot();
     await setDoc(
       ref,
-      { date: yesterdayKey, createdAt: new Date().toISOString(), items: data, backfilled: true },
+      {
+        date: yesterdayKey,
+        createdAt: new Date().toISOString(),
+        items: snapshotData.items,
+        breakdown: snapshotData.breakdown,
+        backfilled: true,
+      },
       { merge: true }
     );
-    showToast("Snapshot kemarin (backfill) dibuat", "success");
+    showToast("Snapshot kemarin (backfill) dibuat dengan breakdown lengkap", "success");
   }
   return { todayKey, yesterdayKey };
 }
@@ -320,7 +370,7 @@ async function ensureTodaySnapshotIfPassed() {
     const existing = await loadDailyStockSnapshot(nowWita);
     if (!existing) {
       await saveDailyStockSnapshot(nowWita);
-      showToast("Snapshot otomatis dibuat", "success");
+      showToast("Snapshot otomatis dibuat dengan breakdown lengkap", "success");
     }
   }
 }
@@ -377,7 +427,8 @@ function initDailyReportPage() {
           renderDailyReportTable(data);
         } else {
           await getStockSnapshot();
-          const current = { items: computeCurrentSummarySnapshot(), createdAt: null };
+          const current = computeCurrentSummarySnapshot();
+          current.createdAt = null;
           renderDailyReportTable(current);
         }
         showToast("Data berhasil dimuat", "success");
@@ -485,24 +536,22 @@ function initDailyReportPage() {
       let qty = 0;
       if (breakdown && breakdown[cat] && typeof breakdown[cat].total !== "undefined") {
         qty = parseInt(breakdown[cat].total) || 0;
-      } else {
-        // Hanya gunakan live data jika tanggal = hari ini
-        if (isToday) {
-          const node = stockDataSnapshot[cat] && stockDataSnapshot[cat][mainCat];
-          if (node) {
-            const isKalungLiontin = mainCat === "KALUNG" || mainCat === "LIONTIN";
-            const isHala = mainCat === "HALA";
-            if (isKalungLiontin && node.details) {
-              qty = colorTypes.reduce((sum, color) => sum + (parseInt(node.details[color]) || 0), 0);
-            } else if (isHala && node.details) {
-              qty = halaJewelryTypes.reduce((sum, type) => sum + (parseInt(node.details[type]) || 0), 0);
-            } else {
-              qty = parseInt(node.quantity) || 0;
-            }
+      } else if (isToday) {
+        // Hanya untuk hari ini, jika breakdown belum ada, gunakan live data
+        const node = stockDataSnapshot[cat] && stockDataSnapshot[cat][mainCat];
+        if (node) {
+          const isKalungLiontin = mainCat === "KALUNG" || mainCat === "LIONTIN";
+          const isHala = mainCat === "HALA";
+          if (isKalungLiontin && node.details) {
+            qty = colorTypes.reduce((sum, color) => sum + (parseInt(node.details[color]) || 0), 0);
+          } else if (isHala && node.details) {
+            qty = halaJewelryTypes.reduce((sum, type) => sum + (parseInt(node.details[type]) || 0), 0);
+          } else {
+            qty = parseInt(node.quantity) || 0;
           }
         }
-        // Untuk tanggal lama tanpa breakdown: qty = 0 (data tidak tersedia)
       }
+      // Untuk tanggal lama tanpa breakdown: qty = 0 (data tidak tersedia)
       totalFisik += qty;
       const tr = document.createElement("tr");
       tr.innerHTML = `
@@ -645,6 +694,8 @@ function renderWarnaModal({
 
   let details = {};
   let existingTotal = 0;
+  let hasBreakdownData = false;
+
   try {
     const useData = snapshotData || window.latestDailyData;
     const breakdown = useData && useData.breakdown && useData.breakdown[mainCat];
@@ -652,6 +703,7 @@ function renderWarnaModal({
     if (bnode) {
       existingTotal = parseInt(bnode.total) || 0;
       details = { ...(bnode.details || {}) };
+      hasBreakdownData = true;
     }
   } catch {}
 
@@ -659,13 +711,25 @@ function renderWarnaModal({
   const todayKey = formatDateKey(new Date());
   const isToday = (dateKey || todayKey) === todayKey;
 
+  // Untuk hari ini, jika tidak ada breakdown, gunakan live data
   const liveNode = stockDataSnapshot[cat] && stockDataSnapshot[cat][mainCat];
   const liveDetails = (liveNode && liveNode.details) || {};
 
+  // Show message jika tidak ada data historical
+  if (!hasBreakdownData && !isToday) {
+    if (tbody) {
+      tbody.innerHTML =
+        '<tr><td colspan="2" class="text-center text-muted py-4"><i class="fas fa-info-circle me-2"></i>Data rincian tidak tersedia untuk tanggal ini.<br><small>Breakdown detail mulai tersimpan dari snapshot terbaru.</small></td></tr>';
+    }
+    if (totalFisikEl) totalFisikEl.textContent = "0";
+    ensureWarnaModalFooter(editable, null);
+    return;
+  }
+
   if (isKalungLiontin) {
     colorTypes.forEach((t) => {
-      // Hanya gunakan liveDetails jika hari ini DAN tidak ada details dari snapshot
-      const fis = parseInt(details[t] ?? (isToday ? liveDetails[t] : 0) ?? 0) || 0;
+      // Gunakan details dari breakdown, fallback ke live hanya jika hari ini
+      const fis = parseInt(details[t] ?? (isToday && !hasBreakdownData ? liveDetails[t] : 0) ?? 0) || 0;
       totalF += fis;
       const tr = document.createElement("tr");
       tr.innerHTML = editable
@@ -675,8 +739,8 @@ function renderWarnaModal({
     });
   } else if (isHala) {
     halaJewelryTypes.forEach((t) => {
-      // Hanya gunakan liveDetails jika hari ini DAN tidak ada details dari snapshot
-      const fis = parseInt(details[t] ?? (isToday ? liveDetails[t] : 0) ?? 0) || 0;
+      // Gunakan details dari breakdown, fallback ke live hanya jika hari ini
+      const fis = parseInt(details[t] ?? (isToday && !hasBreakdownData ? liveDetails[t] : 0) ?? 0) || 0;
       totalF += fis;
       const tr = document.createElement("tr");
       tr.innerHTML = editable
@@ -686,8 +750,9 @@ function renderWarnaModal({
     });
   } else {
     // Untuk kategori non-detail (CINCIN, ANTING, dll)
-    // Hanya gunakan liveNode jika hari ini DAN tidak ada existingTotal
-    const fis = existingTotal || (isToday ? parseInt((liveNode && liveNode.quantity) || 0) || 0 : 0);
+    // Gunakan existingTotal dari breakdown, fallback ke live hanya jika hari ini
+    const fis =
+      existingTotal || (isToday && !hasBreakdownData ? parseInt((liveNode && liveNode.quantity) || 0) || 0 : 0);
     totalF = fis;
     const tr = document.createElement("tr");
     tr.innerHTML = editable

@@ -32,6 +32,8 @@ const StockService = {
       tanggal = null,
       currentStock = null,
       newStock = null,
+      nama = "",
+      kategori = "",
     } = stockData;
 
     try {
@@ -48,6 +50,8 @@ const StockService = {
       };
 
       // Add optional fields
+      if (nama) transactionData.nama = nama;
+      if (kategori) transactionData.kategori = kategori;
       if (kodeTransaksi) transactionData.kodeTransaksi = kodeTransaksi;
       if (tanggal) transactionData.tanggal = tanggal;
       if (currentStock !== null) transactionData.stokSebelum = currentStock;
