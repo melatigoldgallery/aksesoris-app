@@ -23,6 +23,12 @@ let lastStockCalculation = 0;
 let stockCacheValid = false; // Event-driven cache flag
 const STOCK_CALC_COOLDOWN = 30000;
 
+// Cache configuration
+const CACHE_CONFIG = {
+  TTL: 24 * 60 * 60 * 1000, // 24 hours
+  ENABLE_REALTIME_INVALIDATION: true,
+};
+
 const simpleCache = {
   data: new Map(),
 
@@ -324,36 +330,65 @@ const penjualanHandler = {
   // Load master data (kode, nama, kategori) + calculate real-time stock
   async loadStockData(forceRefresh = false) {
     try {
-      // EVENT-DRIVEN: Only reload if cache invalid or forced
-      const cached = simpleCache.get("stockData");
-
-      if (!forceRefresh && cached && stockCacheValid) {
-        this.stockData = cached;
-        this.buildStockCache();
-        this.populateStockTables();
-        return;
+      // Check if other pages (tambahAksesoris) modified stokAksesoris
+      const needsRefresh = sessionStorage.getItem("stokAksesoris_needsRefresh");
+      if (needsRefresh === "true") {
+        forceRefresh = true;
+        sessionStorage.removeItem("stokAksesoris_needsRefresh");
       }
 
-      // Step 1: Load ALL master data
-      const stockQuery = collection(firestore, "stokAksesoris");
-      const snapshot = await getDocs(stockQuery);
-      readsMonitor.increment("Load Stock Data", snapshot.size);
+      const cachedMaster = localStorage.getItem("masterData");
+      const cacheTimestamp = localStorage.getItem("masterData_timestamp");
 
-      this.stockData = [];
-      snapshot.forEach((doc) => {
-        this.stockData.push({
-          id: doc.id,
-          ...doc.data(),
-          stokAkhir: 0, // Initialize, will be calculated
+      let masterData = [];
+
+      if (!forceRefresh && cachedMaster && cacheTimestamp) {
+        const age = Date.now() - parseInt(cacheTimestamp);
+
+        if (age < CACHE_CONFIG.TTL) {
+          masterData = JSON.parse(cachedMaster);
+          readsMonitor.increment("Master Data (Cached)", 0);
+        } else {
+          localStorage.removeItem("masterData");
+          localStorage.removeItem("masterData_timestamp");
+        }
+      }
+
+      if (masterData.length === 0) {
+        const stockQuery = collection(firestore, "stokAksesoris");
+        const snapshot = await getDocs(stockQuery);
+        readsMonitor.increment("Load Stock Data", snapshot.size);
+
+        snapshot.forEach((doc) => {
+          masterData.push({
+            id: doc.id,
+            ...doc.data(),
+          });
         });
-      });
 
-      const stockMap = await StockService.calculateAllStocksBatch(new Date());
-      readsMonitor.increment("Calculate Stock Batch", 1);
+        try {
+          localStorage.setItem("masterData", JSON.stringify(masterData));
+          localStorage.setItem("masterData_timestamp", Date.now().toString());
+        } catch (e) {
+          console.warn("localStorage full:", e);
+        }
+      }
 
-      this.stockData.forEach((item) => {
-        item.stokAkhir = stockMap.get(item.kode) || 0;
-      });
+      this.stockData = masterData.map((item) => ({
+        ...item,
+        stokAkhir: 0,
+      }));
+
+      const stockMap = await StockService.getStockSnapshot(new Date());
+      readsMonitor.increment("Get Stock Snapshot", 1);
+
+      if (stockMap && stockMap.size > 0) {
+        this.stockData.forEach((item) => {
+          item.stokAkhir = stockMap.get(item.kode) || 0;
+        });
+
+        this.stockData = this.stockData.filter((item) => item.stokAkhir > 0);
+      }
 
       simpleCache.set("stockData", this.stockData);
       stockCacheValid = true;
@@ -375,10 +410,22 @@ const penjualanHandler = {
     // 1. Stock master data listener (kode, nama, kategori changes)
     const stockQuery = collection(firestore, "stokAksesoris");
 
+    let isFirstMasterSnapshot = true;
+
     this.stockListener = onSnapshot(
       stockQuery,
       (snapshot) => {
-        if (!snapshot.metadata.hasPendingWrites) {
+        if (isFirstMasterSnapshot) {
+          isFirstMasterSnapshot = false;
+          return;
+        }
+
+        if (!snapshot.metadata.hasPendingWrites && snapshot.docChanges().length > 0) {
+          if (CACHE_CONFIG.ENABLE_REALTIME_INVALIDATION) {
+            localStorage.removeItem("masterData");
+            localStorage.removeItem("masterData_timestamp");
+          }
+
           this.handleStockChanges(snapshot.docChanges());
         }
       },
@@ -397,11 +444,17 @@ const penjualanHandler = {
       where("timestamp", ">=", Timestamp.fromDate(today))
     );
 
+    let isFirstSnapshot = true;
+
     this.transactionListener = onSnapshot(
       transactionQuery,
       (snapshot) => {
+        if (isFirstSnapshot) {
+          isFirstSnapshot = false;
+          return;
+        }
+
         if (!snapshot.metadata.hasPendingWrites && snapshot.docChanges().length > 0) {
-          // ✅ Extract changed kodes from snapshot (OPTIMIZATION!)
           const changedKodes = new Set();
 
           snapshot.docChanges().forEach((change) => {
@@ -415,22 +468,19 @@ const penjualanHandler = {
             return;
           }
 
-          // DEBOUNCE: Only recalc after 5 seconds of no new transactions
           if (stockRecalcDebounceTimer) {
             clearTimeout(stockRecalcDebounceTimer);
           }
 
           stockRecalcDebounceTimer = setTimeout(() => {
-            // COOLDOWN: Skip if recently calculated (within 30s)
             const now = Date.now();
             if (now - lastStockCalculation < STOCK_CALC_COOLDOWN) {
               return;
             }
 
-            // ✅ Only recalc changed kodes (93% reduction!)
             this.handleIncrementalStockUpdate(Array.from(changedKodes));
             lastStockCalculation = now;
-          }, 5000); // 5 second debounce
+          }, 5000);
         }
       },
       (error) => {
@@ -466,62 +516,56 @@ const penjualanHandler = {
     });
 
     if (hasUpdates) {
-      // Recalculate stock for updated items
-      const stockMap = await StockService.calculateAllStocksBatch(new Date());
+      const stockMap = await StockService.getStockSnapshot(new Date());
 
-      this.stockData.forEach((item) => {
-        const calculatedStock = stockMap.get(item.kode) || 0;
-        item.stokAkhir = calculatedStock;
-        this.stockCache.set(item.kode, calculatedStock);
-      });
+      if (stockMap && stockMap.size > 0) {
+        this.stockData.forEach((item) => {
+          const calculatedStock = stockMap.get(item.kode) || 0;
+          item.stokAkhir = calculatedStock;
+          this.stockCache.set(item.kode, calculatedStock);
+        });
+      }
 
-      // Update cache and UI
       simpleCache.set("stockData", this.stockData);
       stockCacheValid = true;
       this.populateStockTables();
     }
   },
 
-  // Handle transaction changes (recalculate stock) - FULL RECALC FALLBACK
   async handleTransactionChanges() {
     try {
-      const stockMap = await StockService.calculateAllStocksBatch(new Date());
+      const stockMap = await StockService.getStockSnapshot(new Date());
 
-      // Update stock data
-      this.stockData.forEach((item) => {
-        const calculatedStock = stockMap.get(item.kode) || 0;
-        item.stokAkhir = calculatedStock;
-        this.stockCache.set(item.kode, calculatedStock);
-      });
+      if (stockMap && stockMap.size > 0) {
+        // Update stock data
+        this.stockData.forEach((item) => {
+          const calculatedStock = stockMap.get(item.kode) || 0;
+          item.stokAkhir = calculatedStock;
+          this.stockCache.set(item.kode, calculatedStock);
+        });
 
-      // Update cache and UI
-      simpleCache.set("stockData", this.stockData);
-      stockCacheValid = true;
-      this.populateStockTables();
+        // Update cache and UI
+        simpleCache.set("stockData", this.stockData);
+        stockCacheValid = true;
+        this.populateStockTables();
+      }
     } catch (error) {
       console.error("Error handling transaction changes:", error);
     }
   },
 
-  // ✅ NEW: Incremental stock update (93% faster & 93% less reads!)
   async handleIncrementalStockUpdate(changedKodes) {
     try {
       if (!changedKodes || changedKodes.length === 0) {
         return;
       }
 
-      const startTime = performance.now();
-
-      // ✅ Calculate only changed kodes (93% reduction in reads!)
       const stockMap = await StockService.calculateStockForKodes(changedKodes, new Date());
 
-      // ✅ Update only affected items in stockData
       let updatedCount = 0;
-      let totalAffectedItems = 0;
 
       this.stockData.forEach((item) => {
         if (changedKodes.includes(item.kode)) {
-          totalAffectedItems++;
           const newStock = stockMap.get(item.kode) || 0;
 
           if (item.stokAkhir !== newStock) {
@@ -532,7 +576,6 @@ const penjualanHandler = {
         }
       });
 
-      // Update cache
       simpleCache.set("stockData", this.stockData);
       stockCacheValid = true;
 
@@ -545,11 +588,9 @@ const penjualanHandler = {
     }
   },
 
-  // TAMBAH: Show stock warning
   showStockWarning(kode) {
     const warningId = `stock-warning-${kode}`;
 
-    // Hindari duplikasi warning
     if (document.getElementById(warningId)) return;
 
     const warning = $(`
@@ -794,8 +835,9 @@ const penjualanHandler = {
         );
       } else {
         items.forEach((item) => {
+          const hargaValue = item.hargaJual || item.harga || 0;
           const row = `
-          <tr data-kode="${item.kode}" data-nama="${item.nama}" data-harga="${item.hargaJual || 0}">
+          <tr data-kode="${item.kode}" data-nama="${item.nama}" data-harga="${hargaValue}">
             <td>${item.kode || "-"}</td>
             <td>${item.nama || "-"}</td>
           </tr>`;
@@ -804,11 +846,9 @@ const penjualanHandler = {
       }
     });
 
-    // Update lock table (uses same hasStock helper)
     const lockTable = $("#tableLock tbody");
     lockTable.empty();
 
-    // Filter: kategori aksesoris + stok > 0
     const allLockItems = this.stockData.filter((item) => item.kategori === "aksesoris");
     const lockItems = allLockItems.filter((item) => hasStock(item));
 
@@ -819,7 +859,7 @@ const penjualanHandler = {
     } else {
       lockItems.forEach((item) => {
         const row = `
-        <tr data-kode="${item.kode}" data-nama="${item.nama}" data-harga="${item.hargaJual || 0}">
+        <tr data-kode="${item.kode}" data-nama="${item.nama}" data-harga="${item.hargaJual || item.harga || 0}">
           <td>${item.kode || "-"}</td>
           <td>${item.nama || "-"}</td>
         </tr>`;
@@ -831,12 +871,9 @@ const penjualanHandler = {
     this.attachTableRowClickHandlers();
   },
 
-  // Attach table row click handlers
   attachTableRowClickHandlers() {
-    // Remove existing handlers to prevent duplicates
     $("#tableAksesoris tbody tr, #tableKotak tbody tr, #tableSilver tbody tr, #tableLock tbody tr").off("click");
 
-    // Aksesoris table
     $("#tableAksesoris tbody tr").on("click", function () {
       if ($(this).data("kode")) {
         const data = {
@@ -855,7 +892,7 @@ const penjualanHandler = {
         const data = {
           kode: $(this).data("kode"),
           nama: $(this).data("nama"),
-          harga: $(this).data("harga"),
+          harga: parseInt($(this).data("harga")) || 0,
         };
         penjualanHandler.addKotakToTable(data);
         $("#modalPilihKotak").modal("hide");
@@ -896,8 +933,6 @@ const penjualanHandler = {
   async showStockModal() {
     const salesType = $("#jenisPenjualan").val();
 
-    // EVENT-DRIVEN: Always use cache (auto-updated by listeners)
-    // Only refresh if cache invalid (empty or first load)
     if (!stockCacheValid || !this.stockData || this.stockData.length === 0) {
       try {
         utils.showLoading(true);
@@ -914,7 +949,6 @@ const penjualanHandler = {
     }
 
     try {
-      // Buka modal sesuai jenis penjualan
       if (salesType === "aksesoris") {
         $("#modalPilihAksesoris").modal("show");
       } else if (salesType === "kotak") {
@@ -968,7 +1002,7 @@ const penjualanHandler = {
   addKotakToTable(data) {
     const { kode, nama, harga } = data;
     const jumlah = 1;
-    const hargaSatuan = harga;
+    const hargaSatuan = parseInt(harga) || 0;
     const totalHarga = jumlah * hargaSatuan;
 
     const newRow = `
@@ -1038,7 +1072,6 @@ const penjualanHandler = {
 
   // Attach row event handlers
   attachRowEventHandlers($row) {
-    // Remove existing handlers
     $row.find("input, button").off();
 
     if ($row.closest("table").attr("id") === "tableAksesorisDetail") {
@@ -1073,7 +1106,6 @@ const penjualanHandler = {
     const $kadarInput = $row.find(".kadar-input");
     const $jumlahInput = $row.find(".jumlah-input");
 
-    // Remove validation error on input
     $kadarInput.on("input", function () {
       $(this).removeClass("is-invalid");
     });
@@ -1084,7 +1116,6 @@ const penjualanHandler = {
       $(this).removeClass("is-invalid");
     });
 
-    // Calculate harga per gram
     const calculateHargaPerGram = () => {
       const berat = parseFloat($beratInput.val()) || 0;
       let totalHarga = $totalHargaInput.val().replace(/\./g, "");
@@ -1102,7 +1133,6 @@ const penjualanHandler = {
     $totalHargaInput.add($beratInput).on("input", calculateHargaPerGram);
     $jumlahInput.on("input", () => this.updateGrandTotal(salesType));
 
-    // Format total harga
     $totalHargaInput.on("blur", function () {
       const value = $(this).val().replace(/\./g, "");
       $(this).val(utils.formatRupiah(parseInt(value || 0)));
@@ -1150,7 +1180,6 @@ const penjualanHandler = {
 
     $jumlahInput.add($hargaInput).on("input", calculateTotal);
 
-    // Format harga saat blur
     $hargaInput.on("blur", function () {
       const value = $(this).val().replace(/\./g, "");
       $(this).val(utils.formatRupiah(parseInt(value)));
@@ -1258,7 +1287,6 @@ const penjualanHandler = {
     }
   },
 
-  // Reset table and add input row for manual
   resetTableAndAddInputRow(type) {
     $("#tableManualDetail tbody").empty();
 
@@ -1288,9 +1316,7 @@ const penjualanHandler = {
     $("#manualInputKode").focus();
   },
 
-  // Attach manual input handlers
   attachManualInputHandlers() {
-    // Remove existing handlers
     $("#manualBtnPilihKodeLock").off("click");
     $("#manualInputBerat, #manualInputTotalHarga").off("input");
 

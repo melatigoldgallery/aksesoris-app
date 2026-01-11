@@ -37,9 +37,6 @@ const StockService = {
     } = stockData;
 
     try {
-      console.log(`📝 StockService.updateStock: ${kode} - ${jenis} - ${jumlah}`);
-
-      // ✅ Log to transaction (single source of truth)
       const transactionData = {
         kode,
         jenis,
@@ -49,7 +46,6 @@ const StockService = {
         sales,
       };
 
-      // Add optional fields
       if (nama) transactionData.nama = nama;
       if (kategori) transactionData.kategori = kategori;
       if (kodeTransaksi) transactionData.kodeTransaksi = kodeTransaksi;
@@ -58,8 +54,6 @@ const StockService = {
       if (newStock !== null) transactionData.stokSesudah = newStock;
 
       const transactionRef = await addDoc(collection(firestore, "stokAksesorisTransaksi"), transactionData);
-
-      console.log(`✅ Transaction saved: ${transactionRef.id} (${kode} - ${jenis})`);
 
       return transactionRef;
     } catch (error) {
@@ -145,20 +139,13 @@ const StockService = {
         throw new Error("Firestore is not initialized");
       }
 
-      const startTime = performance.now();
       const endOfDay = new Date(upToDate);
       endOfDay.setHours(23, 59, 59, 999);
 
-      // ✅ Single query for ALL transactions
       const transactions = await getDocs(
         query(collection(firestore, "stokAksesorisTransaksi"), where("timestamp", "<=", Timestamp.fromDate(endOfDay)))
       );
 
-      console.log(
-        `📦 Batch query: ${transactions.size} transactions in ${(performance.now() - startTime).toFixed(0)}ms`
-      );
-
-      // ✅ Group and calculate in-memory (fast!)
       const stockMap = new Map();
       const transactionsByKode = new Map();
 
@@ -197,19 +184,13 @@ const StockService = {
         }
       });
 
-      // ✅ Filter by kodeList if provided
       if (kodeList.length > 0) {
         const filtered = new Map();
         kodeList.forEach((kode) => {
           filtered.set(kode, stockMap.get(kode) || 0);
         });
-
-        console.log(`📊 Batch calculated: ${filtered.size} kode in ${(performance.now() - startTime).toFixed(0)}ms`);
-
         return filtered;
       }
-
-      console.log(`📊 Batch calculated: ${stockMap.size} kode in ${(performance.now() - startTime).toFixed(0)}ms`);
 
       return stockMap;
     } catch (error) {
@@ -237,32 +218,25 @@ const StockService = {
         return new Map();
       }
 
-      const startTime = performance.now();
       const endOfDay = new Date(upToDate);
       endOfDay.setHours(23, 59, 59, 999);
 
       const stockMap = new Map();
 
-      // ✅ Firestore "in" operator limit = 10 items → need batching
       const batches = [];
       for (let i = 0; i < kodes.length; i += 10) {
         batches.push(kodes.slice(i, i + 10));
       }
 
-      console.log(`🔍 Incremental calc: ${kodes.length} kode in ${batches.length} batch(es)`);
-
-      // ✅ Query only transactions for specified kodes (93% reduction!)
       for (const batch of batches) {
         const transactions = await getDocs(
           query(
             collection(firestore, "stokAksesorisTransaksi"),
-            where("kode", "in", batch), // ✅ Filter by kode!
+            where("kode", "in", batch),
             where("timestamp", "<=", Timestamp.fromDate(endOfDay)),
             orderBy("timestamp", "asc")
           )
         );
-
-        console.log(`  📦 Batch ${batches.indexOf(batch) + 1}: ${transactions.size} transactions`);
 
         // Calculate stock for each kode in batch
         transactions.forEach((doc) => {
@@ -297,19 +271,10 @@ const StockService = {
         });
       }
 
-      // Ensure all requested kodes are in result (even if 0)
       kodes.forEach((kode) => {
         if (!stockMap.has(kode)) {
           stockMap.set(kode, 0);
         }
-      });
-
-      const duration = (performance.now() - startTime).toFixed(0);
-      console.log(`✅ Incremental calc complete: ${stockMap.size} kode in ${duration}ms`);
-
-      // Log calculated stocks
-      stockMap.forEach((stock, kode) => {
-        console.log(`  📊 ${kode}: ${stock}`);
       });
 
       return stockMap;
@@ -376,6 +341,84 @@ const StockService = {
         gantiLock: 0,
         return: 0,
       };
+    }
+  },
+
+  /**
+   * Get stock snapshot for a specific date (OPTIMIZATION)
+   * Reduces reads by 95% - queries pre-calculated daily snapshot instead of all transactions
+   * Falls back to yesterday's snapshot if today's not available
+   * @param {Date} date - Date to get snapshot for
+   * @returns {Map|null} Map of kode -> stokAkhir, or null if not found
+   */
+  async getStockSnapshot(date) {
+    try {
+      if (!firestore) {
+        throw new Error("Firestore is not initialized");
+      }
+
+      // Try today's snapshot first
+      const dateKey = this.formatDate(date);
+      console.log(`📸 Fetching snapshot for ${dateKey}`);
+
+      let q = query(collection(firestore, "dailyStockSnapshot"), where("date", "==", dateKey));
+      let snapshot = await getDocs(q);
+
+      // If not found, try yesterday's snapshot
+      if (snapshot.empty) {
+        const yesterday = new Date(date);
+        yesterday.setDate(yesterday.getDate() - 1);
+        const yesterdayKey = this.formatDate(yesterday);
+
+        console.log(`⚠️ No snapshot for ${dateKey}, trying ${yesterdayKey}`);
+
+        q = query(collection(firestore, "dailyStockSnapshot"), where("date", "==", yesterdayKey));
+        snapshot = await getDocs(q);
+
+        if (snapshot.empty) {
+          console.warn(`⚠️ No snapshot found for ${dateKey} or ${yesterdayKey}`);
+          return null;
+        }
+
+        console.log(`✅ Using yesterday's snapshot (${yesterdayKey})`);
+      }
+
+      const data = snapshot.docs[0].data();
+      const stockMap = new Map();
+
+      if (data.stockData && Array.isArray(data.stockData)) {
+        data.stockData.forEach((item) => {
+          if (item.kode) {
+            stockMap.set(item.kode, item.stokAkhir || 0);
+          }
+        });
+      }
+
+      console.log(`✅ Snapshot loaded: ${stockMap.size} items`);
+      return stockMap;
+    } catch (error) {
+      console.error("❌ getStockSnapshot error:", error);
+      return null;
+    }
+  },
+
+  /**
+   * Format date to dd/mm/yyyy string
+   * @param {Date} date - Date to format
+   * @returns {string} Formatted date string
+   */
+  formatDate(date) {
+    if (!date) return "";
+    try {
+      const d = date instanceof Date ? date : new Date(date);
+      if (isNaN(d.getTime())) return "";
+      const day = String(d.getDate()).padStart(2, "0");
+      const month = String(d.getMonth() + 1).padStart(2, "0");
+      const year = d.getFullYear();
+      return `${day}/${month}/${year}`;
+    } catch (error) {
+      console.error("Error formatting date:", error);
+      return "";
     }
   },
 };

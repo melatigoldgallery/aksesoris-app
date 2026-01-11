@@ -10,6 +10,7 @@ import {
   query,
   where,
   orderBy,
+  limit,
   Timestamp,
   serverTimestamp,
 } from "https://www.gstatic.com/firebasejs/10.4.0/firebase-firestore.js";
@@ -553,6 +554,10 @@ export const aksesorisSaleHandler = {
       if (cachedData) {
         document.getElementById("textKode").value = cachedData.text;
         document.getElementById("namaKode").value = cachedData.nama;
+        // Load harga jika kategori kotak
+        if (kategori === "kotak" && cachedData.harga !== undefined) {
+          document.getElementById("hargaKode").value = cachedData.harga || "";
+        }
         return;
       }
 
@@ -563,6 +568,10 @@ export const aksesorisSaleHandler = {
         const data = docSnap.data();
         document.getElementById("textKode").value = data.text;
         document.getElementById("namaKode").value = data.nama;
+        // Load harga jika kategori kotak
+        if (kategori === "kotak" && data.harga !== undefined) {
+          document.getElementById("hargaKode").value = data.harga || "";
+        }
         setCacheWithTimestamp(cacheKey, data, CACHE_TTL_STANDARD);
       } else {
         console.error("Dokumen tidak ditemukan!");
@@ -699,6 +708,11 @@ export const aksesorisSaleHandler = {
       // IMPROVED: Invalidate related caches
       invalidateCache("stockAdditionHistory");
       invalidateCache("stockData");
+
+      // Set flag untuk invalidate cache di halaman penjualan (cross-page)
+      sessionStorage.setItem("stokAksesoris_needsRefresh", "true");
+      sessionStorage.setItem("stokAksesoris_lastUpdate", Date.now().toString());
+
       const totalItems = items.reduce((total, item) => total + item.jumlah, 0);
       const kategoriText = this.elements.selectKategori.value === "1" ? "Kotak" : "Aksesoris";
       this.showSuccessNotification(`
@@ -1451,11 +1465,16 @@ export const aksesorisSaleHandler = {
     let no = 1;
 
     kodeData.forEach((item) => {
+      const hargaColumn =
+        kategori === "kotak"
+          ? `<td>${item.harga ? `Rp ${parseInt(item.harga).toLocaleString("id-ID")}` : "-"}</td>`
+          : "";
       html += `
         <tr>
           <td>${no++}</td>
           <td>${item.text}</td>
           <td>${item.nama}</td>
+          ${hargaColumn}
           <td>
             <button class="btn btn-warning btn-sm me-1 btn-edit" data-id="${item.id}">
               <i class="fas fa-edit"></i>
@@ -1495,6 +1514,13 @@ export const aksesorisSaleHandler = {
     document.getElementById("formKodeBarang").reset();
     document.getElementById("kategoriKode").value = kategori;
     const modalTitle = document.getElementById("modalFormKodeLabel");
+    const hargaContainer = document.getElementById("hargaKodeContainer");
+
+    // Tampilkan input harga hanya untuk kategori kotak
+    if (hargaContainer) {
+      hargaContainer.style.display = kategori === "kotak" ? "block" : "none";
+    }
+
     if (modalTitle) {
       modalTitle.textContent = docId ? "Edit Kode Barang" : "Tambah Kode Baru";
     }
@@ -1515,10 +1541,17 @@ export const aksesorisSaleHandler = {
     const kategori = document.getElementById("kategoriKode").value;
     const text = document.getElementById("textKode").value;
     const nama = document.getElementById("namaKode").value;
+    const harga = document.getElementById("hargaKode").value;
+
     const data = {
       text: text || "",
       nama: nama || "",
     };
+
+    // Tambahkan field harga hanya untuk kategori kotak
+    if (kategori === "kotak" && harga) {
+      data.harga = parseInt(harga) || 0;
+    }
 
     try {
       if (docId) {
@@ -1529,6 +1562,11 @@ export const aksesorisSaleHandler = {
 
       invalidateCache("kodeAksesoris");
       invalidateCache(`kodeBarang_${kategori}`);
+
+      // Set flag untuk invalidate cache di halaman lain (cross-page)
+      sessionStorage.setItem("stokAksesoris_needsRefresh", "true");
+      sessionStorage.setItem("stokAksesoris_lastUpdate", Date.now().toString());
+
       this.modalFormKode.hide();
       this.loadKodeBarang(kategori);
       await this.loadKodeAksesorisData();
@@ -1575,11 +1613,18 @@ export const aksesorisSaleHandler = {
     try {
       await addDoc(collection(firestore, "kodeAksesoris", "kategori", kategori), data);
 
-      await addDoc(collection(firestore, "stokAksesoris"), {
+      const stokData = {
         kode: data.text,
         nama: data.nama,
         kategori: kategori,
-      });
+      };
+
+      // Tambahkan harga ke stokAksesoris jika kategori kotak dan ada harga
+      if (kategori === "kotak" && data.harga !== undefined) {
+        stokData.harga = data.harga;
+      }
+
+      await addDoc(collection(firestore, "stokAksesoris"), stokData);
       invalidateCache("stockData");
 
       this.showSuccessNotification("Data berhasil ditambahkan!");
@@ -1598,10 +1643,17 @@ export const aksesorisSaleHandler = {
       const stockSnapshot = await getDocs(stockQuery);
 
       if (!stockSnapshot.empty) {
-        const stockDocRef = doc(firestore, "stokAksesoris", stockSnapshot.docs[0].id);
-        await updateDoc(stockDocRef, {
+        const updateData = {
           nama: data.nama,
-        });
+        };
+
+        // Update harga di stokAksesoris jika kategori kotak
+        if (kategori === "kotak" && data.harga !== undefined) {
+          updateData.harga = data.harga;
+        }
+
+        const stockDocRef = doc(firestore, "stokAksesoris", stockSnapshot.docs[0].id);
+        await updateDoc(stockDocRef, updateData);
       }
       invalidateCache("stockData");
 
@@ -1636,6 +1688,10 @@ export const aksesorisSaleHandler = {
       invalidateCache("kodeAksesoris");
       invalidateCache(`kodeBarang_${kategori}`);
       invalidateCache("stockData");
+
+      // Set flag untuk invalidate cache di halaman lain (cross-page)
+      sessionStorage.setItem("stokAksesoris_needsRefresh", "true");
+      sessionStorage.setItem("stokAksesoris_lastUpdate", Date.now().toString());
 
       this.loadKodeBarang(kategori);
       await this.loadKodeAksesorisData();
