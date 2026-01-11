@@ -90,7 +90,7 @@ function populateStaffDropdown(selectElementOrId) {
     typeof selectElementOrId === "string" ? document.getElementById(selectElementOrId) : selectElementOrId;
 
   if (!selectElement) {
-    console.warn("Staff dropdown element not found:", selectElementOrId);
+    // Silently return if element doesn't exist (expected on pages that don't use all dropdowns)
     return;
   }
 

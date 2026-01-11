@@ -440,82 +440,45 @@
       </div>
     </div>
 
-    <!-- Delete Confirmation Modal - REPLACE EXISTING -->
+    <!-- Delete Confirmation Modal -->
     <div class="modal fade" id="deleteModal" tabindex="-1" aria-labelledby="deleteModalLabel" aria-hidden="true">
       <div class="modal-dialog">
         <div class="modal-content">
           <div class="modal-header">
-            <h5 class="modal-title" id="deleteModalLabel">Pilih Jenis Penghapusan</h5>
+            <h5 class="modal-title" id="deleteModalLabel">Hapus Penjualan</h5>
             <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
           </div>
           <div class="modal-body">
-            <div class="alert alert-info">
-              <h6 class="mb-2">Pilih jenis penghapusan:</h6>
-              <ul class="mb-0 small">
-                <li>
-                  <strong>Hapus Penjualan:</strong>
-                  Hapus data penjualan, stok tetap berkurang
-                </li>
-                <li>
-                  <strong>Batal Penjualan:</strong>
-                  Batalkan transaksi dan kembalikan stok
-                </li>
-              </ul>
+            <div class="alert alert-warning">
+              <i class="fas fa-exclamation-triangle me-2"></i>
+              <strong>Peringatan!</strong>
+              Tindakan ini tidak dapat dibatalkan.
             </div>
 
             <div id="deleteTransactionInfo" class="mb-3">
               <!-- Info transaksi akan diisi oleh JavaScript -->
             </div>
 
-            <!-- Multiple Items Selection (hidden by default) -->
-            <div id="multipleItemsSection" style="display: none" class="mb-3">
-              <h6>Pilih item yang akan dibatalkan:</h6>
-              <div id="itemCheckboxes">
-                <!-- Checkboxes akan diisi oleh JavaScript -->
-              </div>
+            <div id="restoreInfo" class="mb-3">
+              <!-- Info restore stok akan diisi oleh JavaScript -->
             </div>
 
-            <div class="d-grid gap-2 mb-3">
-              <button type="button" class="btn btn-warning" id="btnHapusPenjualan">
-                <i class="fas fa-trash me-2"></i>
-                Hapus Penjualan
-              </button>
-              <button type="button" class="btn btn-danger" id="btnBatalPenjualan">
-                <i class="fas fa-undo me-2"></i>
-                Batal Penjualan
-              </button>
-            </div>
-
-            <!-- Password Section (hidden by default) -->
-            <div id="passwordSection" style="display: none">
-              <div class="alert alert-warning">
-                <i class="fas fa-exclamation-triangle me-2"></i>
-                <strong>Peringatan!</strong>
-                Tindakan ini tidak dapat dibatalkan.
-              </div>
-              <div class="mb-3">
-                <label for="deleteVerificationPassword" class="form-label">Masukkan kata sandi verifikasi:</label>
-                <input
-                  type="password"
-                  class="form-control"
-                  id="deleteVerificationPassword"
-                  placeholder="Kata sandi admin"
-                />
-              </div>
-              <div class="d-grid gap-2">
-                <button type="button" class="btn btn-success" id="btnConfirmAction">
-                  <i class="fas fa-check me-2"></i>
-                  Konfirmasi
-                </button>
-                <button type="button" class="btn btn-secondary" id="btnBackToOptions">
-                  <i class="fas fa-arrow-left me-2"></i>
-                  Kembali
-                </button>
-              </div>
+            <div class="mb-3">
+              <label for="deleteVerificationPassword" class="form-label">Masukkan kata sandi verifikasi:</label>
+              <input
+                type="password"
+                class="form-control"
+                id="deleteVerificationPassword"
+                placeholder="Kata sandi admin"
+              />
             </div>
           </div>
-          <div class="modal-footer" id="modalFooter">
-            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Tutup</button>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Batal</button>
+            <button type="button" class="btn btn-danger" id="btnConfirmDelete">
+              <i class="fas fa-trash me-2"></i>
+              Hapus Penjualan
+            </button>
           </div>
         </div>
       </div>

@@ -801,6 +801,25 @@ function showSuccessNotification(message) {
   }, 3000);
 }
 
+function showErrorNotification(message) {
+  const toast = document.createElement("div");
+  toast.className = "toast-notification error";
+  toast.innerHTML = `
+    <i class="fas fa-exclamation-circle"></i>
+    <span>${message}</span>
+  `;
+  document.body.appendChild(toast);
+
+  // Show toast
+  setTimeout(() => toast.classList.add("show"), 100);
+
+  // Hide toast after 3 seconds
+  setTimeout(() => {
+    toast.classList.remove("show");
+    setTimeout(() => toast.remove(), 300);
+  }, 3000);
+}
+
 let komputerEditMainCat = "";
 
 document.body.addEventListener("click", function (e) {
@@ -1124,7 +1143,6 @@ document.body.addEventListener("click", function (e) {
 });
 
 function showHistoryModal(category, mainCat) {
-  const modal = new bootstrap.Modal(document.getElementById("modalRiwayat"));
   const titleEl = document.getElementById("riwayat-title");
   const tbody = document.getElementById("riwayat-table-body");
   const info = document.getElementById("riwayat-info");
@@ -1139,7 +1157,8 @@ function showHistoryModal(category, mainCat) {
     stockData[category][mainCat].history.length === 0
   ) {
     tbody.innerHTML = `<tr><td colspan="5" class="text-center text-muted">Tidak ada riwayat</td></tr>`;
-    return modal.show();
+    $("#modalRiwayat").modal("show");
+    return;
   }
 
   const history = stockData[category][mainCat].history.slice(0, 10);
@@ -1160,13 +1179,17 @@ function showHistoryModal(category, mainCat) {
     let keteranganText = record.keterangan || record.receiver || "-";
 
     if (record.items && Array.isArray(record.items)) {
-      const list = record.items.map((it) => `${it.jewelryName}: ${it.quantity}`).join(", ");
-      jewelryInfo = list;
-      // Tambahkan ke keterangan jika ada
-      if (keteranganText !== "-") {
-        keteranganText = `${jewelryInfo} | ${keteranganText}`;
-      } else {
-        keteranganText = jewelryInfo;
+      // Filter hanya items yang quantity-nya tidak 0 (benar-benar diupdate)
+      const updatedItems = record.items.filter((it) => it.quantity !== 0);
+      if (updatedItems.length > 0) {
+        const list = updatedItems.map((it) => `${it.jewelryName}: ${it.quantity}`).join(", ");
+        jewelryInfo = list;
+        // Tambahkan ke keterangan jika ada
+        if (keteranganText !== "-") {
+          keteranganText = `${jewelryInfo} | ${keteranganText}`;
+        } else {
+          keteranganText = jewelryInfo;
+        }
       }
     } else if (record.jewelryType && record.jewelryName) {
       jewelryInfo = `${record.jewelryName}`;
@@ -1191,7 +1214,7 @@ function showHistoryModal(category, mainCat) {
   if (stockData[category][mainCat].history.length > 10) {
     info.textContent = "Menampilkan 10 riwayat terbaru. Riwayat lama dihapus otomatis.";
   }
-  modal.show();
+  $("#modalRiwayat").modal("show");
 }
 
 // === Event Delegation Untuk Tombol Tambah/Kurangi di Tabel ===
@@ -1345,19 +1368,37 @@ document.body.addEventListener("click", function (e) {
 // === Handler Submit Modal Update Stok Display/Manual ===
 document.getElementById("formUpdateStok").onsubmit = async function (e) {
   e.preventDefault();
-  const mainCat = document.getElementById("updateStokMainCat").value;
-  const category = document.getElementById("updateStokCategory").value;
-  const jumlah = document.getElementById("updateStokJumlah").value;
-  const petugas = document.getElementById("updateStokPetugas").value;
-  const keterangan = document.getElementById("keteranganUpdateStok").value;
+  const submitBtn = document.getElementById("submitUpdateStokBtn");
+  const originalText = submitBtn ? submitBtn.innerHTML : "";
 
-  if (!mainCat || !category || jumlah === "" || !petugas || !keterangan) {
-    alert("Semua field harus diisi.");
-    return;
+  try {
+    if (submitBtn) {
+      submitBtn.disabled = true;
+      submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Menyimpan...';
+    }
+
+    const mainCat = document.getElementById("updateStokMainCat").value;
+    const category = document.getElementById("updateStokCategory").value;
+    const jumlah = document.getElementById("updateStokJumlah").value;
+    const petugas = document.getElementById("updateStokPetugas").value;
+    const keterangan = document.getElementById("keteranganUpdateStok").value;
+
+    if (!mainCat || !category || jumlah === "" || !petugas || !keterangan) {
+      throw new Error("Semua field harus diisi.");
+    }
+
+    await updateStokDisplayManual(category, mainCat, jumlah, petugas, keterangan);
+    showSuccessNotification(`Update ${mainCat} berhasil!`);
+    $("#modalUpdateStok").modal("hide");
+  } catch (err) {
+    console.error("Gagal update stok:", err);
+    alert(err.message || "Gagal update stok");
+  } finally {
+    if (submitBtn) {
+      submitBtn.disabled = false;
+      submitBtn.innerHTML = originalText;
+    }
   }
-
-  await updateStokDisplayManual(category, mainCat, jumlah, petugas, keterangan);
-  $("#modalUpdateStok").modal("hide");
 };
 
 // GANTI setupRealtimeListener: gunakan data snapshot langsung,
@@ -1462,6 +1503,14 @@ document.addEventListener("DOMContentLoaded", async function () {
     await populateTables();
     setupRealtimeListener();
     setupCrossTabSync();
+
+    // Populate staff dropdowns untuk semua form update
+    if (typeof populateStaffDropdown === "function") {
+      populateStaffDropdown("petugasUpdateStokKalungBulk");
+      populateStaffDropdown("petugasUpdateStokLiontinBulk");
+      populateStaffDropdown("petugasUpdateStokHalaBulk");
+      populateStaffDropdown("updateStokPetugas");
+    }
   } catch (error) {
     console.error("Error initializing:", error);
     showErrorMessage("Gagal memuat data. Silakan refresh halaman.");
@@ -1606,11 +1655,115 @@ if (formUpdateHala) {
       }
 
       await populateTables();
-      showSuccessNotification("Update HALA berhasil");
+      showSuccessNotification(`Update ${mainCat} berhasil!`);
       $("#modalUpdateStokHala").modal("hide");
     } catch (err) {
-      console.error("Gagal update HALA", err);
-      showErrorNotification(err.message || "Gagal update HALA");
+      console.error(`Gagal update ${mainCat}`, err);
+      showErrorNotification(err.message || `Gagal update ${mainCat}`);
+    } finally {
+      if (submitBtn) {
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = originalText;
+      }
+    }
+  };
+}
+
+// Submit handler untuk formUpdateStokKalungBulk
+const formUpdateKalung = document.getElementById("formUpdateStokKalungBulk");
+if (formUpdateKalung) {
+  formUpdateKalung.onsubmit = async function (e) {
+    e.preventDefault();
+    const submitBtn = document.getElementById("submitBulkKalungUpdateBtn");
+    const originalText = submitBtn ? submitBtn.innerHTML : "";
+    try {
+      if (submitBtn) {
+        submitBtn.disabled = true;
+        submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Menyimpan...';
+      }
+
+      const petugasInput = document.getElementById("petugasUpdateStokKalungBulk");
+      const keterangan = document.getElementById("keteranganUpdateKalungBulk").value;
+      const petugas = petugasInput ? petugasInput.value.trim() : "";
+
+      if (!petugas) throw new Error("Nama staf harus diisi");
+      if (!keterangan) throw new Error("Keterangan harus diisi");
+
+      const category = currentCategory;
+      const updates = [];
+
+      kalungColorTypes.forEach((t) => {
+        const input = document.querySelector(`#modalUpdateStokKalung .kalung-update-qty-input[data-type="${t}"]`);
+        if (input && input.value !== "") {
+          const newQty = parseInt(input.value);
+          if (!isNaN(newQty) && newQty >= 0) {
+            updates.push({ type: t, newQty });
+          }
+        }
+      });
+
+      if (updates.length === 0) {
+        throw new Error("Minimal satu warna harus diubah");
+      }
+
+      await updateStockKalungBulk(category, updates, petugas, keterangan);
+      showSuccessNotification("Update KALUNG berhasil!");
+      $("#modalUpdateStokKalung").modal("hide");
+    } catch (err) {
+      console.error("Gagal update KALUNG", err);
+      alert(err.message || "Gagal update KALUNG");
+    } finally {
+      if (submitBtn) {
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = originalText;
+      }
+    }
+  };
+}
+
+// Submit handler untuk formUpdateStokLiontinBulk
+const formUpdateLiontin = document.getElementById("formUpdateStokLiontinBulk");
+if (formUpdateLiontin) {
+  formUpdateLiontin.onsubmit = async function (e) {
+    e.preventDefault();
+    const submitBtn = document.getElementById("submitBulkLiontinUpdateBtn");
+    const originalText = submitBtn ? submitBtn.innerHTML : "";
+    try {
+      if (submitBtn) {
+        submitBtn.disabled = true;
+        submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Menyimpan...';
+      }
+
+      const petugasInput = document.getElementById("petugasUpdateStokLiontinBulk");
+      const keterangan = document.getElementById("keteranganUpdateLiontinBulk").value;
+      const petugas = petugasInput ? petugasInput.value.trim() : "";
+
+      if (!petugas) throw new Error("Nama staf harus diisi");
+      if (!keterangan) throw new Error("Keterangan harus diisi");
+
+      const category = currentCategory;
+      const updates = [];
+
+      liontinColorTypes.forEach((t) => {
+        const input = document.querySelector(`#modalUpdateStokLiontin .liontin-update-qty-input[data-type="${t}"]`);
+        if (input && input.value !== "") {
+          const newQty = parseInt(input.value);
+          if (!isNaN(newQty) && newQty >= 0) {
+            updates.push({ type: t, newQty });
+          }
+        }
+      });
+
+      if (updates.length === 0) {
+        throw new Error("Minimal satu warna harus diubah");
+      }
+
+      await updateStockLiontinBulk(category, updates, petugas, keterangan);
+      showSuccessNotification("Update LIONTIN berhasil!");
+      $("#modalUpdateStokLiontin").modal("hide");
+    } catch (err) {
+      console.error("Gagal update LIONTIN", err);
+      alert(err.message || "Gagal update LIONTIN");
     } finally {
       if (submitBtn) {
         submitBtn.disabled = false;

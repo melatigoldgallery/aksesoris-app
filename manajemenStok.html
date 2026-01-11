@@ -481,7 +481,7 @@
                   <i class="fas fa-gem me-2"></i>
                   BERLIAN
                 </button>
-              <!-- </li>
+                <!-- </li>
               <li class="nav-item" role="presentation">
                 <button
                   class="nav-link"
@@ -496,7 +496,7 @@
                   SDW
                 </button>
               </li> -->
-              <!-- <li class="nav-item" role="presentation">
+                <!-- <li class="nav-item" role="presentation">
                 <button
                   class="nav-link"
                   id="emas-bali-tab"
@@ -510,6 +510,8 @@
                   EMAS BALI
                 </button>
               </li> -->
+              </li>
+
               <li class="nav-item" role="presentation">
                 <button
                   class="nav-link"
@@ -887,134 +889,6 @@
                       <button type="submit" class="btn btn-primary w-100">Simpan</button>
                     </div>
                   </form>
-                </div>
-              </div>
-            </div>
-
-            <!-- DEPRECATED MODALS REMOVED: modalTambahStok, modalKurangiStok (Generic) -->
-            <!-- DEPRECATED MODALS REMOVED: modalTambahStokKalung, modalKurangiStokKalung -->
-            <!-- DEPRECATED MODALS REMOVED: modalTambahStokLiontin, modalKurangiStokLiontin -->
-            <!-- DEPRECATED MODALS REMOVED: modalTambahStokHala, modalKurangiStokHala -->
-            <!-- Only Update modals are used now (modalUpdateStokKalung, modalUpdateStokLiontin, modalUpdateStokHala) -->
-
-            <!-- Modal Update Stok KALUNG (Bulk) -->
-                      <div class="mb-3">
-                        <label class="form-label">Jenis Barang</label>
-                        <input
-                          type="text"
-                          id="jenisTambahKalungDisplay"
-                          class="form-control"
-                          readonly
-                          style="background-color: #f8f9fa"
-                        />
-                        <input type="hidden" id="jenisTambahKalung" />
-                      </div>
-                      <div class="table-responsive hala-bulk-table mb-3">
-                        <table class="table table-sm table-bordered align-middle">
-                          <thead class="table-success">
-                            <tr>
-                              <th style="width: 50%">Warna</th>
-                              <th style="width: 50%">Jumlah</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            <tr>
-                              <td>Hijau</td>
-                              <td>
-                                <input
-                                  type="number"
-                                  min="0"
-                                  class="form-control form-control-sm kalung-add-qty-input"
-                                  data-type="HIJAU"
-                                  placeholder="0"
-                                />
-                              </td>
-                            </tr>
-                            <tr>
-                              <td>Biru</td>
-                              <td>
-                                <input
-                                  type="number"
-                                  min="0"
-                                  class="form-control form-control-sm kalung-add-qty-input"
-                                  data-type="BIRU"
-                                  placeholder="0"
-                                />
-                              </td>
-                            </tr>
-                            <tr>
-                              <td>Putih</td>
-                              <td>
-                                <input
-                                  type="number"
-                                  min="0"
-                                  class="form-control form-control-sm kalung-add-qty-input"
-                                  data-type="PUTIH"
-                                  placeholder="0"
-                                />
-                              </td>
-                            </tr>
-                            <tr>
-                              <td>Pink</td>
-                              <td>
-                                <input
-                                  type="number"
-                                  min="0"
-                                  class="form-control form-control-sm kalung-add-qty-input"
-                                  data-type="PINK"
-                                  placeholder="0"
-                                />
-                              </td>
-                            </tr>
-                            <tr>
-                              <td>Kuning</td>
-                              <td>
-                                <input
-                                  type="number"
-                                  min="0"
-                                  class="form-control form-control-sm kalung-add-qty-input"
-                                  data-type="KUNING"
-                                  placeholder="0"
-                                />
-                              </td>
-                            </tr>
-                          </tbody>
-                        </table>
-                      </div>
-                      <div class="mb-3">
-                        <label class="form-label">Nama Staff</label>
-                        <select class="form-select" id="penambahStokKalungBulk" required>
-                          <option value="">-- Pilih Nama Staff --</option>
-                        </select>
-                      </div>
-                      <div class="mb-3">
-                        <label class="form-label">
-                          Keterangan
-                          <span class="text-danger">*</span>
-                        </label>
-                        <select class="form-select" id="keteranganTambahKalungBulk" required>
-                          <option value="">-- Pilih Keterangan --</option>
-                          <option value="restok">Restok</option>
-                          <option value="laku">Laku</option>
-                          <option value="dipajang">Dipajang</option>
-                          <option value="sudah posting">Sudah Posting</option>
-                          <option value="tutup toko">Tutup Toko</option>
-                          <option value="mutasi staff">Mutasi Staff</option>
-                          <option value="barang rusak">Barang Rusak</option>
-                          <option value="batu lepas">Batu Lepas</option>
-                          <option value="kode bermasalah">Kode Bermasalah</option>
-                          <option value="mutasi">Sudah Mutasi</option>
-                          <option value="diperbaiki">Diperbaiki</option>
-                          <option value="salah update">Salah Update</option>
-                          <option value="custom">Contoh Custom</option>
-                        </select>
-                      </div>
-                      <button type="submit" class="btn btn-primary w-100" id="submitBulkKalungAddBtn">
-                        Simpan Semua
-                      </button>
-                      <small class="text-muted d-block mt-2">Hanya jumlah > 0 yang akan diproses.</small>
-                    </form>
-                  </div>
                 </div>
               </div>
             </div>
@@ -1725,24 +1599,24 @@
                       </label>
                       <select class="form-select" id="keteranganUpdateStok" required>
                         <option value="">-- Pilih Keterangan --</option>
-                          <option value="restok">Restok</option>
-                          <option value="laku">Laku</option>
-                          <option value="dipajang">Dipajang</option>
-                          <option value="sudah posting">Sudah Posting</option>
-                          <option value="tutup toko">Tutup Toko</option>
-                          <option value="mutasi staff">Mutasi Staff</option>
-                          <option value="barang rusak">Barang Rusak</option>
-                          <option value="batu lepas">Batu Lepas</option>
-                          <option value="kode bermasalah">Kode Bermasalah</option>
-                          <option value="mutasi">Sudah Mutasi</option>
-                          <option value="diperbaiki">Diperbaiki</option>
-                          <option value="salah update">Salah Update</option>
-                          <option value="custom">Contoh Custom</option>
+                        <option value="restok">Restok</option>
+                        <option value="laku">Laku</option>
+                        <option value="dipajang">Dipajang</option>
+                        <option value="sudah posting">Sudah Posting</option>
+                        <option value="tutup toko">Tutup Toko</option>
+                        <option value="mutasi staff">Mutasi Staff</option>
+                        <option value="barang rusak">Barang Rusak</option>
+                        <option value="batu lepas">Batu Lepas</option>
+                        <option value="kode bermasalah">Kode Bermasalah</option>
+                        <option value="mutasi">Sudah Mutasi</option>
+                        <option value="diperbaiki">Diperbaiki</option>
+                        <option value="salah update">Salah Update</option>
+                        <option value="custom">Contoh Custom</option>
                       </select>
                     </div>
                   </div>
                   <div class="modal-footer">
-                    <button type="submit" class="btn btn-primary w-100">Update Stok</button>
+                    <button type="submit" class="btn btn-primary w-100" id="submitUpdateStokBtn">Update Stok</button>
                   </div>
                 </form>
               </div>

@@ -1007,6 +1007,328 @@ const laporanPenjualanHandler = {
         `;
       }
     });
+
+    // Export monthly button
+    document.getElementById("btnExportPenjualanBulanan")?.addEventListener("click", () => {
+      this.handleExportMonthly();
+    });
+  },
+
+  // ==================== MONTHLY EXPORT METHODS ====================
+
+  /**
+   * Handle export monthly button click
+   */
+  async handleExportMonthly() {
+    const monthInput = document.getElementById("exportMonthInput");
+    if (!monthInput || !monthInput.value) {
+      this.showAlert("Pilih bulan yang akan diexport", "Peringatan", "warning");
+      return;
+    }
+
+    try {
+      this.showLoading(true);
+      await this.generateMonthlyExcel(monthInput.value);
+      this.showAlert("Export berhasil!", "Sukses", "success");
+    } catch (error) {
+      console.error("Error exporting monthly data:", error);
+      this.showAlert("Gagal mengexport data: " + error.message, "Error", "error");
+    } finally {
+      this.showLoading(false);
+    }
+  },
+
+  /**
+   * Fetch sales data for a specific month
+   */
+  async fetchMonthlyData(monthStr) {
+    const [year, month] = monthStr.split("-");
+    const startDate = new Date(parseInt(year), parseInt(month) - 1, 1);
+    const endDate = new Date(parseInt(year), parseInt(month), 1);
+
+    const q = query(
+      collection(firestore, "penjualanAksesoris"),
+      where("timestamp", ">=", Timestamp.fromDate(startDate)),
+      where("timestamp", "<", Timestamp.fromDate(endDate)),
+      orderBy("timestamp", "asc")
+    );
+
+    const snapshot = await getDocs(q);
+    return snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+  },
+
+  /**
+   * Group data by date and sales type
+   */
+  groupDataByDateAndType(transactions) {
+    const dailyData = new Map();
+
+    transactions.forEach((transaction) => {
+      const date = this.getDateStringFromTransaction(transaction);
+      const jenis = transaction.jenisPenjualan || "aksesoris";
+
+      if (!dailyData.has(date)) {
+        dailyData.set(date, {
+          aksesoris: [],
+          kotak: [],
+          silver: [],
+          manual: [],
+        });
+      }
+
+      const dayData = dailyData.get(date);
+
+      // Flatten items and add to appropriate group
+      if (transaction.items && Array.isArray(transaction.items)) {
+        transaction.items.forEach((item) => {
+          const processedItem = this.processItemForExport(item, transaction);
+          dayData[jenis].push(processedItem);
+        });
+      }
+    });
+
+    return dailyData;
+  },
+
+  /**
+   * Get date string from transaction
+   */
+  getDateStringFromTransaction(transaction) {
+    if (transaction.timestamp && transaction.timestamp.seconds) {
+      const date = new Date(transaction.timestamp.seconds * 1000);
+      return formatDate(date);
+    }
+    return "-";
+  },
+
+  /**
+   * Process item for export
+   */
+  processItemForExport(item, transaction) {
+    const jumlah = parseInt(item.jumlah) || 1;
+    let harga = parseInt(item.totalHarga) || 0;
+
+    // Handle DP calculation
+    if (transaction.metodeBayar === "dp") {
+      const nominalDP = parseFloat(transaction.nominalDP) || 0;
+      const totalHargaTransaksi = parseFloat(transaction.totalHarga) || 0;
+
+      if (nominalDP >= totalHargaTransaksi) {
+        harga = 0;
+      } else {
+        const sisaPembayaran = totalHargaTransaksi - nominalDP;
+        const proporsi = harga / totalHargaTransaksi;
+        harga = Math.round(proporsi * sisaPembayaran);
+      }
+    } else if (transaction.metodeBayar === "free") {
+      harga = 0;
+    }
+
+    return {
+      kode: item.kodeText || item.barcode || "-",
+      nama: item.nama || "-",
+      jumlah: jumlah,
+      berat: parseFloat(item.berat) || 0,
+      kadar: item.kadar || "-",
+      harga: harga,
+      keterangan: item.keterangan || transaction.keterangan || "",
+    };
+  },
+
+  /**
+   * Calculate subtotals for a group
+   */
+  calculateSubtotals(items, jenis) {
+    let totalPcs = 0;
+    let totalGr = 0;
+    let totalHarga = 0;
+
+    items.forEach((item) => {
+      totalPcs += item.jumlah || 0;
+
+      if (jenis !== "kotak") {
+        totalGr += item.berat || 0;
+      }
+
+      totalHarga += item.harga || 0;
+    });
+
+    return {
+      pcs: totalPcs,
+      gr: jenis === "kotak" ? null : totalGr,
+      harga: totalHarga,
+    };
+  },
+
+  /**
+   * Format item row for Excel based on type
+   */
+  formatItemRow(item, jenis) {
+    if (jenis === "kotak") {
+      return ["  ", item.nama, item.jumlah, item.harga];
+    } else if (jenis === "manual") {
+      return ["  ", item.kode, item.nama, item.jumlah, item.berat.toFixed(2), item.kadar, item.harga, item.keterangan];
+    } else {
+      // aksesoris and silver
+      return ["  ", item.kode, item.nama, item.jumlah, item.berat.toFixed(2), item.kadar, item.harga];
+    }
+  },
+
+  /**
+   * Format subtotal text
+   */
+  formatSubtotal(subtotal, jenis) {
+    if (jenis === "kotak") {
+      return `${subtotal.pcs} pcs, Rp ${subtotal.harga.toLocaleString("id-ID")}`;
+    } else {
+      return `${subtotal.pcs} pcs, ${subtotal.gr.toFixed(2)} gr, Rp ${subtotal.harga.toLocaleString("id-ID")}`;
+    }
+  },
+
+  /**
+   * Get month name in Indonesian
+   */
+  getMonthName(monthStr) {
+    const [year, month] = monthStr.split("-");
+    const monthNames = [
+      "Januari",
+      "Februari",
+      "Maret",
+      "April",
+      "Mei",
+      "Juni",
+      "Juli",
+      "Agustus",
+      "September",
+      "Oktober",
+      "November",
+      "Desember",
+    ];
+    const monthIndex = parseInt(month) - 1;
+    return `${monthNames[monthIndex]} ${year}`;
+  },
+
+  /**
+   * Generate monthly Excel report
+   */
+  async generateMonthlyExcel(monthStr) {
+    // 1. Fetch data
+    const transactions = await this.fetchMonthlyData(monthStr);
+
+    if (transactions.length === 0) {
+      throw new Error("Tidak ada data untuk bulan yang dipilih");
+    }
+
+    // 2. Group by date and type
+    const dailyData = this.groupDataByDateAndType(transactions);
+
+    // 3. Create workbook
+    const wb = XLSX.utils.book_new();
+    const wsData = [];
+
+    // 4. Add header
+    wsData.push(["LAPORAN PENJUALAN MELATI BAWAH"]);
+    wsData.push([`Bulan ${this.getMonthName(monthStr)}`]);
+    wsData.push([]);
+
+    let grandTotalPcs = 0;
+    let grandTotalGr = 0;
+    let grandTotalHarga = 0;
+
+    // 5. Add data per date
+    const sortedDates = Array.from(dailyData.keys()).sort((a, b) => {
+      const dateA = parseDate(a);
+      const dateB = parseDate(b);
+      return dateA - dateB;
+    });
+
+    sortedDates.forEach((dateStr) => {
+      const groups = dailyData.get(dateStr);
+
+      wsData.push([`TANGGAL: ${dateStr}`]);
+      wsData.push([]);
+
+      let dailyTotalPcs = 0;
+      let dailyTotalGr = 0;
+      let dailyTotalHarga = 0;
+
+      // Add each group (aksesoris, kotak, silver, manual)
+      ["aksesoris", "kotak", "silver", "manual"].forEach((jenis) => {
+        const items = groups[jenis];
+        if (items.length > 0) {
+          // Add group header
+          wsData.push([`  ${jenis.toUpperCase()}`]);
+
+          // Add column headers based on type
+          if (jenis === "kotak") {
+            wsData.push(["", "Nama Barang", "Pcs", "Harga"]);
+          } else if (jenis === "manual") {
+            wsData.push(["", "Kode", "Nama", "Pcs", "Gr", "Kadar", "Harga", "Keterangan"]);
+          } else {
+            wsData.push(["", "Kode", "Nama", "Pcs", "Gr", "Kadar", "Harga"]);
+          }
+
+          // Add items
+          items.forEach((item) => {
+            const row = this.formatItemRow(item, jenis);
+            wsData.push(row);
+          });
+
+          // Add subtotal
+          const subtotal = this.calculateSubtotals(items, jenis);
+          wsData.push([`  Subtotal ${jenis}: ${this.formatSubtotal(subtotal, jenis)}`]);
+          wsData.push([]);
+
+          // Add to daily total
+          dailyTotalPcs += subtotal.pcs;
+          dailyTotalGr += subtotal.gr || 0;
+          dailyTotalHarga += subtotal.harga;
+        }
+      });
+
+      // Add daily total
+      wsData.push([
+        `TOTAL ${dateStr}: ${dailyTotalPcs} pcs, ${dailyTotalGr.toFixed(2)} gr, Rp ${dailyTotalHarga.toLocaleString(
+          "id-ID"
+        )}`,
+      ]);
+      wsData.push([]);
+      wsData.push([]);
+
+      // Add to grand total
+      grandTotalPcs += dailyTotalPcs;
+      grandTotalGr += dailyTotalGr;
+      grandTotalHarga += dailyTotalHarga;
+    });
+
+    // 6. Add grand total
+    wsData.push(["═══════════════════════════════════════════════════════════════════"]);
+    wsData.push([
+      `GRAND TOTAL BULAN: ${grandTotalPcs} pcs, ${grandTotalGr.toFixed(2)} gr, Rp ${grandTotalHarga.toLocaleString(
+        "id-ID"
+      )}`,
+    ]);
+    wsData.push(["═══════════════════════════════════════════════════════════════════"]);
+
+    // 7. Create worksheet and download
+    const ws = XLSX.utils.aoa_to_sheet(wsData);
+
+    // Set column widths
+    ws["!cols"] = [
+      { wch: 5 },
+      { wch: 15 },
+      { wch: 25 },
+      { wch: 8 },
+      { wch: 10 },
+      { wch: 10 },
+      { wch: 15 },
+      { wch: 20 },
+    ];
+
+    XLSX.utils.book_append_sheet(wb, ws, "Laporan Penjualan");
+
+    const filename = `Laporan_Penjualan_${this.getMonthName(monthStr).replace(/ /g, "_")}.xlsx`;
+    XLSX.writeFile(wb, filename);
   },
 
   // Utility function to check if two dates are the same

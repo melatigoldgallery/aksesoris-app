@@ -27,6 +27,8 @@
     />
     <script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-datepicker/1.9.0/js/bootstrap-datepicker.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-datepicker/1.9.0/locales/bootstrap-datepicker.id.min.js"></script>
+    <!-- SheetJS for Excel Export -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <!-- Custom CSS -->
     <link rel="stylesheet" href="css/pages/absensi-modern.css" />
     <!-- Favicon sederhana -->
@@ -275,14 +277,22 @@
                       </span>
                     </div>
                   </div>
-                  <div class="col-md-3 d-flex align-items-end">
+                  <div class="col-md-6 d-flex align-items-end">
                     <button class="btn btn-primary me-2" id="btnFilterHistory">
                       <i class="fas fa-filter me-2"></i>
                       Tampilkan
                     </button>
-                    <button class="btn btn-success" id="btnPrintLaporan">
+                    <button class="btn btn-secondary me-2" id="btnPrintLaporan">
                       <i class="fas fa-print me-2"></i>
                       Print Laporan
+                    </button>
+                    <button class="btn btn-success me-2" id="btnExportExcel">
+                      <i class="fas fa-file-excel me-2"></i>
+                      Export Excel
+                    </button>
+                    <button class="btn btn-danger" id="btnHapusData">
+                      <i class="fas fa-trash me-2"></i>
+                      Hapus Data
                     </button>
                   </div>
                 </div>

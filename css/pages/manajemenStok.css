@@ -739,24 +739,6 @@
   font-size: 0.88rem;
 }
 
-/* Nonaktifkan scroll di kontainer modal saat terbuka */
-.modal,
-.modal-open .modal {
-  overflow: auto !important;
-}
-
-/* Pastikan bagian dalam modal tidak memicu scroll tersembunyi */
-.modal .modal-dialog,
-.modal .modal-content,
-.modal .modal-body {
-  overflow: visible !important;
-  max-height: none !important;
-}
-
-/* Table dalam modal tidak memunculkan scrollbar horizontal */
-.modal .table-responsive {
-  overflow: visible !important; /* matikan overflow-x:auto bawaan */
-}
 .jenis-column {
   font-size: 1.8rem;
 }

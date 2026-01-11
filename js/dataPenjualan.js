@@ -640,26 +640,10 @@ class OptimizedDataPenjualanApp {
       btnSaveEdit: () => this.saveEditTransaction(),
     };
 
-    // ✅ TAMBAHAN: Event listeners untuk delete options
-    const btnHapusPenjualan = document.getElementById("btnHapusPenjualan");
-    const btnBatalPenjualan = document.getElementById("btnBatalPenjualan");
-    const btnConfirmAction = document.getElementById("btnConfirmAction");
-    const btnBackToOptions = document.getElementById("btnBackToOptions");
-
-    if (btnHapusPenjualan) {
-      btnHapusPenjualan.addEventListener("click", () => this.showPasswordSection("hapus"));
-    }
-
-    if (btnBatalPenjualan) {
-      btnBatalPenjualan.addEventListener("click", () => this.showPasswordSection("batal"));
-    }
-
-    if (btnConfirmAction) {
-      btnConfirmAction.addEventListener("click", () => this.executeDeleteAction());
-    }
-
-    if (btnBackToOptions) {
-      btnBackToOptions.addEventListener("click", () => this.showDeleteOptions());
+    // Event listener untuk confirm delete
+    const btnConfirmDelete = document.getElementById("btnConfirmDelete");
+    if (btnConfirmDelete) {
+      btnConfirmDelete.addEventListener("click", () => this.confirmDeleteTransaction());
     }
 
     Object.entries(events).forEach(([id, handler]) => {
@@ -1359,6 +1343,38 @@ class OptimizedDataPenjualanApp {
       const newDate = tanggalInput ? new Date(tanggalInput) : originalDate;
       const newTimestamp = tanggalInput ? Timestamp.fromDate(newDate) : this.currentTransaction.timestamp;
 
+      // ✅ TAMBAHAN: Detect perubahan tanggal
+      const dateChanged = originalDate && newDate && !utils.isSameDate(originalDate, newDate);
+
+      // ✅ TAMBAHAN: Konfirmasi jika tanggal berubah ke tanggal lebih awal
+      if (dateChanged && newDate < originalDate) {
+        const confirmed = await Swal.fire({
+          title: "Perhatian",
+          html: `
+            <div class="text-start">
+              <p>Tanggal akan diubah ke tanggal yang lebih awal:</p>
+              <p><strong>Dari:</strong> ${utils.formatDate(originalDate)}</p>
+              <p><strong>Ke:</strong> ${utils.formatDate(newDate)}</p>
+              <p class="text-warning mt-3">
+                <i class="fas fa-exclamation-triangle"></i>
+                Transaksi stok akan dipindahkan ke tanggal baru.
+              </p>
+            </div>
+          `,
+          icon: "warning",
+          showCancelButton: true,
+          confirmButtonText: "Ya, Lanjutkan",
+          cancelButtonText: "Batal",
+          confirmButtonColor: "#0d6efd",
+          cancelButtonColor: "#6c757d",
+        });
+
+        if (!confirmed.isConfirmed) {
+          utils.showLoading(false);
+          return;
+        }
+      }
+
       const updateData = {
         sales: document.getElementById("editSales").value.trim(),
         timestamp: newTimestamp,
@@ -1415,8 +1431,27 @@ class OptimizedDataPenjualanApp {
       // Update in Firestore
       await updateDoc(doc(firestore, "penjualanAksesoris", this.currentTransaction.id), updateData);
 
+      // ✅ TAMBAHAN: Sync timestamp ke stokAksesorisTransaksi jika tanggal berubah
+      if (dateChanged) {
+        try {
+          const updatedCount = await this.updateStockTransactionTimestamp(
+            this.currentTransaction,
+            originalDate,
+            newTimestamp
+          );
+          console.log(`📅 Timestamp synced to ${updatedCount} stock transactions`);
+        } catch (error) {
+          console.warn("⚠️ Failed to sync stock transaction timestamp:", error);
+          // Continue with success message, tapi warn user
+          await utils.showAlert(
+            `Transaksi penjualan berhasil diperbarui, tetapi ada masalah saat sinkronisasi tanggal stok: ${error.message}`,
+            "Peringatan",
+            "warning"
+          );
+        }
+      }
+
       // Update local data and cache (real-time listener akan sync ke browser lain)
-      const dateChanged = originalDate && newDate && !utils.isSameDate(originalDate, newDate);
       this.updateLocalData(this.currentTransaction.id, updateData, dateChanged);
 
       $("#editModal").modal("hide");
@@ -1466,10 +1501,11 @@ class OptimizedDataPenjualanApp {
     }
   }
 
-  // Show delete modal
+  // Show delete modal with restore info
   showDeleteModal() {
     const transaction = this.currentTransaction;
     const date = utils.formatDate(transaction.timestamp || transaction.tanggal);
+    const restoreableItems = this.getRestoreableItems(transaction);
 
     document.getElementById("deleteTransactionInfo").innerHTML = `
       <div class="text-start">
@@ -1480,116 +1516,79 @@ class OptimizedDataPenjualanApp {
       </div>
     `;
 
-    // Reset modal state
-    this.showDeleteOptions();
+    // Show restore info
+    const restoreInfoDiv = document.getElementById("restoreInfo");
+    if (restoreInfoDiv) {
+      if (restoreableItems.length > 0) {
+        restoreInfoDiv.innerHTML = `
+          <div class="alert alert-success">
+            <i class="fas fa-check-circle me-2"></i>
+            <strong>${restoreableItems.length} item</strong> akan dikembalikan ke stok
+          </div>
+        `;
+      } else {
+        restoreInfoDiv.innerHTML = `
+          <div class="alert alert-info">
+            <i class="fas fa-info-circle me-2"></i>
+            Stok tidak dapat dikembalikan (penjualan manual tanpa kode lock)
+          </div>
+        `;
+      }
+    }
+
+    // Clear password
+    const passwordInput = document.getElementById("deleteVerificationPassword");
+    if (passwordInput) passwordInput.value = "";
 
     $("#deleteModal").modal("show");
   }
 
-  // ✅ TAMBAHAN: Helper functions untuk manage modal state
-  showDeleteOptions() {
-    // Show options, hide password section
-    document.getElementById("passwordSection").style.display = "none";
-    document.getElementById("modalFooter").style.display = "block";
-
-    // Reset password
-    const passwordInput = document.getElementById("deleteVerificationPassword");
-    if (passwordInput) passwordInput.value = "";
-
-    // Reset action type
-    this.currentDeleteAction = null;
-  }
-
-  showPasswordSection(actionType) {
-    // Hide options, show password section
-    document.getElementById("passwordSection").style.display = "block";
-    document.getElementById("modalFooter").style.display = "none";
-
-    // Set action type
-    this.currentDeleteAction = actionType;
-
-    // Update confirmation button text
-    const confirmBtn = document.getElementById("btnConfirmAction");
-    if (confirmBtn) {
-      if (actionType === "hapus") {
-        confirmBtn.innerHTML = '<i class="fas fa-trash me-2"></i> Konfirmasi Hapus Penjualan';
-        confirmBtn.className = "btn btn-success";
-      } else {
-        confirmBtn.innerHTML = '<i class="fas fa-undo me-2"></i>Konfirmasi Batal Penjualan';
-        confirmBtn.className = "btn btn-success";
-      }
+  // Get items yang bisa di-restore
+  getRestoreableItems(transaction) {
+    if (["aksesoris", "kotak", "silver"].includes(transaction.jenisPenjualan)) {
+      return transaction.items || [];
     }
 
-    // Focus on password input
-    setTimeout(() => {
-      document.getElementById("deleteVerificationPassword").focus();
-    }, 100);
+    if (transaction.jenisPenjualan === "manual") {
+      return (transaction.items || []).filter((item) => item.kodeLock && item.kodeLock !== "-");
+    }
+
+    return [];
   }
 
-  async executeDeleteAction() {
+  // Confirm delete with password verification
+  async confirmDeleteTransaction() {
     const password = document.getElementById("deleteVerificationPassword").value;
 
     if (!password) {
-      return utils.showAlert("Masukkan kata sandi verifikasi terlebih dahulu.", "Peringatan", "warning");
+      return utils.showAlert("Masukkan kata sandi verifikasi terlebih dahulu", "Peringatan", "warning");
     }
 
     if (password !== VERIFICATION_PASSWORD) {
-      return utils.showAlert("Kata sandi verifikasi salah.", "Error", "error");
+      return utils.showAlert("Kata sandi verifikasi salah", "Error", "error");
     }
 
-    if (this.currentDeleteAction === "hapus") {
-      await this.deleteTransaction();
-    } else if (this.currentDeleteAction === "batal") {
-      await this.cancelTransaction();
-    }
+    await this.deleteTransaction();
   }
 
-  // Confirm delete transaction
+  // Smart deletion: auto-restore stock if possible
   async deleteTransaction() {
     try {
       utils.showLoading(true);
-
-      // Hapus dari Firestore (logic existing)
-      await deleteDoc(doc(firestore, "penjualanAksesoris", this.currentTransaction.id));
-
-      // Update local data (real-time listener akan sync ke browser lain)
-      this.salesData = this.salesData.filter((item) => item.id !== this.currentTransaction.id);
-      this.filteredData = this.filteredData.filter((item) => item.id !== this.currentTransaction.id);
-
-      // Update cache
-      cacheManager.removeTransaction(this.currentTransaction.id);
-
-      this.updateDataTable();
-      this.updateSummary();
-
-      $("#deleteModal").modal("hide");
-      utils.showAlert("Penjualan berhasil dihapus", "Sukses", "success");
-    } catch (error) {
-      console.error("Error deleting transaction:", error);
-      utils.showAlert("Terjadi kesalahan saat menghapus penjualan: " + error.message, "Error", "error");
-    } finally {
-      utils.showLoading(false);
-    }
-  }
-
-  // ✅ GANTI: Function cancelTransaction() yang ada dengan versi sederhana
-  async cancelTransaction() {
-    try {
-      utils.showLoading(true);
-
       const transaction = this.currentTransaction;
-      console.log("🔄 Cancelling transaction:", transaction.id);
 
-      // Step 1: Delete sales transaction
-      await deleteDoc(doc(firestore, "penjualanAksesoris", transaction.id));
+      console.log("🗑️ Deleting transaction:", transaction.id);
 
-      // Step 2: Remove stock transactions & restore stock
+      // Step 1: Remove stock transactions & restore stock (if possible)
       let restoredCount = 0;
       if (transaction.items?.length > 0) {
         restoredCount = await this.removeStockTransactions(transaction);
       }
 
-      // Step 3: Update local data (real-time listener akan sync ke browser lain)
+      // Step 2: Delete sales transaction
+      await deleteDoc(doc(firestore, "penjualanAksesoris", transaction.id));
+
+      // Step 3: Update local data
       this.salesData = this.salesData.filter((item) => item.id !== transaction.id);
       this.filteredData = this.filteredData.filter((item) => item.id !== transaction.id);
       cacheManager.removeTransaction(transaction.id);
@@ -1598,22 +1597,22 @@ class OptimizedDataPenjualanApp {
       this.updateSummary();
       $("#deleteModal").modal("hide");
 
-      // ✅ PESAN SUKSES SEDERHANA
+      // Show appropriate message
       const message =
         restoredCount > 0
-          ? `Transaksi berhasil dibatalkan dan ${restoredCount} stok dikembalikan`
-          : "Transaksi berhasil dibatalkan";
+          ? `Penjualan berhasil dihapus dan ${restoredCount} stok dikembalikan`
+          : "Penjualan berhasil dihapus (stok tidak dapat dikembalikan)";
 
       utils.showAlert(message, "Sukses", "success");
     } catch (error) {
-      console.error("❌ Error canceling transaction:", error);
-      utils.showAlert("Gagal membatalkan transaksi: " + error.message, "Error", "error");
+      console.error("❌ Error deleting transaction:", error);
+      utils.showAlert("Terjadi kesalahan: " + error.message, "Error", "error");
     } finally {
       utils.showLoading(false);
     }
   }
 
-  // ✅ TAMBAHAN: Helper function untuk remove stock transactions
+  // Helper function untuk remove stock transactions & restore stock
   async removeStockTransactions(transaction) {
     try {
       let removedCount = 0;

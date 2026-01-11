@@ -850,7 +850,7 @@ async function generatePDF(rows) {
   // Date
   doc.setFontSize(10);
   doc.setFont(undefined, "normal");
-  doc.text(`Tanggal: ${dateStr}`, 14, 65);
+  doc.text(`Tanggal: ${dateStr}`, 10, 65);
 
   // Prepare table data
   const tableData = [];
@@ -864,27 +864,28 @@ async function generatePDF(rows) {
   // Table
   doc.autoTable({
     startY: 72,
-    head: [["No", "Tanggal", "Jenis", "Nama Barang", "Kadar", "Berat", "Panjang"]],
+    margin: { left: 10, right: 10 },
+    head: [["No", "Tanggal", "Jenis", "Nama Barang", "Kadar", "Berat", "Panjang/Lebar/Size"]],
     body: tableData,
     theme: "grid",
     headStyles: {
-      fillColor: [212, 175, 55], // Gold color
+      fillColor: [212, 175, 55],
       textColor: [255, 255, 255],
       fontStyle: "bold",
       halign: "center",
     },
     columnStyles: {
-      0: { cellWidth: 12, halign: "center" },
-      1: { cellWidth: 25, halign: "center" },
-      2: { cellWidth: 22, halign: "center" },
-      3: { cellWidth: 50 },
-      4: { cellWidth: 20, halign: "center" },
-      5: { cellWidth: 20, halign: "center" },
-      6: { cellWidth: 20, halign: "center" },
+      0: { cellWidth: 10, halign: "center" },
+      1: { cellWidth: 24, halign: "center" },
+      2: { cellWidth: 20, halign: "center" },
+      3: { cellWidth: 54 },
+      4: { cellWidth: 18, halign: "center" },
+      5: { cellWidth: 18, halign: "center" },
+      6: { cellWidth: 42, halign: "center" },
     },
     styles: {
       fontSize: 9,
-      cellPadding: 3,
+      cellPadding: 2,
     },
     alternateRowStyles: {
       fillColor: [245, 245, 245],
@@ -895,7 +896,7 @@ async function generatePDF(rows) {
   const finalY = doc.lastAutoTable.finalY || 72;
   doc.setFontSize(11);
   doc.setFont(undefined, "bold");
-  doc.text(`Total: ${rows.length} items`, 14, finalY + 10);
+  doc.text(`Total: ${rows.length} items`, 10, finalY + 10);
 
   // Generate blob and file
   const pdfBlob = doc.output("blob");
