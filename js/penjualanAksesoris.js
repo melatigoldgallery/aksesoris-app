@@ -217,8 +217,35 @@ const penjualanHandler = {
   inactivityTimer: null,
   INACTIVITY_TIMEOUT: 10 * 60 * 1000, // 10 menit
 
+  // 🔍 Check for pending changes from localStorage (catch missed CustomEvents)
+  checkPendingChanges() {
+    try {
+      const changeInfo = localStorage.getItem("stockMasterDataChanged");
+      if (!changeInfo) return;
+
+      const data = JSON.parse(changeInfo);
+      const age = Date.now() - data.timestamp;
+
+      // If change happened in last 10 seconds, force cache refresh
+      if (age < 10000) {
+        console.log("🔄 Detected recent change, clearing cache:", data.kode);
+        simpleCache.clear();
+
+        // Also apply the change immediately
+        if (data.action && data.kode) {
+          this.applyIncrementalCacheUpdate(data);
+        }
+      }
+    } catch (error) {
+      console.error("Error checking pending changes:", error);
+    }
+  },
+
   // Initialize application
   async init() {
+    // Check for missed signals first (before loading data)
+    this.checkPendingChanges();
+
     this.setupEventListeners();
     this.initDatePicker();
     this.setDefaultDate();
@@ -387,7 +414,8 @@ const penjualanHandler = {
           item.stokAkhir = stockMap.get(item.kode) || 0;
         });
 
-        this.stockData = this.stockData.filter((item) => item.stokAkhir > 0);
+        // Don't filter out stok=0 here! Let populateStockTables handle display logic
+        // this.stockData = this.stockData.filter((item) => item.stokAkhir > 0);
       }
 
       simpleCache.set("stockData", this.stockData);
@@ -397,6 +425,85 @@ const penjualanHandler = {
     } catch (error) {
       console.error("Error loading stock data:", error);
       throw error;
+    }
+  },
+
+  // 🚀 Apply incremental cache update (zero Firestore reads!)
+  applyIncrementalCacheUpdate(changeInfo) {
+    const { action, kode, nama, kategori } = changeInfo;
+
+    switch (action) {
+      case "add":
+        // Add to stockData if not exists
+        const existingIndex = this.stockData.findIndex((item) => item.kode === kode);
+        if (existingIndex === -1) {
+          this.stockData.push({
+            kode: kode,
+            nama: nama,
+            kategori: kategori,
+            stokAkhir: 0, // Use stokAkhir for consistency
+          });
+          console.log(`✅ Added to cache: ${kode}`);
+
+          // 🎯 Immediately recalculate real stock (+1 read)
+          this.recalculateSingleStock(kode);
+        }
+        break;
+
+      case "update":
+        // Update existing item
+        const updateIndex = this.stockData.findIndex((item) => item.kode === kode);
+        if (updateIndex !== -1) {
+          this.stockData[updateIndex].nama = nama;
+          this.stockData[updateIndex].kategori = kategori;
+          console.log(`✅ Updated in cache: ${kode}`);
+        }
+        break;
+
+      case "delete":
+        // Remove from stockData
+        const deleteIndex = this.stockData.findIndex((item) => item.kode === kode);
+        if (deleteIndex !== -1) {
+          this.stockData.splice(deleteIndex, 1);
+          console.log(`✅ Removed from cache: ${kode}`);
+        }
+        break;
+    }
+
+    // Rebuild stock cache
+    this.buildStockCache();
+
+    // Refresh modal table if open
+    this.populateStockTables();
+
+    console.log("🔄 Cache updated, modal refreshed");
+  },
+
+  // 🎯 Recalculate stock for single kode (precise, +1 read only)
+  async recalculateSingleStock(kode) {
+    try {
+      const today = new Date();
+      today.setHours(23, 59, 59, 999);
+
+      // Use StockService for accurate calculation (+1 Firestore read)
+      const stock = await StockService.calculateStock(today, kode);
+
+      // Update stockData with stokAkhir (not stok!)
+      const index = this.stockData.findIndex((item) => item.kode === kode);
+      if (index !== -1) {
+        this.stockData[index].stokAkhir = stock; // Use stokAkhir for consistency
+        console.log(`✅ Recalculated stock for ${kode}: ${stock}`);
+      }
+
+      // Update cache
+      this.stockCache.set(kode, stock);
+
+      // Refresh modal if open
+      this.populateStockTables();
+
+      readsMonitor.increment("recalculate_single_stock", 1);
+    } catch (error) {
+      console.error(`Error recalculating stock for ${kode}:`, error);
     }
   },
 
@@ -488,6 +595,30 @@ const penjualanHandler = {
         this.transactionListener = null;
       }
     );
+
+    // 3. Cross-tab sync listener (localStorage 'storage' event)
+    window.addEventListener("storage", (e) => {
+      if (e.key === "stockMasterDataChanged" && e.newValue) {
+        try {
+          const changeInfo = JSON.parse(e.newValue);
+          console.log("🔄 Detected stock master change (cross-tab):", changeInfo);
+          this.applyIncrementalCacheUpdate(changeInfo);
+        } catch (error) {
+          console.error("Error handling storage event:", error);
+        }
+      }
+    });
+
+    // 4. Same-tab sync listener (CustomEvent)
+    window.addEventListener("stockDataChanged", (e) => {
+      try {
+        const changeInfo = e.detail;
+        console.log("🔄 Detected stock master change (same-tab):", changeInfo);
+        this.applyIncrementalCacheUpdate(changeInfo);
+      } catch (error) {
+        console.error("Error handling CustomEvent:", error);
+      }
+    });
   },
 
   // Handle stock changes with real-time stock calculation
@@ -699,7 +830,10 @@ const penjualanHandler = {
   buildStockCache() {
     this.stockCache.clear();
     this.stockData.forEach((item) => {
-      // Stock calculated from StockService, not cached from master data
+      // Cache stokAkhir for quick lookup
+      if (item.kode && item.stokAkhir !== undefined) {
+        this.stockCache.set(item.kode, item.stokAkhir);
+      }
     });
   },
 

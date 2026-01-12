@@ -1,5 +1,6 @@
 import { sidebarToggle } from "./components/sidebar.js";
 import { initializeDateTime } from "./components/header.js";
+import { ensureDailySnapshotExists } from "./laporanStok.js";
 
 try {
   sidebarToggle();
@@ -85,7 +86,7 @@ function createPasswordModal() {
           <div class="modal-body">
             <p class="text-muted mb-3">Masukkan password untuk mengakses menu Tambah Aksesoris:</p>
             <div class="mb-3">
-              <input type="password" class="form-control" id="verificationPassword" placeholder="Password verifikasi">
+              <input type="password" class="form-control p-2" id="verificationPassword" placeholder="Password verifikasi">
               <div class="invalid-feedback" id="passwordError"></div>
             </div>
           </div>
@@ -145,5 +146,21 @@ $(document).ready(function () {
   checkLoginStatus();
   setupMenuAccess();
   setupPasswordVerification();
+
+  // 🔥 Auto-create daily snapshot in background (non-blocking)
+  // Only trigger on dashboard to avoid multiple triggers
+  if (window.location.pathname.includes("dashboard.html") || window.location.pathname.endsWith("/")) {
+    ensureDailySnapshotExists()
+      .then((result) => {
+        if (result.created) {
+          console.log("✅ Daily snapshot created successfully");
+        } else if (result.success) {
+          console.log("✅ Daily snapshot already exists or being processed");
+        }
+      })
+      .catch((error) => {
+        console.error("⚠️ Snapshot creation failed (non-critical):", error);
+      });
+  }
 });
 window.handleLogout = handleLogout;

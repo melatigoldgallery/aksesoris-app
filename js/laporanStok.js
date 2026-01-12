@@ -9,6 +9,10 @@ import {
   onSnapshot,
   addDoc,
   deleteDoc,
+  doc,
+  runTransaction,
+  getDoc,
+  setDoc,
 } from "https://www.gstatic.com/firebasejs/10.4.0/firebase-firestore.js";
 import { firestore } from "./configFirebase.js";
 import StockService from "./services/stockService.js";
@@ -39,45 +43,170 @@ class OptimizedStockReport {
     this.loadAndFilterStockData = this.loadAndFilterStockData.bind(this);
     this.resetFilters = this.resetFilters.bind(this);
     this.returnData = new Map();
+
+    // 🔄 Setup cross-page cache invalidation listener
+    this.setupStorageListener();
   }
 
-  // Tambahkan di dalam class, mis. setelah constructor
-  initSnapshotScheduler() {
-    this.checkYesterdaySnapshot();
-    this.scheduleDaily();
-  }
-
-  async checkYesterdaySnapshot() {
-    try {
-      const yesterday = new Date();
-      yesterday.setDate(yesterday.getDate() - 1);
-      const dateKey = this.formatDate(yesterday);
-      if (!(await this.snapshotExists(dateKey))) {
-        await this.createSnapshot(yesterday);
-      }
-    } catch (e) {}
-  }
-
-  scheduleDaily() {
-    const now = new Date();
-    const tomorrow = new Date(now);
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    tomorrow.setHours(0, 0, 0, 0);
-
-    const msUntilMidnight = tomorrow.getTime() - now.getTime();
-
-    setTimeout(async () => {
-      try {
-        await this.createSnapshot();
-      } catch (error) {}
-
-      // Schedule recurring daily snapshots with error handling
-      setInterval(async () => {
+  // � Setup storage event listener for cross-page cache invalidation
+  setupStorageListener() {
+    // Cross-tab sync (storage event fires in OTHER tabs)
+    window.addEventListener("storage", (e) => {
+      if (e.key === "stockMasterDataChanged" && e.newValue) {
         try {
-          await this.createSnapshot();
-        } catch (error) {}
-      }, 24 * 60 * 60 * 1000);
-    }, msUntilMidnight);
+          const changeInfo = JSON.parse(e.newValue);
+          console.log("🔄 Detected stock data change (cross-tab):", changeInfo);
+
+          // 🚀 Smart incremental update (zero Firestore reads!)
+          this.applyIncrementalUpdate(changeInfo);
+        } catch (error) {
+          console.error("Error handling storage event:", error);
+          // Fallback: full refresh on error
+          this.invalidateStockMasterCache();
+          if (this.isDataLoaded && this.currentSelectedDate) {
+            this.loadAndFilterStockData(true);
+          }
+        }
+      }
+    });
+
+    // Same-tab sync (CustomEvent fires in SAME tab)
+    window.addEventListener("stockDataChanged", (e) => {
+      try {
+        const changeInfo = e.detail;
+        console.log("🔄 Detected stock data change (same-tab):", changeInfo);
+
+        // 🚀 Smart incremental update (zero Firestore reads!)
+        this.applyIncrementalUpdate(changeInfo);
+      } catch (error) {
+        console.error("Error handling CustomEvent:", error);
+      }
+    });
+  }
+
+  // Invalidate stock master cache
+  invalidateStockMasterCache() {
+    const keysToDelete = ["stockMasterData", "kodeAksesorisData"];
+    keysToDelete.forEach((key) => {
+      if (this.cache.has(key)) {
+        this.cache.delete(key);
+        this.cacheMeta.delete(key);
+      }
+    });
+    console.log("✅ Stock master cache invalidated locally");
+  }
+
+  // �🔒 Distributed Lock System - Create daily snapshot with atomic lock
+  async checkAndCreateSnapshotWithLock() {
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    const dateKey = this.formatDate(yesterday);
+
+    // Quick check: snapshot already exists?
+    if (await this.snapshotExists(dateKey)) {
+      console.log("✅ Snapshot already exists for", dateKey);
+      return { success: true, created: false, message: "Snapshot already exists" };
+    }
+
+    // Try to acquire lock
+    const lockId = `snapshot_lock_${dateKey.replace(/\//g, "-")}`;
+    const lockDoc = doc(firestore, "systemLocks", lockId);
+
+    try {
+      // Use transaction for atomic lock acquisition
+      const result = await runTransaction(firestore, async (transaction) => {
+        const lockSnapshot = await transaction.get(lockDoc);
+
+        if (lockSnapshot.exists()) {
+          const lockData = lockSnapshot.data();
+          const lockAge = Date.now() - lockData.timestamp;
+
+          // If lock older than 5 minutes, assume stale (previous process crashed)
+          if (lockAge < 5 * 60 * 1000) {
+            throw new Error("LOCKED_BY_ANOTHER_PROCESS");
+          }
+          console.log("⚠️ Overriding stale lock");
+        }
+
+        // Acquire lock
+        transaction.set(lockDoc, {
+          timestamp: Date.now(),
+          processId: Math.random().toString(36).substring(7),
+          dateKey: dateKey,
+          status: "processing",
+        });
+
+        return true;
+      });
+
+      // Lock acquired! Create snapshot
+      console.log("🔒 Lock acquired, creating snapshot for", dateKey);
+      this.showSnapshotProgress("Membuat snapshot untuk tanggal kemarin...");
+
+      await this.createSnapshot(yesterday);
+
+      // Success! Release lock
+      await deleteDoc(lockDoc);
+      console.log("✅ Snapshot created successfully for", dateKey);
+      this.showSnapshotProgress("Snapshot berhasil dibuat", "success");
+
+      return { success: true, created: true, message: "Snapshot created successfully" };
+    } catch (error) {
+      if (error.message === "LOCKED_BY_ANOTHER_PROCESS") {
+        console.log("⏳ Another process is creating snapshot, skipping...");
+        return { success: true, created: false, message: "Another process is creating snapshot" };
+      }
+
+      console.error("❌ Failed to create snapshot:", error);
+      // Release lock on failure
+      try {
+        await deleteDoc(lockDoc);
+      } catch {}
+
+      return { success: false, created: false, message: error.message };
+    }
+  }
+
+  // Show snapshot progress indicator
+  showSnapshotProgress(message, type = "info") {
+    // Remove existing indicator
+    const existingIndicator = document.getElementById("snapshotProgressIndicator");
+    if (existingIndicator) {
+      existingIndicator.remove();
+    }
+
+    // Only show for actual progress, not for success
+    if (type === "success") {
+      return; // Silent success
+    }
+
+    // Create progress indicator (only if in laporan stok page)
+    if (!window.location.pathname.includes("laporanStok.html")) {
+      return; // Don't show on other pages
+    }
+
+    const indicator = document.createElement("div");
+    indicator.id = "snapshotProgressIndicator";
+    indicator.className = `alert alert-${
+      type === "info" ? "info" : "success"
+    } alert-dismissible fade show position-fixed`;
+    indicator.style.cssText = "top: 80px; right: 20px; z-index: 9999; min-width: 300px;";
+    indicator.innerHTML = `
+      <i class="fas fa-${type === "info" ? "spinner fa-spin" : "check-circle"} me-2"></i>
+      ${message}
+      <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    `;
+
+    document.body.appendChild(indicator);
+
+    // Auto remove after 3 seconds for success
+    if (type === "success") {
+      setTimeout(() => {
+        if (indicator.parentNode) {
+          indicator.remove();
+        }
+      }, 3000);
+    }
   }
 
   async snapshotExists(dateKey) {
@@ -109,8 +238,12 @@ class OptimizedStockReport {
           stokAkhir: stockMap.get(item.kode) || 0,
         });
       });
+
+      // Delete old snapshots for this date
       const old = await getDocs(query(collection(firestore, "dailyStockSnapshot"), where("date", "==", dateKey)));
       await Promise.all(old.docs.map((d) => deleteDoc(d.ref)));
+
+      // Create new snapshot
       await addDoc(collection(firestore, "dailyStockSnapshot"), {
         date: dateKey,
         timestamp: Timestamp.now(),
@@ -119,8 +252,76 @@ class OptimizedStockReport {
         createdBy: "auto",
         version: "2.1",
       });
+
       this.clearCacheForDate(targetDate);
-    } catch (e) {}
+      console.log(`✅ Snapshot created: ${stockData.length} items for ${dateKey}`);
+    } catch (e) {
+      console.error("❌ Error creating snapshot:", e);
+      throw e; // Re-throw to be handled by caller
+    }
+  }
+
+  //  Smart incremental cache update (zero Firestore reads!)
+  applyIncrementalUpdate(changeInfo) {
+    const stockMasterData = this.cache.get("stockMasterData");
+
+    // If no cache exists, do full refresh (rare case)
+    if (!stockMasterData || !Array.isArray(stockMasterData)) {
+      console.log("⚠️ No cache found, forcing full refresh");
+      return this.loadStockMasterData(true);
+    }
+
+    const { action, kode, nama, kategori } = changeInfo;
+    const index = stockMasterData.findIndex((item) => item.kode === kode);
+
+    switch (action) {
+      case "add":
+        if (index === -1) {
+          stockMasterData.push({ kode, nama, kategori });
+          console.log(`✅ Added to cache: ${kode}`);
+        }
+        break;
+
+      case "update":
+        if (index !== -1) {
+          stockMasterData[index] = { ...stockMasterData[index], nama, kategori };
+          console.log(`✅ Updated in cache: ${kode}`);
+        }
+        break;
+
+      case "delete":
+        if (index !== -1) {
+          stockMasterData.splice(index, 1);
+          console.log(`✅ Removed from cache: ${kode}`);
+        }
+        break;
+
+      case "full_refresh":
+        // Legacy fallback
+        return this.invalidateStockMasterCache();
+    }
+
+    // Update cache timestamp
+    this.setCache("stockMasterData", stockMasterData);
+    this.stockData = stockMasterData;
+
+    // Refresh display if page is loaded
+    if (this.isDataLoaded && this.currentSelectedDate) {
+      console.log("🔄 Refreshing display with updated cache...");
+      this.loadAndFilterStockData(false); // false = don't refetch, use updated cache!
+    }
+  }
+
+  // Invalidate stock master cache (full refresh fallback)
+  invalidateStockMasterCache() {
+    const keysToDelete = ["stockMasterData", "kodeAksesorisData"];
+    keysToDelete.forEach((key) => {
+      if (this.cache.has(key)) {
+        this.cache.delete(key);
+        this.cacheMeta.delete(key);
+      }
+    });
+    console.log("✅ Stock master cache invalidated locally");
   }
 
   // Initialize the module
@@ -131,7 +332,9 @@ class OptimizedStockReport {
     this.setDefaultDates();
     this.initDataTable();
     this.prepareEmptyTable();
-    this.initSnapshotScheduler();
+
+    // ❌ REMOVED: initSnapshotScheduler() - unreliable setTimeout/setInterval
+    // ✅ NEW: Snapshot now triggered from main.js on dashboard load with distributed lock
 
     // Cleanup cache periodically
     setInterval(() => this.cleanupCache(), 30 * 60 * 1000);
@@ -1596,5 +1799,26 @@ window.addEventListener("beforeunload", () => {
 // Export for potential use in other modules
 export { optimizedStockReport as default };
 
+// Export snapshot function for global access (called from main.js)
+export async function ensureDailySnapshotExists() {
+  // Check if already checked in this session
+  if (sessionStorage.getItem("snapshotCheckedToday")) {
+    return { success: true, created: false, message: "Already checked in this session" };
+  }
+
+  try {
+    const result = await optimizedStockReport.checkAndCreateSnapshotWithLock();
+
+    // Mark as checked for this session
+    sessionStorage.setItem("snapshotCheckedToday", new Date().toISOString());
+
+    return result;
+  } catch (error) {
+    console.error("Error ensuring daily snapshot:", error);
+    return { success: false, created: false, message: error.message };
+  }
+}
+
 // Backward compatibility
 window.optimizedStockReport = optimizedStockReport;
+window.ensureDailySnapshotExists = ensureDailySnapshotExists;
