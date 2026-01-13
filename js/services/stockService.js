@@ -345,6 +345,133 @@ const StockService = {
   },
 
   /**
+   * 🚀 OPSI C: Get stock snapshot + today's delta (HYBRID APPROACH)
+   * Combines yesterday's snapshot with today's transactions for real-time accuracy
+   * @param {Date} date - Date to calculate for (usually today)
+   * @returns {Map} Map of kode -> stokAkhir (accurate real-time)
+   */
+  async getStockSnapshotWithTodayDelta(date = new Date()) {
+    try {
+      if (!firestore) {
+        throw new Error("Firestore is not initialized");
+      }
+
+      const today = new Date(date);
+      today.setHours(0, 0, 0, 0);
+      const todayKey = this.formatDate(today);
+
+      // Step 1: Get latest snapshot (today or yesterday)
+      let snapshotMap = new Map();
+      let snapshotDate = null;
+
+      // Try today's snapshot first
+      let q = query(collection(firestore, "dailyStockSnapshot"), where("date", "==", todayKey));
+      let snapshot = await getDocs(q);
+
+      if (!snapshot.empty) {
+        snapshotDate = todayKey;
+        const data = snapshot.docs[0].data();
+        if (data.stockData && Array.isArray(data.stockData)) {
+          data.stockData.forEach((item) => {
+            if (item.kode) {
+              snapshotMap.set(item.kode, item.stokAkhir || 0);
+            }
+          });
+        }
+        console.log(`📸 Using today's snapshot (${todayKey}): ${snapshotMap.size} items`);
+      } else {
+        // Try yesterday's snapshot
+        const yesterday = new Date(today);
+        yesterday.setDate(yesterday.getDate() - 1);
+        const yesterdayKey = this.formatDate(yesterday);
+
+        q = query(collection(firestore, "dailyStockSnapshot"), where("date", "==", yesterdayKey));
+        snapshot = await getDocs(q);
+
+        if (!snapshot.empty) {
+          snapshotDate = yesterdayKey;
+          const data = snapshot.docs[0].data();
+          if (data.stockData && Array.isArray(data.stockData)) {
+            data.stockData.forEach((item) => {
+              if (item.kode) {
+                snapshotMap.set(item.kode, item.stokAkhir || 0);
+              }
+            });
+          }
+          console.log(`📸 Using yesterday's snapshot (${yesterdayKey}): ${snapshotMap.size} items`);
+        } else {
+          console.warn(`⚠️ No snapshot found, falling back to full calculation`);
+          return await this.calculateAllStocksBatch(date);
+        }
+      }
+
+      // Step 2: Get TODAY's transactions and calculate delta
+      const endOfToday = new Date(today);
+      endOfToday.setHours(23, 59, 59, 999);
+
+      const todayTransactions = await getDocs(
+        query(
+          collection(firestore, "stokAksesorisTransaksi"),
+          where("timestamp", ">=", Timestamp.fromDate(today)),
+          where("timestamp", "<=", Timestamp.fromDate(endOfToday))
+        )
+      );
+
+      console.log(`📊 Today's transactions: ${todayTransactions.size} docs`);
+
+      // Calculate delta per kode from today's transactions
+      const deltaMap = new Map();
+
+      todayTransactions.forEach((doc) => {
+        const data = doc.data();
+        const kode = data.kode;
+        const jumlah = data.jumlah || 0;
+
+        if (!deltaMap.has(kode)) {
+          deltaMap.set(kode, 0);
+        }
+
+        switch (data.jenis) {
+          case "tambah":
+          case "stockAddition":
+          case "initialStock":
+            deltaMap.set(kode, deltaMap.get(kode) + jumlah);
+            break;
+
+          case "laku":
+          case "free":
+          case "gantiLock":
+          case "return":
+            deltaMap.set(kode, deltaMap.get(kode) - jumlah);
+            break;
+
+          case "adjustment":
+            // For adjustment, we need special handling
+            // This overrides the calculated value
+            break;
+        }
+      });
+
+      // Step 3: Combine snapshot + delta
+      // If using today's snapshot, delta is already included, so we skip
+      // If using yesterday's snapshot, we apply today's delta
+      if (snapshotDate !== todayKey) {
+        deltaMap.forEach((delta, kode) => {
+          const baseStock = snapshotMap.get(kode) || 0;
+          snapshotMap.set(kode, baseStock + delta);
+        });
+        console.log(`✅ Applied ${deltaMap.size} deltas from today's transactions`);
+      }
+
+      return snapshotMap;
+    } catch (error) {
+      console.error("❌ getStockSnapshotWithTodayDelta error:", error);
+      // Fallback to full calculation
+      return await this.calculateAllStocksBatch(date);
+    }
+  },
+
+  /**
    * Get stock snapshot for a specific date (OPTIMIZATION)
    * Reduces reads by 95% - queries pre-calculated daily snapshot instead of all transactions
    * Falls back to yesterday's snapshot if today's not available

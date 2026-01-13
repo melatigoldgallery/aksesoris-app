@@ -944,9 +944,22 @@ const laporanPenjualanHandler = {
 
   // Set default dates
   setDefaultDates() {
+    // Get current date and format it
     const today = new Date();
-    const formattedToday = formatDate(today);
-    document.getElementById("startDate").value = formattedToday;
+    const day = String(today.getDate()).padStart(2, "0");
+    const month = String(today.getMonth() + 1).padStart(2, "0");
+    const year = today.getFullYear();
+    const todayFormatted = `${day}/${month}/${year}`;
+
+    // Set value directly to the input
+    document.getElementById("startDate").value = todayFormatted;
+
+    // Set default month to current month
+    const currentMonthStr = today.toISOString().slice(0, 7);
+    const exportMonthInput = document.getElementById("exportMonthInput");
+    if (exportMonthInput) {
+      exportMonthInput.value = currentMonthStr;
+    }
   },
 
   // Attach event listeners

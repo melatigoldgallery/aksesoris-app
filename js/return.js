@@ -95,6 +95,15 @@ const returnHandler = {
       // Convert to Date object to handle time zones properly
       const start = new Date(startDate);
       const end = new Date(endDate);
+
+      // Validate dates
+      if (isNaN(start.getTime()) || isNaN(end.getTime())) {
+        console.warn("Invalid date range:", { startDate, endDate });
+        this.riwayatData = [];
+        this.renderRiwayatReturn();
+        return;
+      }
+
       const startOfDay = new Date(start.getFullYear(), start.getMonth(), start.getDate());
       const endOfDay = new Date(end.getFullYear(), end.getMonth(), end.getDate(), 23, 59, 59);
 
@@ -795,31 +804,55 @@ const returnHandler = {
   // NEW: Reverse stock changes when deleting return
   async reverseStockChanges(returnData) {
     try {
+      // Get return date untuk filter transaksi
+      const returnDate = new Date(returnData.tanggal);
+      const startOfDay = new Date(returnDate);
+      startOfDay.setHours(0, 0, 0, 0);
+      const endOfDay = new Date(returnDate);
+      endOfDay.setHours(23, 59, 59, 999);
+
       for (const item of returnData.detailReturn) {
+        // Step 1: Find and delete the return transaction from stokAksesorisTransaksi
+        const transactionQuery = query(
+          collection(firestore, "stokAksesorisTransaksi"),
+          where("kode", "==", item.kode),
+          where("jenis", "==", "return"),
+          where("timestamp", ">=", Timestamp.fromDate(startOfDay)),
+          where("timestamp", "<=", Timestamp.fromDate(endOfDay)),
+          limit(1)
+        );
+
+        const transactionSnapshot = await getDocs(transactionQuery);
+
+        if (transactionSnapshot.size > 0) {
+          const transactionDoc = transactionSnapshot.docs[0];
+          await deleteDoc(doc(firestore, "stokAksesorisTransaksi", transactionDoc.id));
+          console.log(`✅ Return transaction deleted for ${item.kode}`);
+        } else {
+          console.warn(`⚠️ Return transaction not found for ${item.kode} on ${returnData.tanggal}`);
+        }
+
+        // Step 2: Restore stock by adding back the returned quantity
         const currentStock = await this.getCurrentStockData(item.kode);
-
         if (currentStock) {
-          // ✅ Stock managed by StockService - no direct update to stokAksesoris
-          // Create reverse transaction in stokAksesorisTransaksi
-          const reverseTransaksiData = {
-            jenis: "reverse_return", // pembatalan return
-            jumlah: item.jumlah, // positif → akan mengurangi nilai return bersih di laporan
-            kategori: currentStock.kategori || returnData.jenisReturn,
-            keterangan: `Pembatalan return - ${returnData.namaSales}`,
-            kode: item.kode,
-            nama: item.namaBarang,
-            stokSebelum: currentStok,
-            stokSesudah: newStok,
-            timestamp: serverTimestamp(),
-          };
+          const currentStokAkhir = currentStock.stokAkhir || 0;
+          const newStokAkhir = currentStokAkhir + item.jumlah; // Kembalikan jumlah yang di-return
 
-          await addDoc(collection(firestore, "stokAksesorisTransaksi"), reverseTransaksiData);
+          await updateDoc(doc(firestore, "stokAksesoris", currentStock.id), {
+            stokAkhir: newStokAkhir,
+            lastUpdated: serverTimestamp(),
+          });
 
-          console.log(`✅ Stock reversed for ${item.kode}`);
+          console.log(`📦 Stock restored for ${item.kode}: ${currentStokAkhir} → ${newStokAkhir}`);
+        } else {
+          console.warn(`⚠️ Stock data not found for ${item.kode}`);
         }
       }
+
+      console.log("✅ All return transactions deleted and stock restored");
     } catch (error) {
       console.error("Error reversing stock changes:", error);
+      throw error;
     }
   },
 

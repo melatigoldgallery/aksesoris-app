@@ -21,11 +21,11 @@ let currentTransactionData = null;
 let stockRecalcDebounceTimer = null;
 let lastStockCalculation = 0;
 let stockCacheValid = false; // Event-driven cache flag
-const STOCK_CALC_COOLDOWN = 30000;
+// REMOVED: STOCK_CALC_COOLDOWN - no longer needed with in-memory updates
 
-// Cache configuration
+// Cache configuration - OPSI C: Event-driven, no TTL
 const CACHE_CONFIG = {
-  TTL: 24 * 60 * 60 * 1000, // 24 hours
+  // TTL removed - cache valid until transaction changes
   ENABLE_REALTIME_INVALIDATION: true,
 };
 
@@ -355,6 +355,7 @@ const penjualanHandler = {
   },
 
   // Load master data (kode, nama, kategori) + calculate real-time stock
+  // 🚀 OPSI C: Hybrid Snapshot + Today's Delta
   async loadStockData(forceRefresh = false) {
     try {
       // Check if other pages (tambahAksesoris) modified stokAksesoris
@@ -365,20 +366,14 @@ const penjualanHandler = {
       }
 
       const cachedMaster = localStorage.getItem("masterData");
-      const cacheTimestamp = localStorage.getItem("masterData_timestamp");
+      // OPSI C: No TTL check - cache valid until explicitly invalidated
 
       let masterData = [];
 
-      if (!forceRefresh && cachedMaster && cacheTimestamp) {
-        const age = Date.now() - parseInt(cacheTimestamp);
-
-        if (age < CACHE_CONFIG.TTL) {
-          masterData = JSON.parse(cachedMaster);
-          readsMonitor.increment("Master Data (Cached)", 0);
-        } else {
-          localStorage.removeItem("masterData");
-          localStorage.removeItem("masterData_timestamp");
-        }
+      if (!forceRefresh && cachedMaster) {
+        // Use cached master data (kode, nama, kategori only)
+        masterData = JSON.parse(cachedMaster);
+        readsMonitor.increment("Master Data (Cached)", 0);
       }
 
       if (masterData.length === 0) {
@@ -395,7 +390,6 @@ const penjualanHandler = {
 
         try {
           localStorage.setItem("masterData", JSON.stringify(masterData));
-          localStorage.setItem("masterData_timestamp", Date.now().toString());
         } catch (e) {
           console.warn("localStorage full:", e);
         }
@@ -406,16 +400,14 @@ const penjualanHandler = {
         stokAkhir: 0,
       }));
 
-      const stockMap = await StockService.getStockSnapshot(new Date());
-      readsMonitor.increment("Get Stock Snapshot", 1);
+      // 🚀 OPSI C: Use hybrid snapshot + today's delta for accurate real-time stock
+      const stockMap = await StockService.getStockSnapshotWithTodayDelta(new Date());
+      readsMonitor.increment("Get Stock Snapshot + Today Delta", 1);
 
       if (stockMap && stockMap.size > 0) {
         this.stockData.forEach((item) => {
           item.stokAkhir = stockMap.get(item.kode) || 0;
         });
-
-        // Don't filter out stok=0 here! Let populateStockTables handle display logic
-        // this.stockData = this.stockData.filter((item) => item.stokAkhir > 0);
       }
 
       simpleCache.set("stockData", this.stockData);
@@ -542,7 +534,7 @@ const penjualanHandler = {
       }
     );
 
-    // 2. Transaction listener with SMART DEBOUNCING (reduces 95% of reads!)
+    // 2. Transaction listener - 🚀 OPSI C: Direct in-memory update (no cooldown!)
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
@@ -562,32 +554,50 @@ const penjualanHandler = {
         }
 
         if (!snapshot.metadata.hasPendingWrites && snapshot.docChanges().length > 0) {
-          const changedKodes = new Set();
-
+          // 🚀 OPSI C: Direct in-memory update - NO Firestore reads!
           snapshot.docChanges().forEach((change) => {
-            const data = change.doc.data();
-            if (data.kode) {
-              changedKodes.add(data.kode);
+            if (change.type === "added") {
+              const data = change.doc.data();
+              const kode = data.kode;
+              const jumlah = data.jumlah || 0;
+
+              // Find item in stockData
+              const item = this.stockData.find((i) => i.kode === kode);
+              if (item) {
+                // Apply delta directly based on transaction type
+                switch (data.jenis) {
+                  case "tambah":
+                  case "stockAddition":
+                  case "initialStock":
+                    item.stokAkhir += jumlah;
+                    break;
+
+                  case "laku":
+                  case "free":
+                  case "gantiLock":
+                  case "return":
+                    item.stokAkhir -= jumlah;
+                    break;
+                }
+
+                // Update cache
+                this.stockCache.set(kode, item.stokAkhir);
+                console.log(`🔄 In-memory update: ${kode} → ${item.stokAkhir} (${data.jenis}: ${jumlah})`);
+              }
             }
           });
 
-          if (changedKodes.size === 0) {
-            return;
-          }
-
+          // Update simpleCache and refresh UI with minimal debounce (500ms)
           if (stockRecalcDebounceTimer) {
             clearTimeout(stockRecalcDebounceTimer);
           }
 
           stockRecalcDebounceTimer = setTimeout(() => {
-            const now = Date.now();
-            if (now - lastStockCalculation < STOCK_CALC_COOLDOWN) {
-              return;
-            }
-
-            this.handleIncrementalStockUpdate(Array.from(changedKodes));
-            lastStockCalculation = now;
-          }, 5000);
+            simpleCache.set("stockData", this.stockData);
+            stockCacheValid = true;
+            this.populateStockTables();
+            console.log("✅ UI refreshed with in-memory stock data");
+          }, 500);
         }
       },
       (error) => {
@@ -622,6 +632,7 @@ const penjualanHandler = {
   },
 
   // Handle stock changes with real-time stock calculation
+  // 🚀 OPSI C: Use hybrid snapshot + today's delta
   async handleStockChanges(changes) {
     if (changes.length === 0) return;
 
@@ -647,7 +658,8 @@ const penjualanHandler = {
     });
 
     if (hasUpdates) {
-      const stockMap = await StockService.getStockSnapshot(new Date());
+      // 🚀 OPSI C: Use hybrid snapshot + today's delta
+      const stockMap = await StockService.getStockSnapshotWithTodayDelta(new Date());
 
       if (stockMap && stockMap.size > 0) {
         this.stockData.forEach((item) => {
@@ -657,15 +669,20 @@ const penjualanHandler = {
         });
       }
 
+      // Invalidate master data cache when structure changes
+      localStorage.removeItem("masterData");
+
       simpleCache.set("stockData", this.stockData);
       stockCacheValid = true;
       this.populateStockTables();
     }
   },
 
+  // 🚀 OPSI C: Simplified - mostly handled by in-memory updates now
   async handleTransactionChanges() {
     try {
-      const stockMap = await StockService.getStockSnapshot(new Date());
+      // Use hybrid snapshot + today's delta for full recalculation
+      const stockMap = await StockService.getStockSnapshotWithTodayDelta(new Date());
 
       if (stockMap && stockMap.size > 0) {
         // Update stock data

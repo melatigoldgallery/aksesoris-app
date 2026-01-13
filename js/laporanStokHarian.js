@@ -1501,12 +1501,11 @@ document.addEventListener("DOMContentLoaded", () => {
     btnExport.addEventListener("click", handleExportDetailBulanan);
   }
 
-  // Set default month to last month
+  // Set default month to current month
   const exportMonthInput = document.getElementById("exportMonthInput");
   if (exportMonthInput) {
     const now = new Date();
-    const lastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-    const lastMonthStr = lastMonth.toISOString().slice(0, 7);
-    exportMonthInput.value = lastMonthStr;
+    const currentMonthStr = now.toISOString().slice(0, 7);
+    exportMonthInput.value = currentMonthStr;
   }
 });

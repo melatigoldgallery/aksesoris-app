@@ -359,6 +359,21 @@ export const aksesorisSaleHandler = {
         this.hapusDataRentang();
       });
     }
+
+    // Event listener untuk tombol simpan edit transaksi
+    if (document.getElementById("btnSimpanEditTransaksi")) {
+      document.getElementById("btnSimpanEditTransaksi").addEventListener("click", () => {
+        this.saveEditTransaction();
+      });
+    }
+
+    // Event listener untuk tombol konfirmasi delete transaksi
+    if (document.getElementById("btnKonfirmasiDeleteTransaksi")) {
+      document.getElementById("btnKonfirmasiDeleteTransaksi").addEventListener("click", () => {
+        this.confirmDeleteTransaction();
+      });
+    }
+
     this.initFilterDatepickers();
   },
 
@@ -1289,7 +1304,7 @@ export const aksesorisSaleHandler = {
     if (!historyData || historyData.length === 0) {
       tableBody.innerHTML = `
         <tr>
-          <td colspan="4" class="text-center text-muted py-5">
+          <td colspan="5" class="text-center text-muted py-5">
             <i class="fas fa-calendar-alt fa-2x mb-3 opacity-50"></i>
             <div class="h6">Pilih rentang tanggal dan klik tombol "Tampilkan" untuk melihat riwayat</div>
           </td>
@@ -1298,17 +1313,23 @@ export const aksesorisSaleHandler = {
       return;
     }
     historyData.forEach((item) => {
-      // Format tanggal dengan fallback dari timestamp jika field tanggal tidak ada
-      let displayTanggal = item.tanggal || "-";
+      // Format tanggal dengan fallback dari timestamp jika field tanggal tidak ada atau tidak valid
+      let displayTanggal = "-";
 
-      // Jika tanggal tidak ada tapi ada timestamp, format dari timestamp
-      if ((!item.tanggal || item.tanggal === "-") && item.timestamp) {
+      // Cek apakah item.tanggal valid (bukan empty, "-", atau mengandung "NaN")
+      if (item.tanggal && item.tanggal !== "-" && !item.tanggal.includes("NaN")) {
+        displayTanggal = item.tanggal;
+      }
+      // Fallback ke timestamp jika tanggal tidak valid atau kosong
+      else if (item.timestamp) {
         try {
           const date = item.timestamp.toDate ? item.timestamp.toDate() : new Date(item.timestamp);
-          const day = String(date.getDate()).padStart(2, "0");
-          const month = String(date.getMonth() + 1).padStart(2, "0");
-          const year = date.getFullYear();
-          displayTanggal = `${day}/${month}/${year}`;
+          if (!isNaN(date.getTime())) {
+            const day = String(date.getDate()).padStart(2, "0");
+            const month = String(date.getMonth() + 1).padStart(2, "0");
+            const year = date.getFullYear();
+            displayTanggal = `${day}/${month}/${year}`;
+          }
         } catch (e) {
           console.warn("Failed to format timestamp:", e);
           displayTanggal = "-";
@@ -1323,9 +1344,20 @@ export const aksesorisSaleHandler = {
         <td class="text-center">
           <span class="badge bg-primary">${item.jumlah || 0} pcs</span>
         </td>
+        <td>
+          <button class="btn btn-sm btn-warning me-1 btn-edit-transaksi" data-id="${item.id}" title="Edit">
+            <i class="fas fa-edit"></i>
+          </button>
+          <button class="btn btn-sm btn-danger btn-delete-transaksi" data-id="${item.id}" title="Hapus">
+            <i class="fas fa-trash"></i>
+          </button>
+        </td>
       `;
       tableBody.appendChild(row);
     });
+
+    // Attach event listeners untuk tombol aksi
+    this.attachTransactionActionListeners();
   },
 
   // Fungsi untuk menampilkan loading indicator
@@ -1461,11 +1493,9 @@ export const aksesorisSaleHandler = {
 
       tableBody.innerHTML = '<tr><td colspan="5" class="text-center">Loading...</td></tr>';
       const cacheKey = `kodeBarang_${kategori}`;
-      const cachedData = getCacheWithValidation(cacheKey);
-      if (cachedData) {
-        this.renderKodeBarangTable(tableBody, cachedData, kategori);
-        return;
-      }
+
+      // 🔥 PERBAIKAN: Invalidate cache dulu untuk memastikan data terbaru dengan field harga
+      invalidateCache(cacheKey);
 
       const snapshot = await getDocs(collection(firestore, "kodeAksesoris", "kategori", kategori));
 
@@ -1482,8 +1512,12 @@ export const aksesorisSaleHandler = {
           id: doc.id,
           text: data.text,
           nama: data.nama,
+          harga: data.harga || 0, // ✅ Tambahkan field harga
         });
       });
+
+      // Debug: Log data untuk memastikan harga dimuat
+      console.log(`📦 Loaded ${kodeData.length} items for kategori '${kategori}':`, kodeData);
 
       setCacheWithTimestamp(cacheKey, kodeData, CACHE_TTL_STANDARD);
       this.renderKodeBarangTable(tableBody, kodeData, kategori);
@@ -1504,10 +1538,22 @@ export const aksesorisSaleHandler = {
     let no = 1;
 
     kodeData.forEach((item) => {
+      // 🔥 PERBAIKAN: Hanya tampilkan "-" jika harga benar-benar tidak ada (undefined/null)
+      // Jika harga = 0, tetap tampilkan Rp 0
       const hargaColumn =
         kategori === "kotak"
-          ? `<td>${item.harga ? `Rp ${parseInt(item.harga).toLocaleString("id-ID")}` : "-"}</td>`
+          ? `<td>${
+              item.harga !== undefined && item.harga !== null
+                ? `Rp ${parseInt(item.harga).toLocaleString("id-ID")}`
+                : "-"
+            }</td>`
           : "";
+
+      // Debug log per item
+      if (kategori === "kotak") {
+        console.log(`Item ${item.text}: harga =`, item.harga);
+      }
+
       html += `
         <tr>
           <td>${no++}</td>
@@ -1652,16 +1698,12 @@ export const aksesorisSaleHandler = {
     try {
       await addDoc(collection(firestore, "kodeAksesoris", "kategori", kategori), data);
 
+      // Tambahkan entry di stokAksesoris (tanpa harga, karena harga ada di kodeAksesoris)
       const stokData = {
         kode: data.text,
         nama: data.nama,
         kategori: kategori,
       };
-
-      // Tambahkan harga ke stokAksesoris jika kategori kotak dan ada harga
-      if (kategori === "kotak" && data.harga !== undefined) {
-        stokData.harga = data.harga;
-      }
 
       await addDoc(collection(firestore, "stokAksesoris"), stokData);
       invalidateCache("stockData");
@@ -1685,14 +1727,10 @@ export const aksesorisSaleHandler = {
       const stockSnapshot = await getDocs(stockQuery);
 
       if (!stockSnapshot.empty) {
+        // Update hanya nama di stokAksesoris (harga tidak disimpan di sini)
         const updateData = {
           nama: data.nama,
         };
-
-        // Update harga di stokAksesoris jika kategori kotak
-        if (kategori === "kotak" && data.harga !== undefined) {
-          updateData.harga = data.harga;
-        }
 
         const stockDocRef = doc(firestore, "stokAksesoris", stockSnapshot.docs[0].id);
         await updateDoc(stockDocRef, updateData);
@@ -1842,6 +1880,212 @@ export const aksesorisSaleHandler = {
     });
 
     return expiredKeys.length;
+  },
+
+  // Attach event listeners untuk tombol aksi di riwayat transaksi
+  attachTransactionActionListeners() {
+    // Event listener untuk tombol edit
+    document.querySelectorAll(".btn-edit-transaksi").forEach((btn) => {
+      btn.addEventListener("click", (e) => {
+        const transactionId = e.currentTarget.getAttribute("data-id");
+        this.editStockTransaction(transactionId);
+      });
+    });
+
+    // Event listener untuk tombol delete
+    document.querySelectorAll(".btn-delete-transaksi").forEach((btn) => {
+      btn.addEventListener("click", (e) => {
+        const transactionId = e.currentTarget.getAttribute("data-id");
+        this.deleteStockTransaction(transactionId);
+      });
+    });
+  },
+
+  // Show modal edit transaksi
+  async editStockTransaction(transactionId) {
+    try {
+      const transaction = this.laporanData.find((item) => item.id === transactionId);
+      if (!transaction) {
+        this.showErrorNotification("Transaksi tidak ditemukan");
+        return;
+      }
+
+      // Set data ke form
+      document.getElementById("editTransaksiId").value = transaction.id;
+      document.getElementById("editTransaksiKode").value = transaction.kodeText;
+      document.getElementById("editTransaksiKodeDisplay").value = transaction.kodeText;
+      document.getElementById("editTransaksiNama").value = transaction.nama;
+      document.getElementById("editTransaksiJumlahLama").value = transaction.jumlah;
+      document.getElementById("editTransaksiJumlahBaru").value = transaction.jumlah;
+
+      // Show modal
+      const modal = new bootstrap.Modal(document.getElementById("modalEditTransaksi"));
+      modal.show();
+    } catch (error) {
+      console.error("Error showing edit modal:", error);
+      this.showErrorNotification("Gagal membuka form edit");
+    }
+  },
+
+  // Save edit transaksi
+  async saveEditTransaction() {
+    try {
+      const transactionId = document.getElementById("editTransaksiId").value;
+      const kode = document.getElementById("editTransaksiKode").value;
+      const jumlahLama = parseInt(document.getElementById("editTransaksiJumlahLama").value);
+      const jumlahBaru = parseInt(document.getElementById("editTransaksiJumlahBaru").value);
+
+      // Validasi
+      if (!jumlahBaru || jumlahBaru <= 0) {
+        this.showErrorNotification("Jumlah harus lebih dari 0");
+        return;
+      }
+
+      if (jumlahBaru === jumlahLama) {
+        this.showErrorNotification("Jumlah tidak berubah");
+        return;
+      }
+
+      this.showLoading(true);
+
+      // Hitung delta
+      const delta = jumlahBaru - jumlahLama;
+
+      // Update transaksi di stokAksesorisTransaksi
+      const transactionRef = doc(firestore, "stokAksesorisTransaksi", transactionId);
+      await updateDoc(transactionRef, {
+        jumlah: jumlahBaru,
+        lastUpdated: serverTimestamp(),
+      });
+
+      // Update stok di stokAksesoris
+      const stockQuery = query(collection(firestore, "stokAksesoris"), where("kode", "==", kode), limit(1));
+      const stockSnapshot = await getDocs(stockQuery);
+
+      if (stockSnapshot.size > 0) {
+        const stockDoc = stockSnapshot.docs[0];
+        const stockData = stockDoc.data();
+        const currentStok = stockData.stokAkhir || 0;
+        const newStok = currentStok + delta;
+
+        await updateDoc(doc(firestore, "stokAksesoris", stockDoc.id), {
+          stokAkhir: newStok,
+          lastUpdated: serverTimestamp(),
+        });
+
+        console.log(`✅ Stock updated: ${kode} (${currentStok} → ${newStok})`);
+      }
+
+      // Invalidate cache dan refresh
+      invalidateCache("stockAdditionHistory");
+      await this.loadStockAdditionHistory();
+
+      // Hide modal
+      bootstrap.Modal.getInstance(document.getElementById("modalEditTransaksi")).hide();
+
+      this.showSuccessNotification(
+        `Transaksi berhasil diupdate<br>Kode: ${kode}<br>Jumlah: ${jumlahLama} → ${jumlahBaru} pcs<br>Delta: ${
+          delta > 0 ? "+" : ""
+        }${delta} pcs`
+      );
+    } catch (error) {
+      console.error("Error saving edit transaction:", error);
+      this.showErrorNotification("Gagal menyimpan perubahan: " + error.message);
+    } finally {
+      this.showLoading(false);
+    }
+  },
+
+  // Show modal delete transaksi
+  async deleteStockTransaction(transactionId) {
+    try {
+      const transaction = this.laporanData.find((item) => item.id === transactionId);
+      if (!transaction) {
+        this.showErrorNotification("Transaksi tidak ditemukan");
+        return;
+      }
+
+      // Set data ke form
+      document.getElementById("deleteTransaksiId").value = transaction.id;
+      document.getElementById("deleteTransaksiKode").value = transaction.kodeText;
+      document.getElementById("deleteTransaksiJumlah").value = transaction.jumlah;
+      document.getElementById("deleteTransaksiKodeDisplay").textContent = transaction.kodeText;
+      document.getElementById("deleteTransaksiNamaDisplay").textContent = transaction.nama;
+      document.getElementById("deleteTransaksiJumlahDisplay").textContent = transaction.jumlah;
+      document.getElementById("deleteTransaksiPassword").value = "";
+      document.getElementById("deleteTransaksiPassword").classList.remove("is-invalid");
+
+      // Show modal
+      const modal = new bootstrap.Modal(document.getElementById("modalDeleteTransaksi"));
+      modal.show();
+    } catch (error) {
+      console.error("Error showing delete modal:", error);
+      this.showErrorNotification("Gagal membuka form hapus");
+    }
+  },
+
+  // Confirm delete transaksi dengan password
+  async confirmDeleteTransaction() {
+    try {
+      const password = document.getElementById("deleteTransaksiPassword").value.trim();
+      const correctPassword = "smlt116"; // Password sama dengan sistem lain
+
+      // Validasi password
+      if (!password) {
+        document.getElementById("deleteTransaksiPassword").classList.add("is-invalid");
+        document.getElementById("deleteTransaksiPasswordError").textContent = "Password harus diisi";
+        return;
+      }
+
+      if (password !== correctPassword) {
+        document.getElementById("deleteTransaksiPassword").classList.add("is-invalid");
+        document.getElementById("deleteTransaksiPasswordError").textContent = "Password salah";
+        return;
+      }
+
+      this.showLoading(true);
+
+      const transactionId = document.getElementById("deleteTransaksiId").value;
+      const kode = document.getElementById("deleteTransaksiKode").value;
+      const jumlah = parseInt(document.getElementById("deleteTransaksiJumlah").value);
+
+      // Delete transaksi dari stokAksesorisTransaksi
+      await deleteDoc(doc(firestore, "stokAksesorisTransaksi", transactionId));
+
+      // Reverse stok di stokAksesoris (kurangi stokAkhir)
+      const stockQuery = query(collection(firestore, "stokAksesoris"), where("kode", "==", kode), limit(1));
+      const stockSnapshot = await getDocs(stockQuery);
+
+      if (stockSnapshot.size > 0) {
+        const stockDoc = stockSnapshot.docs[0];
+        const stockData = stockDoc.data();
+        const currentStok = stockData.stokAkhir || 0;
+        const newStok = Math.max(0, currentStok - jumlah);
+
+        await updateDoc(doc(firestore, "stokAksesoris", stockDoc.id), {
+          stokAkhir: newStok,
+          lastUpdated: serverTimestamp(),
+        });
+
+        console.log(`✅ Stock reversed: ${kode} (${currentStok} → ${newStok})`);
+      }
+
+      // Invalidate cache dan refresh
+      invalidateCache("stockAdditionHistory");
+      await this.loadStockAdditionHistory();
+
+      // Hide modal
+      bootstrap.Modal.getInstance(document.getElementById("modalDeleteTransaksi")).hide();
+
+      this.showSuccessNotification(
+        `Transaksi berhasil dihapus<br>Kode: ${kode}<br>Jumlah: ${jumlah} pcs<br>Stok telah dikurangi`
+      );
+    } catch (error) {
+      console.error("Error deleting transaction:", error);
+      this.showErrorNotification("Gagal menghapus transaksi: " + error.message);
+    } finally {
+      this.showLoading(false);
+    }
   },
 };
 

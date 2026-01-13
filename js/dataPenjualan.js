@@ -771,6 +771,10 @@ class OptimizedDataPenjualanApp {
       ],
       order: [[0, "desc"]],
       pageLength: 25,
+      lengthMenu: [
+        [10, 25, 50, 100],
+        [10, 25, 50, 100],
+      ],
       scrollX: true,
       scrollCollapse: true,
       fixedColumns: false,
@@ -1007,20 +1011,44 @@ class OptimizedDataPenjualanApp {
       };
 
       if (transaction.items?.length > 0) {
+        // ✅ Group items by kode + nama + kadar
+        const groupedItems = {};
+
         transaction.items.forEach((item) => {
+          const key = `${item.kodeText || item.barcode || "-"}_${item.nama || "-"}_${item.kadar || "-"}`;
+
+          if (!groupedItems[key]) {
+            groupedItems[key] = {
+              kode: item.kodeText || item.barcode || "-",
+              nama: item.nama || "-",
+              kadar: item.kadar || "-",
+              jumlah: 0,
+              berat: 0,
+              totalHarga: 0,
+              keterangan: item.keterangan || transaction.keterangan || "-",
+            };
+          }
+
+          groupedItems[key].jumlah += item.jumlah || 1;
+          groupedItems[key].berat += parseFloat(item.berat) || 0;
+          groupedItems[key].totalHarga += item.totalHarga || 0;
+        });
+
+        // ✅ Push grouped items to table
+        Object.values(groupedItems).forEach((groupedItem) => {
           tableData.push([
             baseData.date,
             baseData.time,
             baseData.sales,
             baseData.jenis,
-            item.kodeText || item.barcode || "-",
-            item.nama || "-",
-            item.jumlah || 1,
-            item.berat ? `${item.berat} gr` : "-",
-            item.kadar || "-",
-            `Rp ${utils.formatRupiah(item.totalHarga || 0)}`,
+            groupedItem.kode,
+            groupedItem.nama,
+            groupedItem.jumlah,
+            groupedItem.berat > 0 ? `${groupedItem.berat.toFixed(2)} gr` : "-",
+            groupedItem.kadar,
+            `Rp ${utils.formatRupiah(groupedItem.totalHarga)}`,
             baseData.status,
-            item.keterangan || transaction.keterangan || "-",
+            groupedItem.keterangan,
             baseData.actions,
           ]);
         });
@@ -1204,6 +1232,10 @@ class OptimizedDataPenjualanApp {
     }
 
     let formHtml = `
+      <div class="alert alert-warning mb-3">
+        <i class="fas fa-exclamation-triangle me-2"></i>
+        <strong>Perhatian:</strong> Kode barang dan jumlah tidak dapat diubah. Untuk mengubah stok, hapus transaksi ini dan buat transaksi baru.
+      </div>
       <div class="row mb-3">
         <div class="col-md-6">
           <label for="editTanggal" class="form-label">Tanggal:</label>
@@ -1227,12 +1259,16 @@ class OptimizedDataPenjualanApp {
               <h6>Item ${index + 1}</h6>
               <div class="row">
                 <div class="col-md-6">
-                  <label for="editBarcode_${index}" class="form-label">Barcode:</label>
-                  <input type="text" class="form-control" id="editBarcode_${index}" value="${item.kodeText || ""}">
+                  <label for="editBarcode_${index}" class="form-label">Barcode: <span class="badge bg-secondary">Tidak dapat diubah</span></label>
+                  <input type="text" class="form-control" id="editBarcode_${index}" value="${
+            item.kodeText || ""
+          }" readonly>
                 </div>
                 <div class="col-md-6">
-                  <label for="editKodeLock_${index}" class="form-label">Kode Lock:</label>
-                  <input type="text" class="form-control" id="editKodeLock_${index}" value="${item.kodeLock || ""}">
+                  <label for="editKodeLock_${index}" class="form-label">Kode Lock: <span class="badge bg-secondary">Tidak dapat diubah</span></label>
+                  <input type="text" class="form-control" id="editKodeLock_${index}" value="${
+            item.kodeLock || "-"
+          }" readonly>
                 </div>
               </div>
               <div class="row mt-2">
@@ -1271,13 +1307,13 @@ class OptimizedDataPenjualanApp {
           // Aksesoris & Kotak: Kode, Nama, Kadar, Berat, Harga
           formHtml += `
             <div class="border p-3 mb-3 rounded">
-              <h6>Item ${index + 1}</h6>
+              <h6>Item ${index + 1} ${item.jumlah > 1 ? `(${item.jumlah} pcs)` : ""}</h6>
               <div class="row">
                 <div class="col-md-6">
-                  <label for="editKode_${index}" class="form-label">Kode:</label>
+                  <label for="editKode_${index}" class="form-label">Kode: <span class="badge bg-secondary">Tidak dapat diubah</span></label>
                   <input type="text" class="form-control" id="editKode_${index}" value="${
             item.kodeText || item.kode || ""
-          }">
+          }" readonly>
                 </div>
                 <div class="col-md-6">
                   <label for="editNama_${index}" class="form-label">Nama Barang:</label>
@@ -1385,38 +1421,23 @@ class OptimizedDataPenjualanApp {
         updateData.items = this.currentTransaction.items.map((item, index) => {
           const updatedItem = { ...item };
 
+          // ✅ OPSI B: Kode, kodeLock, jumlah TIDAK dapat diubah
+          // Pertahankan nilai original untuk field yang mempengaruhi stok
+          updatedItem.kodeText = item.kodeText;
+          updatedItem.kode = item.kode || item.kodeText;
+          updatedItem.kodeLock = item.kodeLock;
+          updatedItem.jumlah = item.jumlah;
+
+          // Allow edit: nama, kadar, berat, harga, keterangan
           updatedItem.nama = document.getElementById(`editNama_${index}`)?.value || item.nama;
 
           if (this.currentTransaction.jenisPenjualan === "manual") {
-            // Manual: barcode, kodeLock, kadar, berat, keterangan
-            // Hanya update field yang memang ada inputnya, pertahankan struktur original
-            const newBarcode = document.getElementById(`editBarcode_${index}`)?.value;
-            const newKodeLock = document.getElementById(`editKodeLock_${index}`)?.value;
-
-            // Update kode/barcode jika ada perubahan
-            if (newBarcode !== undefined && newBarcode !== "") {
-              updatedItem.kode = newBarcode;
-            }
-            // Update kodeLock jika ada perubahan
-            if (newKodeLock !== undefined && newKodeLock !== "") {
-              updatedItem.kodeLock = newKodeLock;
-            }
-            // kodeText tetap mengikuti nilai original, tidak diubah
-            // (kodeText biasanya barcode untuk display)
-
             updatedItem.kadar = document.getElementById(`editKadar_${index}`)?.value || item.kadar;
             updatedItem.berat = document.getElementById(`editBerat_${index}`)?.value || item.berat;
             updatedItem.keterangan = document.getElementById(`editKeterangan_${index}`)?.value || item.keterangan;
-          } else {
-            // Aksesoris & Kotak: kode, kadar, berat
-            const newKode = document.getElementById(`editKode_${index}`)?.value || item.kodeText || item.kode;
-            updatedItem.kodeText = newKode;
-            updatedItem.kode = newKode;
-
-            if (this.currentTransaction.jenisPenjualan !== "kotak") {
-              updatedItem.kadar = document.getElementById(`editKadar_${index}`)?.value || item.kadar;
-              updatedItem.berat = document.getElementById(`editBerat_${index}`)?.value || item.berat;
-            }
+          } else if (this.currentTransaction.jenisPenjualan !== "kotak") {
+            updatedItem.kadar = document.getElementById(`editKadar_${index}`)?.value || item.kadar;
+            updatedItem.berat = document.getElementById(`editBerat_${index}`)?.value || item.berat;
           }
 
           const hargaValue = document.getElementById(`editHarga_${index}`)?.value.replace(/\./g, "") || "0";
