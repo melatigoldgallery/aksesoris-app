@@ -1975,7 +1975,7 @@ class OptimizedDataPenjualanApp {
         .keterangan { position: absolute; top: 5cm; left: 0.5cm; right: 3cm; font-style: italic; font-size: 10px; padding-top: 2mm; text-align: left; }
         .keterangan-spacer { height: 0; }
         .item-details { display: flex; flex-wrap: wrap; }
-        .item-data { display: grid; grid-template-columns: 2cm 2.8cm 4.7cm 1.8cm 1.8cm 2cm; width: 100%; column-gap: 0.2cm; margin-left: 0.5cm; margin-top: 0.8cm; margin-right: 3cm; }
+        .item-data { display: grid; grid-template-columns: 2cm 2.8cm 4.7cm 1.8cm 1.8cm 2cm; width: 100%; column-gap: 0.2cm; margin-left: 0.5cm; margin-top: 1.1cm; margin-right: 3cm; }
         .item-data span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
         .item-data span:nth-child(3) { white-space: normal; overflow: visible; text-overflow: clip; word-wrap: break-word; }
       </style>
@@ -2058,148 +2058,130 @@ class OptimizedDataPenjualanApp {
       return utils.showAlert("Tidak ada item untuk dicetak.", "Info", "info");
     }
 
-    const totalItems = transaction.items.length;
-    let index = 0;
+    // Open single print window
+    const printWindow = window.open("", "_blank");
 
-    const printNext = () => {
-      if (index >= totalItems) {
-        return; // selesai
-      }
+    if (!printWindow) {
+      return utils.showAlert("Popup diblokir oleh browser. Mohon izinkan popup untuk mencetak.", "Error", "error");
+    }
 
-      const item = transaction.items[index];
-      const html = this.generateSingleItemInvoiceHTML(transaction, item, index + 1, totalItems);
-      this.printViaIframe(html, () => {
-        index += 1;
-        // beri jeda singkat antar cetak untuk stabilitas printer
-        setTimeout(printNext, 200);
-      });
-    };
-
-    printNext();
-  }
-
-  // Template invoice untuk satu item (tanpa auto window.print di onload)
-  generateSingleItemInvoiceHTML(transaction, item, itemIndex, itemTotal) {
     const tanggal = utils.formatDate(transaction.timestamp || transaction.tanggal);
-    const itemHarga = parseInt(item?.totalHarga || 0);
-    const keteranganText =
-      transaction.jenisPenjualan === "manual" && item?.keterangan && item.keterangan.trim() !== ""
-        ? `<div class="keterangan"><strong>Keterangan:</strong><br>${item.keterangan.trim()}</div>`
-        : `<div class="keterangan-spacer"></div>`;
 
-    return `
-    <!DOCTYPE html>
-    <html>
-    <head>
-      <title>Invoice Customer - Item ${itemIndex}/${itemTotal}</title>
-      <style>
-        @page { size: 10cm 20cm; margin: 0; }
-        body { font-family: Arial, sans-serif; font-size: 12px; margin: 0; padding: 5mm; width: 20cm; box-sizing: border-box; }
-        .invoice { width: 100%; position: relative; min-height: 19cm; }
-        .header-info { text-align: left; margin-bottom: 0.5cm; margin-left: 14.3cm; margin-top: 0.8cm; }
-        .customer-info { text-align: left; margin-bottom: 1.1cm; margin-left: 14.3cm; font-size: 11px; line-height: 1.2; }
-        .total-row { position: absolute; top: 6.3cm; right: 3cm; text-align: right; font-weight: bold; }
-        .sales { position: absolute; top: 7.2cm; right: 1.6cm; text-align: right; }
-        .keterangan { position: absolute; top: 5cm; left: 0.5cm; right: 3cm; font-style: italic; font-size: 10px; padding-top: 2mm; text-align: left; }
-        .keterangan-spacer { height: 0; }
-        .item-details { display: flex; flex-wrap: wrap; }
-        .item-data { display: grid; grid-template-columns: 2cm 2.8cm 4.7cm 1.8cm 1.8cm 2cm; width: 100%; column-gap: 0.2cm; margin-left: 0.5cm; margin-top: 0.8cm; margin-right: 3cm; }
-        .item-data span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-        .item-data span:nth-child(3) { white-space: normal; overflow: visible; text-overflow: clip; word-wrap: break-word; }
-      </style>
-    </head>
-    <body>
-      <div class="invoice">
-        <div class="header-info">
-          <p>${tanggal}</p>
-        </div>
-        <div class="customer-info">
-          <div>${transaction.customerName || "-"}</div>
-          <div>${transaction.customerPhone || ""}</div>
-        </div>
-        <div class="item-details">
-          <div class="item-data">
-            <span>${item?.kodeText || "-"}</span>
-            <span>${item?.jumlah || " "}pcs</span>
-            <span>${item?.nama || "-"}</span>
-            <span>${item?.kadar || "-"}</span>
-            <span>${item?.berat || "-"}gr</span>
-            <span>${utils.formatRupiah(itemHarga)}</span>
+    // Build combined HTML with all invoices
+    let combinedHTML = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>Invoice Customer (${transaction.items.length} items)</title>
+        <style>
+          @page { 
+            size: 10cm 20cm; 
+            margin: 0; 
+          }
+          @media print {
+            .invoice-page { 
+              page-break-after: always;
+              page-break-inside: avoid;
+              break-after: page;
+              break-inside: avoid;
+            }
+            .invoice-page:last-child { 
+              page-break-after: auto;
+              break-after: auto;
+            }
+          }
+          body { 
+            font-family: Arial, sans-serif; 
+            font-size: 12px; 
+            margin: 0; 
+            padding: 0; 
+          }
+          .invoice-page { 
+            width: 20cm; 
+            min-height: 19cm; 
+            height: 19cm;
+            padding: 5mm; 
+            box-sizing: border-box;
+            position: relative;
+            display: block;
+          }
+          .invoice { width: 100%; position: relative; min-height: 19cm; }
+          .header-info { text-align: left; margin-bottom: 0.5cm; margin-left: 14.3cm; margin-top: 0.8cm; }
+          .customer-info { text-align: left; margin-bottom: 1.1cm; margin-left: 14.3cm; font-size: 11px; line-height: 1.2; }
+          .total-row { position: absolute; top: 6.3cm; right: 3cm; text-align: right; font-weight: bold; }
+          .sales { position: absolute; top: 7.2cm; right: 1.6cm; text-align: right; }
+          .item-details { display: flex; flex-wrap: wrap; }
+          .item-data { display: grid; grid-template-columns: 2cm 2.8cm 4.7cm 1.8cm 1.8cm 2cm; width: 100%; column-gap: 0.2cm; margin-left: 0.5cm; margin-top: 1.1cm; margin-right: 3cm; }
+          .item-data span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+          .item-data span:nth-child(3) { white-space: normal; overflow: visible; text-overflow: clip; word-wrap: break-word; }
+          .keterangan { position: absolute; top: 5cm; left: 0.5cm; right: 3cm; font-style: italic; font-size: 10px; padding-top: 2mm; text-align: left; }
+          .keterangan-spacer { height: 0; }
+        </style>
+      </head>
+      <body>
+    `;
+
+    // Generate invoice HTML for each item
+    transaction.items.forEach((item) => {
+      const itemHarga = parseInt(item?.totalHarga || 0);
+      const keteranganText =
+        transaction.jenisPenjualan === "manual" && item?.keterangan && item.keterangan.trim() !== ""
+          ? `<div class="keterangan"><strong>Keterangan:</strong><br>${item.keterangan.trim()}</div>`
+          : `<div class="keterangan-spacer"></div>`;
+
+      combinedHTML += `
+        <div class="invoice-page">
+          <div class="invoice">
+            <div class="header-info"><p>${tanggal}</p></div>
+            <div class="customer-info">
+              <div>${transaction.customerName || "-"}</div>
+              <div>${transaction.customerPhone || ""}</div>
+            </div>
+
+            <div class="item-details">
+              <div class="item-data">
+                <span>${item?.kodeText || "-"}</span>
+                <span>${item?.jumlah || " "}pcs</span>
+                <span>${item?.nama || "-"}</span>
+                <span>${item?.kadar || "-"}</span>
+                <span>${item?.berat || "-"}gr</span>
+                <span>${utils.formatRupiah(itemHarga)}</span>
+              </div>
+            </div>
+            ${keteranganText}
+            <div class="total-row">Rp ${utils.formatRupiah(itemHarga)}</div>
+            <div class="sales">${transaction.sales || "-"}</div>
           </div>
         </div>
-        ${keteranganText}
-        <div class="total-row">Rp ${utils.formatRupiah(itemHarga)}</div>
-        <div class="sales">${transaction.sales || "-"}</div>
-      </div>
-    </body>
-    </html>`;
-  }
+      `;
+    });
 
-  // Controller cetak via iframe tersembunyi (hindari duplikasi)
-  printViaIframe(html, onDone) {
-    try {
-      const iframe = document.createElement("iframe");
-      iframe.style.position = "fixed";
-      iframe.style.right = "0";
-      iframe.style.bottom = "0";
-      iframe.style.width = "0";
-      iframe.style.height = "0";
-      iframe.style.border = "0";
-      document.body.appendChild(iframe);
+    // Close HTML and add print script
+    combinedHTML += `
+        <script>
+          window.onload = function() {
+            // Wait for all content to fully render before printing
+            setTimeout(function() {
+              window.print();
+              // Close window after print dialog is dismissed (longer delay)
+              setTimeout(function() { 
+                window.close(); 
+              }, 1000);
+            }, 300);
+          };
+          
+          // Fallback: close on afterprint event
+          window.onafterprint = function() {
+            setTimeout(function() { window.close(); }, 500);
+          };
+        </script>
+      </body>
+      </html>
+    `;
 
-      const doc = iframe.contentDocument || iframe.contentWindow.document;
-      doc.open();
-      doc.write(html);
-      doc.close();
-
-      const cleanup = () => {
-        try {
-          if (iframe && iframe.parentNode) iframe.parentNode.removeChild(iframe);
-        } catch (_) {}
-      };
-
-      const handleAfterPrint = () => {
-        try {
-          iframe.contentWindow.removeEventListener("afterprint", handleAfterPrint);
-        } catch (_) {}
-        cleanup();
-        if (typeof onDone === "function") onDone();
-      };
-
-      // Listener afterprint untuk memastikan 1x cetak
-      try {
-        iframe.contentWindow.addEventListener("afterprint", handleAfterPrint);
-      } catch (_) {}
-
-      const tryPrint = () => {
-        try {
-          iframe.contentWindow.focus();
-          iframe.contentWindow.print();
-        } catch (e) {
-          // jika dokumen belum siap, coba lagi
-          return setTimeout(tryPrint, 150);
-        }
-        // Fallback jika afterprint tidak terpanggil
-        setTimeout(() => {
-          if (document.body.contains(iframe)) {
-            try {
-              iframe.contentWindow.removeEventListener("afterprint", handleAfterPrint);
-            } catch (_) {}
-            cleanup();
-            if (typeof onDone === "function") onDone();
-          }
-        }, 2500);
-      };
-
-      if (doc.readyState === "complete") {
-        setTimeout(tryPrint, 50);
-      } else {
-        iframe.onload = () => setTimeout(tryPrint, 50);
-      }
-    } catch (err) {
-      console.error("Print via iframe failed:", err);
-      if (typeof onDone === "function") onDone();
-    }
+    // Write to print window
+    printWindow.document.write(combinedHTML);
+    printWindow.document.close();
   }
 
   // Refresh data manually

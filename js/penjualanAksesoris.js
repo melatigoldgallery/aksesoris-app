@@ -943,12 +943,7 @@ const penjualanHandler = {
 
   // Populate stock tables
   populateStockTables() {
-    // Helper: Check stok availability (defined once for entire method)
-    const hasStock = (item) => {
-      if (item.stokAkhir === undefined || item.stokAkhir === null) return true;
-      return item.stokAkhir > 0;
-    };
-
+    // 🎯 SOLUSI 3: Show ALL items, validate stock on click (0 Firestore reads!)
     const categories = {
       aksesoris: "#tableAksesoris",
       kotak: "#tableKotak",
@@ -959,21 +954,22 @@ const penjualanHandler = {
       const tbody = $(`${selector} tbody`);
       tbody.empty();
 
-      // Filter: kategori + stok > 0
-      const allCategoryItems = this.stockData.filter((item) => item.kategori === category);
-      const items = allCategoryItems.filter((item) => hasStock(item));
+      // Filter: kategori ONLY (no stock filter)
+      const items = this.stockData.filter((item) => item.kategori === category);
 
       if (items.length === 0) {
-        tbody.append(
-          `<tr><td colspan="2" class="text-center text-muted">Tidak ada barang dengan stok tersedia</td></tr>`
-        );
+        tbody.append(`<tr><td colspan="3" class="text-center text-muted">Tidak ada barang</td></tr>`);
       } else {
         items.forEach((item) => {
           const hargaValue = item.hargaJual || item.harga || 0;
+          const stok = item.stokAkhir !== undefined ? item.stokAkhir : 0;
+          const stockBadge = stok <= 0 ? '<span class="badge bg-danger ms-2">Habis</span>' : "";
+
           const row = `
-          <tr data-kode="${item.kode}" data-nama="${item.nama}" data-harga="${hargaValue}">
+          <tr data-kode="${item.kode}" data-nama="${item.nama}" data-harga="${hargaValue}" data-stok="${stok}">
             <td>${item.kode || "-"}</td>
-            <td>${item.nama || "-"}</td>
+            <td>${item.nama || "-"}${stockBadge}</td>
+            <td class="text-end">${stok}</td>
           </tr>`;
           tbody.append(row);
         });
@@ -983,19 +979,23 @@ const penjualanHandler = {
     const lockTable = $("#tableLock tbody");
     lockTable.empty();
 
-    const allLockItems = this.stockData.filter((item) => item.kategori === "aksesoris");
-    const lockItems = allLockItems.filter((item) => hasStock(item));
+    // Lock table: show all aksesoris items
+    const lockItems = this.stockData.filter((item) => item.kategori === "aksesoris");
 
     if (lockItems.length === 0) {
-      lockTable.append(
-        '<tr><td colspan="2" class="text-center text-muted">Tidak ada barang dengan stok tersedia</td></tr>'
-      );
+      lockTable.append('<tr><td colspan="3" class="text-center text-muted">Tidak ada barang</td></tr>');
     } else {
       lockItems.forEach((item) => {
+        const stok = item.stokAkhir !== undefined ? item.stokAkhir : 0;
+        const stockBadge = stok <= 0 ? '<span class="badge bg-danger ms-2">Habis</span>' : "";
+
         const row = `
-        <tr data-kode="${item.kode}" data-nama="${item.nama}" data-harga="${item.hargaJual || item.harga || 0}">
+        <tr data-kode="${item.kode}" data-nama="${item.nama}" data-harga="${
+          item.hargaJual || item.harga || 0
+        }" data-stok="${stok}">
           <td>${item.kode || "-"}</td>
-          <td>${item.nama || "-"}</td>
+          <td>${item.nama || "-"}${stockBadge}</td>
+          <td class="text-end">${stok}</td>
         </tr>`;
         lockTable.append(row);
       });
@@ -1008,8 +1008,25 @@ const penjualanHandler = {
   attachTableRowClickHandlers() {
     $("#tableAksesoris tbody tr, #tableKotak tbody tr, #tableSilver tbody tr, #tableLock tbody tr").off("click");
 
+    // 🎯 Aksesoris table with stock validation
     $("#tableAksesoris tbody tr").on("click", function () {
       if ($(this).data("kode")) {
+        const kode = $(this).data("kode");
+        const nama = $(this).data("nama");
+        const stok = parseInt($(this).data("stok")) || 0;
+
+        // Block if stock is 0 or less
+        if (stok <= 0) {
+          Swal.fire({
+            title: "Stok Habis!",
+            text: `Barang ${nama} (${kode}) tidak memiliki stok. Tidak dapat ditambahkan ke transaksi.`,
+            icon: "error",
+            confirmButtonText: "OK",
+            confirmButtonColor: "#dc3545",
+          });
+          return;
+        }
+
         const data = {
           kode: $(this).data("kode"),
           nama: $(this).data("nama"),
@@ -1020,9 +1037,25 @@ const penjualanHandler = {
       }
     });
 
-    // Kotak table
+    // 🎯 Kotak table with stock validation
     $("#tableKotak tbody tr").on("click", function () {
       if ($(this).data("kode")) {
+        const kode = $(this).data("kode");
+        const nama = $(this).data("nama");
+        const stok = parseInt($(this).data("stok")) || 0;
+
+        // Block if stock is 0 or less
+        if (stok <= 0) {
+          Swal.fire({
+            title: "Stok Habis!",
+            text: `Barang ${nama} (${kode}) tidak memiliki stok. Tidak dapat ditambahkan ke transaksi.`,
+            icon: "error",
+            confirmButtonText: "OK",
+            confirmButtonColor: "#dc3545",
+          });
+          return;
+        }
+
         const data = {
           kode: $(this).data("kode"),
           nama: $(this).data("nama"),
@@ -1033,9 +1066,25 @@ const penjualanHandler = {
       }
     });
 
-    // Silver table
+    // 🎯 Silver table with stock validation
     $("#tableSilver tbody tr").on("click", function () {
       if ($(this).data("kode")) {
+        const kode = $(this).data("kode");
+        const nama = $(this).data("nama");
+        const stok = parseInt($(this).data("stok")) || 0;
+
+        // Block if stock is 0 or less
+        if (stok <= 0) {
+          Swal.fire({
+            title: "Stok Habis!",
+            text: `Barang ${nama} (${kode}) tidak memiliki stok. Tidak dapat ditambahkan ke transaksi.`,
+            icon: "error",
+            confirmButtonText: "OK",
+            confirmButtonColor: "#dc3545",
+          });
+          return;
+        }
+
         const data = {
           kode: $(this).data("kode"),
           nama: $(this).data("nama"),
@@ -1046,7 +1095,7 @@ const penjualanHandler = {
       }
     });
 
-    // Lock table
+    // Lock table (no stock validation needed for manual entry)
     $("#tableLock tbody tr").on("click", function () {
       if ($(this).data("kode") && activeLockRow) {
         const kode = $(this).data("kode");
@@ -2470,7 +2519,7 @@ const penjualanHandler = {
         .keterangan { position: absolute; top: 5cm; left: 0.5cm; right: 3cm; font-style: italic; font-size: 10px; padding-top: 2mm; text-align: left; }
         .keterangan-spacer { height: 0; }
         .item-details { display: flex; flex-wrap: wrap; }
-        .item-data { display: grid; grid-template-columns: 2cm 2.8cm 4.7cm 1.8cm 1.8cm 2cm; width: 100%; column-gap: 0.2cm; margin-left: 0.5cm; margin-top: 0.8cm; margin-right: 3cm; }
+        .item-data { display: grid; grid-template-columns: 2cm 2.8cm 4.7cm 1.8cm 1.8cm 2cm; width: 100%; column-gap: 0.2cm; margin-left: 0.5cm; margin-top: 1.1m; margin-right: 3cm; }
         .item-data span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
         .item-data span:nth-child(3) { white-space: normal; overflow: visible; text-overflow: clip; word-wrap: break-word; }
       </style>
@@ -2581,7 +2630,70 @@ const penjualanHandler = {
       return def;
     };
 
-    const buildItemHTML = (item) => {
+    // Open single print window
+    const printWindow = window.open("", "_blank");
+
+    if (!printWindow) {
+      utils.showAlert("Popup diblokir oleh browser. Mohon izinkan popup untuk mencetak.", "Error", "error");
+      return;
+    }
+
+    // Build combined HTML with all invoices
+    let combinedHTML = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>Invoice Customer (${items.length} items)</title>
+        <style>
+          @page { 
+            size: 10cm 20cm; 
+            margin: 0; 
+          }
+          @media print {
+            .invoice-page { 
+              page-break-after: always;
+              page-break-inside: avoid;
+              break-after: page;
+              break-inside: avoid;
+            }
+            .invoice-page:last-child { 
+              page-break-after: auto;
+              break-after: auto;
+            }
+          }
+          body { 
+            font-family: Arial, sans-serif; 
+            font-size: 12px; 
+            margin: 0; 
+            padding: 0; 
+          }
+          .invoice-page { 
+            width: 20cm; 
+            min-height: 19cm; 
+            height: 19cm;
+            padding: 5mm; 
+            box-sizing: border-box;
+            position: relative;
+            display: block;
+          }
+          .invoice { width: 100%; position: relative; min-height: 19cm; }
+          .header-info { text-align: left; margin-bottom: 0.5cm; margin-left: 14.3cm; margin-top: 0.8cm; }
+          .customer-info { text-align: left; margin-bottom: 1.1cm; margin-left: 14.3cm; font-size: 11px; line-height: 1.2; }
+          .total-row { position: absolute; top: 6.3cm; right: 3cm; text-align: right; font-weight: bold; }
+          .sales { position: absolute; top: 7.2cm; right: 1.6cm; text-align: right; }
+          .item-details { display: flex; flex-wrap: wrap; }
+          .item-data { display: grid; grid-template-columns: 2cm 2.8cm 4.7cm 1.8cm 1.8cm 2cm; width: 100%; column-gap: 0.2cm; margin-left: 0.5cm; margin-top: 1.1cm; margin-right: 3cm; }
+          .item-data span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+          .item-data span:nth-child(3) { white-space: normal; overflow: visible; text-overflow: clip; word-wrap: break-word; }
+          .keterangan { position: absolute; top: 5cm; left: 0.5cm; right: 3cm; font-style: italic; font-size: 10px; padding-top: 2mm; text-align: left; }
+          .keterangan-spacer { height: 0; }
+        </style>
+      </head>
+      <body>
+    `;
+
+    // Generate invoice HTML for each item
+    items.forEach((item) => {
       const kode = getField(item, ["kode", "kodeText", "kodeLock"], "-");
       const nama = getField(item, ["nama", "namaBarang"], "-");
       const kadar = getField(item, ["kadar"], "-");
@@ -2589,28 +2701,8 @@ const penjualanHandler = {
       const total = parseHarga(getField(item, ["totalHarga"], 0));
       const keterangan = getField(item, ["keterangan"], "");
 
-      return `
-        <!DOCTYPE html>
-        <html>
-        <head>
-          <title>Invoice Customer</title>
-          <style>
-            @page { size: 10cm 20cm; margin: 0; }
-            body { font-family: Arial, sans-serif; font-size: 12px; margin: 0; padding: 5mm; width: 20cm; box-sizing: border-box; }
-            .invoice { width: 100%; position: relative; min-height: 19cm; }
-            .header-info { text-align: left; margin-bottom: 0.5cm; margin-left: 14.3cm; margin-top: 0.8cm; }
-            .customer-info { text-align: left; margin-bottom: 1.1cm; margin-left: 14.3cm; font-size: 11px; line-height: 1.2; }
-            .total-row { position: absolute; top: 6.3cm; right: 3cm; text-align: right; font-weight: bold; }
-            .sales { position: absolute; top: 7.2cm; right: 1.6cm; text-align: right; }
-            .item-details { display: flex; flex-wrap: wrap; }
-            .item-data { display: grid; grid-template-columns: 2cm 2.8cm 4.7cm 1.8cm 1.8cm 2cm; width: 100%; column-gap: 0.2cm; margin-left: 0.5cm; margin-top: 0.8cm; margin-right: 3cm; }
-            .item-data span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-            .item-data span:nth-child(3) { white-space: normal; overflow: visible; text-overflow: clip; word-wrap: break-word; }
-            .keterangan { position: absolute; top: 5cm; left: 0.5cm; right: 3cm; font-style: italic; font-size: 10px; padding-top: 2mm; text-align: left; }
-            .keterangan-spacer { height: 0; }
-          </style>
-        </head>
-        <body>
+      combinedHTML += `
+        <div class="invoice-page">
           <div class="invoice">
             <div class="header-info"><p>${tx.tanggal || ""}</p></div>
             <div class="customer-info">
@@ -2636,71 +2728,36 @@ const penjualanHandler = {
             <div class="total-row">Rp ${fmt(total)}</div>
             <div class="sales">${tx.sales || "-"}</div>
           </div>
-        </body>
-        </html>
+        </div>
       `;
-    };
+    });
 
-    const printViaIframe = (html) =>
-      new Promise((resolve) => {
-        const iframe = document.createElement("iframe");
-        iframe.style.position = "fixed";
-        iframe.style.right = "0";
-        iframe.style.bottom = "0";
-        iframe.style.width = "0";
-        iframe.style.height = "0";
-        iframe.style.border = "0";
-        document.body.appendChild(iframe);
+    // Close HTML and add print script
+    combinedHTML += `
+        <script>
+          window.onload = function() {
+            // Wait for all content to fully render before printing
+            setTimeout(function() {
+              window.print();
+              // Close window after print dialog is dismissed (longer delay)
+              setTimeout(function() { 
+                window.close(); 
+              }, 1000);
+            }, 300);
+          };
+          
+          // Fallback: close on afterprint event
+          window.onafterprint = function() {
+            setTimeout(function() { window.close(); }, 500);
+          };
+        </script>
+      </body>
+      </html>
+    `;
 
-        const w = iframe.contentWindow;
-        const d = w.document;
-        d.open();
-        d.write(html);
-        d.close();
-
-        const cleanup = () => {
-          setTimeout(() => {
-            if (iframe.parentNode) iframe.parentNode.removeChild(iframe);
-            resolve();
-          }, 150);
-        };
-
-        const onAfterPrint = () => {
-          try {
-            w.removeEventListener && w.removeEventListener("afterprint", onAfterPrint);
-          } catch (e) {}
-          cleanup();
-        };
-        try {
-          w.addEventListener && w.addEventListener("afterprint", onAfterPrint);
-        } catch (e) {}
-
-        // Wait for content to fully load before printing to avoid duplicate triggers
-        const tryPrint = () => {
-          try {
-            w.focus();
-            w.print();
-            // Fallback cleanup if afterprint not fired
-            setTimeout(cleanup, 1000);
-          } catch (e) {
-            // Retry once shortly if print isn't ready
-            setTimeout(tryPrint, 100);
-          }
-        };
-        // Ensure styles applied before printing
-        if (d.readyState === "complete") {
-          setTimeout(tryPrint, 50);
-        } else {
-          w.onload = () => setTimeout(tryPrint, 50);
-        }
-      });
-
-    (async () => {
-      for (const item of items) {
-        const html = buildItemHTML(item);
-        await printViaIframe(html);
-      }
-    })();
+    // Write to print window
+    printWindow.document.write(combinedHTML);
+    printWindow.document.close();
   },
 
   // Reset form
