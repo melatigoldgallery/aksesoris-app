@@ -304,6 +304,7 @@
                         <th>Kode Barang</th>
                         <th>Nama Barang</th>
                         <th>Jumlah</th>
+                        <th>Aksi</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -573,6 +574,130 @@
         </div>
       </div>
     </div>
+
+    <!-- Modal Edit Transaksi Stok -->
+    <div
+      class="modal fade"
+      id="modalEditTransaksi"
+      tabindex="-1"
+      aria-labelledby="modalEditTransaksiLabel"
+      aria-hidden="true"
+    >
+      <div class="modal-dialog">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title" id="modalEditTransaksiLabel">Edit Transaksi Stok</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+          </div>
+          <div class="modal-body">
+            <input type="hidden" id="editTransaksiId" />
+            <input type="hidden" id="editTransaksiKode" />
+            <div class="mb-3">
+              <label class="form-label">Kode Barang</label>
+              <input type="text" class="form-control" id="editTransaksiKodeDisplay" readonly />
+            </div>
+            <div class="mb-3">
+              <label class="form-label">Nama Barang</label>
+              <input type="text" class="form-control" id="editTransaksiNama" readonly />
+            </div>
+            <div class="mb-3">
+              <label class="form-label">Jumlah Saat Ini</label>
+              <input type="number" class="form-control" id="editTransaksiJumlahLama" readonly />
+            </div>
+            <div class="mb-3">
+              <label for="editTransaksiJumlahBaru" class="form-label">
+                Jumlah Baru
+                <span class="text-danger">*</span>
+              </label>
+              <input
+                type="number"
+                class="form-control"
+                id="editTransaksiJumlahBaru"
+                placeholder="Masukkan jumlah baru"
+                min="1"
+              />
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Batal</button>
+            <button type="button" class="btn btn-primary" id="btnSimpanEditTransaksi">
+              <i class="fas fa-save me-2"></i>
+              Simpan Perubahan
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal Delete Transaksi Stok -->
+    <div
+      class="modal fade"
+      id="modalDeleteTransaksi"
+      tabindex="-1"
+      aria-labelledby="modalDeleteTransaksiLabel"
+      aria-hidden="true"
+    >
+      <div class="modal-dialog">
+        <div class="modal-content">
+          <div class="modal-header bg-danger text-white">
+            <h5 class="modal-title" id="modalDeleteTransaksiLabel">
+              <i class="fas fa-exclamation-triangle me-2"></i>
+              Hapus Transaksi Stok
+            </h5>
+            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+          </div>
+          <div class="modal-body">
+            <input type="hidden" id="deleteTransaksiId" />
+            <input type="hidden" id="deleteTransaksiKode" />
+            <input type="hidden" id="deleteTransaksiJumlah" />
+            <div class="alert alert-warning">
+              <i class="fas fa-exclamation-triangle me-2"></i>
+              <strong>Peringatan!</strong>
+              Tindakan ini akan menghapus transaksi dan mengurangi stok.
+            </div>
+            <div class="mb-3">
+              <label class="form-label">Detail Transaksi:</label>
+              <div class="border rounded p-3 bg-light">
+                <p class="mb-1">
+                  <strong>Kode:</strong>
+                  <span id="deleteTransaksiKodeDisplay"></span>
+                </p>
+                <p class="mb-1">
+                  <strong>Nama:</strong>
+                  <span id="deleteTransaksiNamaDisplay"></span>
+                </p>
+                <p class="mb-0">
+                  <strong>Jumlah:</strong>
+                  <span id="deleteTransaksiJumlahDisplay"></span>
+                  pcs
+                </p>
+              </div>
+            </div>
+            <div class="mb-3">
+              <label for="deleteTransaksiPassword" class="form-label">
+                Password Verifikasi
+                <span class="text-danger">*</span>
+              </label>
+              <input
+                type="password"
+                class="form-control"
+                id="deleteTransaksiPassword"
+                placeholder="Masukkan password admin"
+              />
+              <div class="invalid-feedback" id="deleteTransaksiPasswordError"></div>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Batal</button>
+            <button type="button" class="btn btn-danger" id="btnKonfirmasiDeleteTransaksi">
+              <i class="fas fa-trash me-2"></i>
+              Hapus Transaksi
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <script src="js/sidebar-loader.js"></script>
     <script type="module" src="js/main.js"></script>
     <script type="module" src="js/tambahAksesoris.js"></script>
