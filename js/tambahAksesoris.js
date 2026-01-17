@@ -41,7 +41,7 @@ function setCacheWithTimestamp(key, data, ttl = CACHE_TTL_STANDARD) {
         data: data,
         timestamp: Date.now(),
         ttl: ttl,
-      })
+      }),
     );
   } catch (error) {
     // Silent fail
@@ -124,7 +124,7 @@ function signalKodeUpdate(kode, nama, kategori, action) {
   window.dispatchEvent(
     new CustomEvent("stockDataChanged", {
       detail: changeInfo,
-    })
+    }),
   );
 
   console.log(`🔄 Signaled kode ${action}:`, kode);
@@ -138,7 +138,7 @@ function invalidateStockMasterCache() {
     JSON.stringify({
       timestamp: Date.now(),
       action: "full_refresh",
-    })
+    }),
   );
 
   invalidateCache("kodeAksesoris");
@@ -579,10 +579,10 @@ export const aksesorisSaleHandler = {
       kategori === "1"
         ? this.OPSI_KOTAK
         : kategori === "2"
-        ? this.OPSI_AKSESORIS
-        : kategori === "3"
-        ? this.OPSI_SILVER
-        : [];
+          ? this.OPSI_AKSESORIS
+          : kategori === "3"
+            ? this.OPSI_SILVER
+            : [];
     this.updateAllKodeBarangOptions(options);
     if (options.length) {
       this.tambahBaris(kategori, tbody);
@@ -651,7 +651,7 @@ export const aksesorisSaleHandler = {
                           ${options
                             .map(
                               (option) =>
-                                `<option value="${option.text}" data-nama="${option.nama}">${option.text}</option>`
+                                `<option value="${option.text}" data-nama="${option.nama}">${option.text}</option>`,
                             )
                             .join("")}
                       </select>
@@ -831,8 +831,8 @@ export const aksesorisSaleHandler = {
           this.elements.selectKategori.value === "1"
             ? "kotak"
             : this.elements.selectKategori.value === "2"
-            ? "aksesoris"
-            : "silver",
+              ? "aksesoris"
+              : "silver",
       });
     });
     return isValid ? items : null;
@@ -975,7 +975,7 @@ export const aksesorisSaleHandler = {
       // Generate filename dengan tanggal
       const filename = `Laporan_Tambah_Stok_${filterDateStart.value.replace(
         /\//g,
-        "-"
+        "-",
       )}_sd_${filterDateEnd.value.replace(/\//g, "-")}.xlsx`;
 
       // Download file
@@ -1005,7 +1005,7 @@ export const aksesorisSaleHandler = {
 
     const confirmed = await this.showConfirmation(
       `Apakah Anda yakin ingin menghapus <strong>${this.laporanData.length} data</strong> pada rentang tanggal <strong>${filterDateStart.value}</strong> s/d <strong>${filterDateEnd.value}</strong>?<br><br><span class="text-danger"><i class="fas fa-exclamation-triangle"></i> Tindakan ini tidak dapat dibatalkan!</span>`,
-      "Konfirmasi Hapus Data"
+      "Konfirmasi Hapus Data",
     );
 
     if (!confirmed) return;
@@ -1027,7 +1027,7 @@ export const aksesorisSaleHandler = {
         transactionsRef,
         where("jenis", "==", "stockAddition"),
         where("timestamp", ">=", Timestamp.fromDate(startDate)),
-        where("timestamp", "<=", Timestamp.fromDate(endDate))
+        where("timestamp", "<=", Timestamp.fromDate(endDate)),
       );
 
       const snapshot = await getDocs(q);
@@ -1241,7 +1241,7 @@ export const aksesorisSaleHandler = {
         where("jenis", "==", "stockAddition"),
         where("timestamp", ">=", Timestamp.fromDate(startDate)),
         where("timestamp", "<=", Timestamp.fromDate(endDate)),
-        orderBy("timestamp", "desc")
+        orderBy("timestamp", "desc"),
       );
 
       const snapshot = await getDocs(q);
@@ -1698,12 +1698,17 @@ export const aksesorisSaleHandler = {
     try {
       await addDoc(collection(firestore, "kodeAksesoris", "kategori", kategori), data);
 
-      // Tambahkan entry di stokAksesoris (tanpa harga, karena harga ada di kodeAksesoris)
+      // Tambahkan entry di stokAksesoris
       const stokData = {
         kode: data.text,
         nama: data.nama,
         kategori: kategori,
       };
+
+      // ✅ Sync harga untuk kategori kotak
+      if (kategori === "kotak" && data.harga !== undefined) {
+        stokData.harga = parseInt(data.harga) || 0;
+      }
 
       await addDoc(collection(firestore, "stokAksesoris"), stokData);
       invalidateCache("stockData");
@@ -1727,10 +1732,15 @@ export const aksesorisSaleHandler = {
       const stockSnapshot = await getDocs(stockQuery);
 
       if (!stockSnapshot.empty) {
-        // Update hanya nama di stokAksesoris (harga tidak disimpan di sini)
+        // Update nama di stokAksesoris
         const updateData = {
           nama: data.nama,
         };
+
+        // ✅ Sync harga untuk kategori kotak
+        if (kategori === "kotak" && data.harga !== undefined) {
+          updateData.harga = parseInt(data.harga) || 0;
+        }
 
         const stockDocRef = doc(firestore, "stokAksesoris", stockSnapshot.docs[0].id);
         await updateDoc(stockDocRef, updateData);
@@ -1814,7 +1824,7 @@ export const aksesorisSaleHandler = {
           laku: 0,
           free: 0,
           gantiLock: 0,
-          lastUpdate: serverTimestamp(),
+          // ✅ Tidak perlu lastUpdate - field ini sudah tidak digunakan
         });
       });
       await batch.commit();
@@ -1958,23 +1968,9 @@ export const aksesorisSaleHandler = {
         lastUpdated: serverTimestamp(),
       });
 
-      // Update stok di stokAksesoris
-      const stockQuery = query(collection(firestore, "stokAksesoris"), where("kode", "==", kode), limit(1));
-      const stockSnapshot = await getDocs(stockQuery);
-
-      if (stockSnapshot.size > 0) {
-        const stockDoc = stockSnapshot.docs[0];
-        const stockData = stockDoc.data();
-        const currentStok = stockData.stokAkhir || 0;
-        const newStok = currentStok + delta;
-
-        await updateDoc(doc(firestore, "stokAksesoris", stockDoc.id), {
-          stokAkhir: newStok,
-          lastUpdated: serverTimestamp(),
-        });
-
-        console.log(`✅ Stock updated: ${kode} (${currentStok} → ${newStok})`);
-      }
+      // ✅ Tidak perlu update stokAksesoris.stokAkhir
+      // Stok dihitung dari stokAksesorisTransaksi (Single Source of Truth)
+      console.log(`✅ Transaction updated: ${kode} (${jumlahLama} → ${jumlahBaru}, delta: ${delta})`);
 
       // Invalidate cache dan refresh
       invalidateCache("stockAdditionHistory");
@@ -1986,7 +1982,7 @@ export const aksesorisSaleHandler = {
       this.showSuccessNotification(
         `Transaksi berhasil diupdate<br>Kode: ${kode}<br>Jumlah: ${jumlahLama} → ${jumlahBaru} pcs<br>Delta: ${
           delta > 0 ? "+" : ""
-        }${delta} pcs`
+        }${delta} pcs`,
       );
     } catch (error) {
       console.error("Error saving edit transaction:", error);
@@ -2052,23 +2048,9 @@ export const aksesorisSaleHandler = {
       // Delete transaksi dari stokAksesorisTransaksi
       await deleteDoc(doc(firestore, "stokAksesorisTransaksi", transactionId));
 
-      // Reverse stok di stokAksesoris (kurangi stokAkhir)
-      const stockQuery = query(collection(firestore, "stokAksesoris"), where("kode", "==", kode), limit(1));
-      const stockSnapshot = await getDocs(stockQuery);
-
-      if (stockSnapshot.size > 0) {
-        const stockDoc = stockSnapshot.docs[0];
-        const stockData = stockDoc.data();
-        const currentStok = stockData.stokAkhir || 0;
-        const newStok = Math.max(0, currentStok - jumlah);
-
-        await updateDoc(doc(firestore, "stokAksesoris", stockDoc.id), {
-          stokAkhir: newStok,
-          lastUpdated: serverTimestamp(),
-        });
-
-        console.log(`✅ Stock reversed: ${kode} (${currentStok} → ${newStok})`);
-      }
+      // ✅ Tidak perlu reverse stokAksesoris.stokAkhir
+      // Stok dihitung dari stokAksesorisTransaksi (Single Source of Truth)
+      console.log(`✅ Transaction deleted: ${kode} (${jumlah} pcs)`);
 
       // Invalidate cache dan refresh
       invalidateCache("stockAdditionHistory");
@@ -2078,7 +2060,7 @@ export const aksesorisSaleHandler = {
       bootstrap.Modal.getInstance(document.getElementById("modalDeleteTransaksi")).hide();
 
       this.showSuccessNotification(
-        `Transaksi berhasil dihapus<br>Kode: ${kode}<br>Jumlah: ${jumlah} pcs<br>Stok telah dikurangi`
+        `Transaksi berhasil dihapus<br>Kode: ${kode}<br>Jumlah: ${jumlah} pcs<br>Stok telah dikurangi`,
       );
     } catch (error) {
       console.error("Error deleting transaction:", error);

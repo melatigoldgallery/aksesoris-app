@@ -478,7 +478,7 @@ class OptimizedDataPenjualanApp {
       const recentQuery = query(
         collection(firestore, "penjualanAksesoris"),
         where("timestamp", ">=", Timestamp.fromDate(thirtyDaysAgo)),
-        orderBy("timestamp", "desc")
+        orderBy("timestamp", "desc"),
       );
 
       const recentSnapshot = await getDocs(recentQuery);
@@ -530,7 +530,7 @@ class OptimizedDataPenjualanApp {
       collection(firestore, "penjualanAksesoris"),
       where("timestamp", ">=", Timestamp.fromDate(startOfDay)),
       where("timestamp", "<=", Timestamp.fromDate(endOfDay)),
-      orderBy("timestamp", "desc")
+      orderBy("timestamp", "desc"),
     );
 
     this.realtimeListener = onSnapshot(
@@ -542,7 +542,7 @@ class OptimizedDataPenjualanApp {
       },
       (error) => {
         console.error("Real-time listener error:", error);
-      }
+      },
     );
 
     console.log(`📡 Real-time listener activated for: ${utils.formatDate(date)}`);
@@ -664,7 +664,7 @@ class OptimizedDataPenjualanApp {
           e.stopPropagation();
           const id = e.target.closest("button").dataset.id;
           if (id) this.handleReprint(id);
-        }, 300)
+        }, 300),
       );
 
     $(document)
@@ -677,7 +677,7 @@ class OptimizedDataPenjualanApp {
           e.stopPropagation();
           const id = e.target.closest("button").dataset.id;
           if (id) this.handleEdit(id);
-        }, 300)
+        }, 300),
       );
 
     $(document)
@@ -690,7 +690,7 @@ class OptimizedDataPenjualanApp {
           e.stopPropagation();
           const id = e.target.closest("button").dataset.id;
           if (id) this.handleDelete(id);
-        }, 300)
+        }, 300),
       );
   }
 
@@ -1261,14 +1261,14 @@ class OptimizedDataPenjualanApp {
                 <div class="col-md-6">
                   <label for="editBarcode_${index}" class="form-label">Barcode: <span class="badge bg-secondary">Tidak dapat diubah</span></label>
                   <input type="text" class="form-control" id="editBarcode_${index}" value="${
-            item.kodeText || ""
-          }" readonly>
+                    item.kodeText || ""
+                  }" readonly>
                 </div>
                 <div class="col-md-6">
                   <label for="editKodeLock_${index}" class="form-label">Kode Lock: <span class="badge bg-secondary">Tidak dapat diubah</span></label>
                   <input type="text" class="form-control" id="editKodeLock_${index}" value="${
-            item.kodeLock || "-"
-          }" readonly>
+                    item.kodeLock || "-"
+                  }" readonly>
                 </div>
               </div>
               <div class="row mt-2">
@@ -1289,16 +1289,16 @@ class OptimizedDataPenjualanApp {
                 <div class="col-md-6">
                   <label for="editHarga_${index}" class="form-label">Harga:</label>
                   <input type="text" class="form-control" id="editHarga_${index}" value="${utils.formatRupiah(
-            item.totalHarga || 0
-          )}">
+                    item.totalHarga || 0,
+                  )}">
                 </div>
               </div>
               <div class="row mt-2">
                 <div class="col-md-12">
                   <label for="editKeterangan_${index}" class="form-label">Keterangan:</label>
                   <textarea class="form-control" id="editKeterangan_${index}" rows="2">${
-            item.keterangan || ""
-          }</textarea>
+                    item.keterangan || ""
+                  }</textarea>
                 </div>
               </div>
             </div>
@@ -1312,8 +1312,8 @@ class OptimizedDataPenjualanApp {
                 <div class="col-md-6">
                   <label for="editKode_${index}" class="form-label">Kode: <span class="badge bg-secondary">Tidak dapat diubah</span></label>
                   <input type="text" class="form-control" id="editKode_${index}" value="${
-            item.kodeText || item.kode || ""
-          }" readonly>
+                    item.kodeText || item.kode || ""
+                  }" readonly>
                 </div>
                 <div class="col-md-6">
                   <label for="editNama_${index}" class="form-label">Nama Barang:</label>
@@ -1340,8 +1340,8 @@ class OptimizedDataPenjualanApp {
                 <div class="col-md-12">
                   <label for="editHarga_${index}" class="form-label">Harga:</label>
                   <input type="text" class="form-control" id="editHarga_${index}" value="${utils.formatRupiah(
-            item.totalHarga || 0
-          )}">
+                    item.totalHarga || 0,
+                  )}">
                 </div>
               </div>
             </div>
@@ -1458,7 +1458,7 @@ class OptimizedDataPenjualanApp {
           const updatedCount = await this.updateStockTransactionTimestamp(
             this.currentTransaction,
             originalDate,
-            newTimestamp
+            newTimestamp,
           );
           console.log(`📅 Timestamp synced to ${updatedCount} stock transactions`);
         } catch (error) {
@@ -1467,7 +1467,7 @@ class OptimizedDataPenjualanApp {
           await utils.showAlert(
             `Transaksi penjualan berhasil diperbarui, tetapi ada masalah saat sinkronisasi tanggal stok: ${error.message}`,
             "Peringatan",
-            "warning"
+            "warning",
           );
         }
       }
@@ -1713,7 +1713,7 @@ class OptimizedDataPenjualanApp {
             where("jenis", "==", jenisToSearch),
             where("timestamp", ">=", Timestamp.fromDate(startOfDay)),
             where("timestamp", "<=", Timestamp.fromDate(endOfDay)),
-            limit(1)
+            limit(1),
           );
 
           const stockSnapshot = await getDocs(stockQuery);
@@ -1724,11 +1724,11 @@ class OptimizedDataPenjualanApp {
             // Hapus dari stokAksesorisTransaksi
             await deleteDoc(doc(firestore, "stokAksesorisTransaksi", stockDoc.id));
 
-            // ✅ STEP 2: Restore stok ke stokAksesoris (SEMUA JENIS)
-            await this.restoreStockQuantity(kodeToSearch, item.jumlah || 1);
+            // ✅ Tidak perlu restore stok ke stokAksesoris
+            // Stok dihitung dari stokAksesorisTransaksi (Single Source of Truth)
 
             removedCount++;
-            console.log(`✅ ${jenisToSearch} cancelled & stock restored: ${kodeToSearch} +${item.jumlah || 1}`);
+            console.log(`✅ ${jenisToSearch} cancelled: ${kodeToSearch} (stock auto-recalculated)`);
           } else {
             console.warn(`⚠️ No stock transaction found: ${kodeToSearch} (${jenisToSearch})`);
           }
@@ -1745,33 +1745,9 @@ class OptimizedDataPenjualanApp {
     }
   }
 
-  // ✅ FINAL: restoreStockQuantity (tidak ada perubahan, sudah optimal)
-  async restoreStockQuantity(kode, jumlah) {
-    try {
-      const stockQuery = query(collection(firestore, "stokAksesoris"), where("kode", "==", kode), limit(1));
-
-      const stockSnapshot = await getDocs(stockQuery);
-
-      if (stockSnapshot.size > 0) {
-        const stockDoc = stockSnapshot.docs[0];
-        const stockData = stockDoc.data();
-        const currentStock = stockData.stokAkhir || 0;
-        const newStock = currentStock + jumlah;
-
-        await updateDoc(doc(firestore, "stokAksesoris", stockDoc.id), {
-          stokAkhir: newStock,
-          lastUpdated: serverTimestamp(),
-        });
-
-        console.log(`📦 Stock updated: ${kode} (${currentStock} → ${newStock})`);
-      } else {
-        console.warn(`⚠️ Stock document not found: ${kode}`);
-      }
-    } catch (error) {
-      console.error(`❌ Error restoring stock ${kode}:`, error);
-      throw error;
-    }
-  }
+  // ✅ restoreStockQuantity DIHAPUS
+  // Stok sekarang dihitung dari stokAksesorisTransaksi (Single Source of Truth)
+  // Tidak perlu update manual ke stokAksesoris.stokAkhir
 
   // ✅ TAMBAHAN: Helper function untuk get transaction date
   getTransactionDate(transaction) {
@@ -2236,7 +2212,7 @@ class OptimizedDataPenjualanApp {
         collection(firestore, "penjualanAksesoris"),
         where("timestamp", "<", oldestTransaction.timestamp),
         orderBy("timestamp", "desc"),
-        limit(50)
+        limit(50),
       );
 
       const olderSnapshot = await getDocs(olderQuery);

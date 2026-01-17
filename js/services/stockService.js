@@ -34,6 +34,8 @@ const StockService = {
       newStock = null,
       nama = "",
       kategori = "",
+      namaBarang = "",
+      jenisReturn = "",
     } = stockData;
 
     try {
@@ -47,7 +49,9 @@ const StockService = {
       };
 
       if (nama) transactionData.nama = nama;
+      if (namaBarang) transactionData.namaBarang = namaBarang;
       if (kategori) transactionData.kategori = kategori;
+      if (jenisReturn) transactionData.jenisReturn = jenisReturn;
       if (kodeTransaksi) transactionData.kodeTransaksi = kodeTransaksi;
       if (tanggal) transactionData.tanggal = tanggal;
       if (currentStock !== null) transactionData.stokSebelum = currentStock;
@@ -83,8 +87,8 @@ const StockService = {
           collection(firestore, "stokAksesorisTransaksi"),
           where("kode", "==", kode),
           where("timestamp", "<=", Timestamp.fromDate(endOfDay)),
-          orderBy("timestamp", "asc")
-        )
+          orderBy("timestamp", "asc"),
+        ),
       );
 
       let stock = 0;
@@ -143,7 +147,7 @@ const StockService = {
       endOfDay.setHours(23, 59, 59, 999);
 
       const transactions = await getDocs(
-        query(collection(firestore, "stokAksesorisTransaksi"), where("timestamp", "<=", Timestamp.fromDate(endOfDay)))
+        query(collection(firestore, "stokAksesorisTransaksi"), where("timestamp", "<=", Timestamp.fromDate(endOfDay))),
       );
 
       const stockMap = new Map();
@@ -234,8 +238,8 @@ const StockService = {
             collection(firestore, "stokAksesorisTransaksi"),
             where("kode", "in", batch),
             where("timestamp", "<=", Timestamp.fromDate(endOfDay)),
-            orderBy("timestamp", "asc")
-          )
+            orderBy("timestamp", "asc"),
+          ),
         );
 
         // Calculate stock for each kode in batch
@@ -294,8 +298,8 @@ const StockService = {
           collection(firestore, "stokAksesorisTransaksi"),
           where("kode", "==", kode),
           where("timestamp", ">=", Timestamp.fromDate(startDate)),
-          where("timestamp", "<=", Timestamp.fromDate(endDate))
-        )
+          where("timestamp", "<=", Timestamp.fromDate(endDate)),
+        ),
       );
 
       const grouped = {
@@ -413,8 +417,8 @@ const StockService = {
         query(
           collection(firestore, "stokAksesorisTransaksi"),
           where("timestamp", ">=", Timestamp.fromDate(today)),
-          where("timestamp", "<=", Timestamp.fromDate(endOfToday))
-        )
+          where("timestamp", "<=", Timestamp.fromDate(endOfToday)),
+        ),
       );
 
       console.log(`📊 Today's transactions: ${todayTransactions.size} docs`);

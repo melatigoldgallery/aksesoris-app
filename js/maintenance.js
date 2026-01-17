@@ -50,12 +50,6 @@ const COLLECTION_CONFIGS = {
     dateType: "timestamp",
     label: "Penjualan Aksesoris",
   },
-  returnBarang: {
-    name: "returnBarang",
-    dateField: "tanggal",
-    dateType: "string",
-    label: "Return Barang",
-  },
   stokAksesorisTransaksi: {
     name: "stokAksesorisTransaksi",
     dateField: "timestamp",
@@ -452,7 +446,7 @@ class MaintenanceSystem {
         collection(this.firestore, "stokAksesorisTransaksi"),
         where("timestamp", ">=", Timestamp.fromDate(startDate)),
         where("timestamp", "<", Timestamp.fromDate(endDate)),
-        orderBy("timestamp", "desc")
+        orderBy("timestamp", "desc"),
       );
 
       // Setup realtime listener
@@ -489,7 +483,7 @@ class MaintenanceSystem {
         },
         (error) => {
           this.showAlert("Error memuat data realtime: " + error.message, "error");
-        }
+        },
       );
 
       this.activeListeners.set("stokAksesoris", unsubscribe);
@@ -836,7 +830,7 @@ class MaintenanceSystem {
       collection(this.firestore, "penjualanAksesoris"),
       where("timestamp", ">=", Timestamp.fromDate(startDate)),
       where("timestamp", "<", Timestamp.fromDate(endDate)),
-      orderBy("timestamp", "desc")
+      orderBy("timestamp", "desc"),
     );
 
     const unsubscribe = onSnapshot(
@@ -873,7 +867,7 @@ class MaintenanceSystem {
       (error) => {
         console.error("Error in penjualan realtime listener:", error);
         this.showAlert("Error memuat data penjualan realtime: " + error.message, "error");
-      }
+      },
     );
 
     this.activeListeners.set("penjualan", unsubscribe);
@@ -1053,7 +1047,7 @@ class MaintenanceSystem {
     try {
       const docRef = doc(this.firestore, "penjualanAksesoris", docId);
       const docSnap = await getDocs(
-        query(collection(this.firestore, "penjualanAksesoris"), where("__name__", "==", docId))
+        query(collection(this.firestore, "penjualanAksesoris"), where("__name__", "==", docId)),
       );
       if (docSnap.empty) throw new Error("Document not found");
 
@@ -1085,7 +1079,7 @@ class MaintenanceSystem {
   async deletePenjualanRow(docId) {
     const confirmed = await this.showConfirmation(
       "Apakah Anda yakin ingin menghapus transaksi ini?",
-      "Konfirmasi Hapus"
+      "Konfirmasi Hapus",
     );
     if (!confirmed) return;
 
@@ -1117,7 +1111,7 @@ class MaintenanceSystem {
       return query(
         collection(this.firestore, name),
         where(dateField, ">=", Timestamp.fromDate(startDate)),
-        where(dateField, "<", Timestamp.fromDate(endDate))
+        where(dateField, "<", Timestamp.fromDate(endDate)),
       );
     } else {
       // string date format YYYY-MM-DD
@@ -1127,7 +1121,7 @@ class MaintenanceSystem {
       return query(
         collection(this.firestore, name),
         where(dateField, ">=", startDateStr),
-        where(dateField, "<=", endDateStr)
+        where(dateField, "<=", endDateStr),
       );
     }
   }
@@ -1276,7 +1270,7 @@ class MaintenanceSystem {
 
       const confirmed = await this.showConfirmation(
         `HAPUS ${allDocs.length} DOKUMEN?\n\n${summaryText}\n\nBulan: ${selectedMonth}\n\n⚠️ PERINGATAN: Data tidak dapat dikembalikan!`,
-        "Konfirmasi Hapus Data"
+        "Konfirmasi Hapus Data",
       );
 
       if (!confirmed) return;

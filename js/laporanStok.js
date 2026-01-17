@@ -429,20 +429,22 @@ class OptimizedStockReport {
     this.loadAndFilterStockData();
   }
 
-  // Tambahkan method baru untuk mengambil data return
+  // Tambahkan method baru untuk mengambil data return dari stokAksesorisTransaksi (Single Source of Truth)
   async fetchReturnData(selectedDate) {
     try {
-      // Format tanggal untuk range query (karena tanggal disimpan sebagai ISO string lengkap)
+      // Format tanggal untuk range query
       const startOfDay = new Date(selectedDate);
       startOfDay.setHours(0, 0, 0, 0);
       const endOfDay = new Date(selectedDate);
       endOfDay.setHours(23, 59, 59, 999);
 
-      const returnRef = collection(firestore, "returnBarang");
+      // Query dari stokAksesorisTransaksi dengan jenis = "return"
+      const transactionRef = collection(firestore, "stokAksesorisTransaksi");
       const q = query(
-        returnRef,
-        where("tanggal", ">=", startOfDay.toISOString()),
-        where("tanggal", "<=", endOfDay.toISOString())
+        transactionRef,
+        where("jenis", "==", "return"),
+        where("timestamp", ">=", Timestamp.fromDate(startOfDay)),
+        where("timestamp", "<=", Timestamp.fromDate(endOfDay)),
       );
 
       const snapshot = await getDocs(q);
@@ -450,22 +452,21 @@ class OptimizedStockReport {
 
       snapshot.forEach((doc) => {
         const data = doc.data();
+        const kode = data.kode;
+        const jumlah = parseInt(data.jumlah) || 0;
 
-        if (data.detailReturn && Array.isArray(data.detailReturn)) {
-          data.detailReturn.forEach((item) => {
-            if (item.kode && item.jumlah) {
-              const currentAmount = returnMap.get(item.kode) || 0;
-              const newAmount = currentAmount + parseInt(item.jumlah);
-              returnMap.set(item.kode, newAmount);
-            }
-          });
+        if (kode && jumlah > 0) {
+          const currentAmount = returnMap.get(kode) || 0;
+          returnMap.set(kode, currentAmount + jumlah);
         }
       });
 
       this.returnData = returnMap;
+      console.log(`✅ Loaded return data: ${returnMap.size} items`);
 
       return returnMap;
     } catch (error) {
+      console.error("Error fetching return data:", error);
       this.returnData = new Map();
       return new Map();
     }
@@ -568,7 +569,7 @@ class OptimizedStockReport {
     const transQuery = query(
       collection(firestore, "stokAksesorisTransaksi"),
       where("timestamp", ">=", Timestamp.fromDate(startOfDay)),
-      where("timestamp", "<=", Timestamp.fromDate(endOfDay))
+      where("timestamp", "<=", Timestamp.fromDate(endOfDay)),
     );
 
     const unsubscribeTrans = onSnapshot(transQuery, (snapshot) => {
@@ -629,7 +630,7 @@ class OptimizedStockReport {
           return: returnAmount,
           stokAkhir: Math.max(
             0,
-            item.stokAwal + item.tambahStok - item.laku - item.free - item.gantiLock - returnAmount
+            item.stokAwal + item.tambahStok - item.laku - item.free - item.gantiLock - returnAmount,
           ),
         };
       });
@@ -765,7 +766,7 @@ class OptimizedStockReport {
       collection(firestore, "stokAksesorisTransaksi"),
       where("timestamp", ">=", Timestamp.fromDate(startOfDay)),
       where("timestamp", "<=", Timestamp.fromDate(endOfDay)),
-      orderBy("timestamp", "asc")
+      orderBy("timestamp", "asc"),
     );
 
     const transaksiSnapshot = await getDocs(transaksiQuery);
@@ -824,7 +825,8 @@ class OptimizedStockReport {
       };
 
       // Calculate stokAkhir using tambahStok (consistent with batch method)
-      const stokAkhir = stokAwal + trans.tambahStok - trans.laku - trans.free - trans.gantiLock + trans.return;
+      // Return MENGURANGI stok (barang keluar/rusak/dikembalikan ke supplier)
+      const stokAkhir = stokAwal + trans.tambahStok - trans.laku - trans.free - trans.gantiLock - trans.return;
 
       result.push({
         kode: item.kode,
@@ -1072,7 +1074,7 @@ class OptimizedStockReport {
             const currentStock = stockMap.get(kode) || 0;
             const newStock = Math.max(
               0,
-              currentStock + trans.tambahStok - trans.laku - trans.free - trans.gantiLock - (trans.return || 0)
+              currentStock + trans.tambahStok - trans.laku - trans.free - trans.gantiLock - (trans.return || 0),
             );
             stockMap.set(kode, newStock);
 
@@ -1122,7 +1124,7 @@ class OptimizedStockReport {
       const transQuery = query(
         collection(firestore, "stokAksesorisTransaksi"),
         where("timestamp", ">=", Timestamp.fromDate(startDate)),
-        where("timestamp", "<=", Timestamp.fromDate(endDate))
+        where("timestamp", "<=", Timestamp.fromDate(endDate)),
       );
 
       const transSnapshot = await getDocs(transQuery);
@@ -1208,7 +1210,7 @@ class OptimizedStockReport {
       const aksesorisItems = this.filteredStockData.filter((item) => item.kategori === "aksesoris");
       const silverItems = this.filteredStockData.filter((item) => item.kategori === "silver");
       const otherItems = this.filteredStockData.filter(
-        (item) => item.kategori !== "kotak" && item.kategori !== "aksesoris" && item.kategori !== "silver"
+        (item) => item.kategori !== "kotak" && item.kategori !== "aksesoris" && item.kategori !== "silver",
       );
 
       // Create HTML for table
@@ -1257,7 +1259,7 @@ class OptimizedStockReport {
           item.laku > 0 ||
           item.free > 0 ||
           item.gantiLock > 0 ||
-          item.return > 0
+          item.return > 0,
       );
     } catch (error) {
       this.showError("Terjadi kesalahan saat menampilkan data");
@@ -1686,7 +1688,7 @@ class OptimizedStockReport {
       const transQuery = query(
         collection(firestore, "stokAksesorisTransaksi"),
         where("timestamp", ">=", Timestamp.fromDate(startDate)),
-        where("timestamp", "<=", Timestamp.fromDate(endDate))
+        where("timestamp", "<=", Timestamp.fromDate(endDate)),
       );
 
       const snapshot = await getDocs(transQuery);

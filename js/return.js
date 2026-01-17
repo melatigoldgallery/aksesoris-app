@@ -10,6 +10,8 @@ import {
   getDoc,
   updateDoc,
   deleteDoc,
+  Timestamp,
+  orderBy,
 } from "https://www.gstatic.com/firebasejs/10.4.0/firebase-firestore.js";
 import { firestore } from "./configFirebase.js";
 
@@ -80,11 +82,9 @@ const returnHandler = {
     $("#filterEndDate").val(formattedToday);
   },
 
-  // Load riwayat return
+  // Load riwayat return dari stokAksesorisTransaksi (Single Source of Truth)
   async loadRiwayatReturn(startDate = null, endDate = null) {
     try {
-      const returnRef = collection(firestore, "returnBarang");
-
       // Jika tidak ada parameter, tidak load data
       if (!startDate || !endDate) {
         this.riwayatData = [];
@@ -104,25 +104,56 @@ const returnHandler = {
         return;
       }
 
-      const startOfDay = new Date(start.getFullYear(), start.getMonth(), start.getDate());
-      const endOfDay = new Date(end.getFullYear(), end.getMonth(), end.getDate(), 23, 59, 59);
+      const startOfDay = new Date(start.getFullYear(), start.getMonth(), start.getDate(), 0, 0, 0, 0);
+      const endOfDay = new Date(end.getFullYear(), end.getMonth(), end.getDate(), 23, 59, 59, 999);
 
+      console.log(`🔍 Query return data from ${startOfDay.toISOString()} to ${endOfDay.toISOString()}`);
+
+      // Query dari stokAksesorisTransaksi dengan jenis = "return"
+      const transactionRef = collection(firestore, "stokAksesorisTransaksi");
       const returnQuery = query(
-        returnRef,
-        where("tanggal", ">=", startOfDay.toISOString()),
-        where("tanggal", "<=", endOfDay.toISOString())
+        transactionRef,
+        where("jenis", "==", "return"),
+        where("timestamp", ">=", Timestamp.fromDate(startOfDay)),
+        where("timestamp", "<=", Timestamp.fromDate(endOfDay)),
+        orderBy("timestamp", "desc"),
       );
 
       const snapshot = await getDocs(returnQuery);
-      this.riwayatData = snapshot.docs.map((doc) => ({
-        id: doc.id,
-        ...doc.data(),
-      }));
+      console.log(`📦 Found ${snapshot.size} return transactions`);
 
+      // Transform data untuk format yang compatible dengan renderRiwayatReturn
+      this.riwayatData = snapshot.docs.map((doc) => {
+        const data = doc.data();
+        // Get tanggal from timestamp field (more reliable)
+        let tanggalStr = new Date().toISOString();
+        if (data.timestamp && data.timestamp.toDate) {
+          tanggalStr = data.timestamp.toDate().toISOString();
+        } else if (data.tanggal) {
+          tanggalStr = data.tanggal;
+        }
+
+        return {
+          id: doc.id,
+          tanggal: tanggalStr,
+          namaSales: data.sales || "-",
+          jenisReturn: data.jenisReturn || data.kategori || "-",
+          detailReturn: [
+            {
+              kode: data.kode,
+              namaBarang: data.namaBarang || data.nama || "-",
+              jumlah: data.jumlah,
+              keterangan: data.keterangan || "",
+            },
+          ],
+        };
+      });
+
+      console.log(`✅ Loaded ${this.riwayatData.length} return records`);
       this.renderRiwayatReturn();
     } catch (error) {
       console.error("Error loading riwayat return:", error);
-      showAlert("Gagal memuat data riwayat return", "Error", "error");
+      showAlert("Gagal memuat data riwayat return. Error: " + error.message, "Error", "error");
     }
   },
 
@@ -448,10 +479,10 @@ const returnHandler = {
           type === "kotak"
             ? itemKategori.includes("kotak")
             : type === "aksesoris"
-            ? itemKategori.includes("aksesoris")
-            : type === "silver"
-            ? itemKategori.includes("silver")
-            : false;
+              ? itemKategori.includes("aksesoris")
+              : type === "silver"
+                ? itemKategori.includes("silver")
+                : false;
 
         const hasStock = item.stok > 0;
 
@@ -604,32 +635,36 @@ const returnHandler = {
     }
   },
 
-  // NEW: Save to stokAksesorisTransaksi collection using StockService
+  // Save to stokAksesorisTransaksi collection (Single Source of Truth)
   async saveToStokTransaksi(returnData) {
     try {
+      const savedTransactions = [];
+
       for (const item of returnData.detailReturn) {
-        const currentStock = await this.getCurrentStockData(item.kode);
+        // Calculate current stock from transactions
+        const stokSebelum = await StockService.calculateStockFromTransactions(item.kode);
+        const stokSesudah = Math.max(0, stokSebelum - item.jumlah);
 
-        if (currentStock) {
-          const stokSebelum = parseInt(currentStock.stok) || 0; // Legacy field
-          const stokSesudah = Math.max(0, stokSebelum - item.jumlah);
+        // ✅ Gunakan StockService dengan field lengkap untuk single source of truth
+        const transactionRef = await StockService.updateStock({
+          kode: item.kode,
+          jenis: "return",
+          jumlah: item.jumlah,
+          tanggal: returnData.tanggal, // Tanggal return yang dipilih user
+          keterangan: item.keterangan || "",
+          sales: returnData.namaSales,
+          nama: item.namaBarang,
+          namaBarang: item.namaBarang,
+          jenisReturn: returnData.jenisReturn, // kotak/aksesoris/silver
+          currentStock: stokSebelum,
+          newStock: stokSesudah,
+        });
 
-          // ✅ Gunakan StockService - single source of truth
-          await StockService.updateStock({
-            kode: item.kode,
-            jenis: "return",
-            jumlah: item.jumlah,
-            keterangan: `Return barang oleh ${returnData.namaSales}${item.keterangan ? ` - ${item.keterangan}` : ""}`,
-            sales: returnData.namaSales,
-            currentStock: stokSebelum,
-            newStock: stokSesudah,
-          });
-
-          console.log(`✅ Transaction saved for ${item.kode}`);
-        } else {
-          console.warn(`⚠️ Stock data not found for ${item.kode}`);
-        }
+        savedTransactions.push(transactionRef.id);
+        console.log(`✅ Return transaction saved for ${item.kode} (ID: ${transactionRef.id})`);
       }
+
+      return savedTransactions;
     } catch (error) {
       console.error("Error saving to stokAksesorisTransaksi:", error);
       throw error;
@@ -677,11 +712,9 @@ const returnHandler = {
 
       console.log("Saving return data:", returnData);
 
-      // Save to returnBarang collection
-      await addDoc(collection(firestore, "returnBarang"), returnData);
-
-      // Save to stokAksesorisTransaksi collection and update stock
-      await this.saveToStokTransaksi(returnData);
+      // ✅ Single Source of Truth: Simpan HANYA ke stokAksesorisTransaksi
+      const savedIds = await this.saveToStokTransaksi(returnData);
+      console.log(`✅ Return saved with transaction IDs:`, savedIds);
 
       showAlert("Data return berhasil disimpan dan stok telah diperbarui", "Sukses", "success");
       this.resetForm();
@@ -756,7 +789,7 @@ const returnHandler = {
     $("#modalKonfirmasiHapus").modal("show");
   },
 
-  // NEW: Delete return data
+  // Delete return data (Single Source of Truth - hapus dari stokAksesorisTransaksi)
   async deleteReturnData() {
     if (this.isDeleting || !this.currentDeleteData) return;
 
@@ -779,19 +812,28 @@ const returnHandler = {
       this.isDeleting = true;
       $("#btnKonfirmasiHapus").prop("disabled", true).html('<i class="fas fa-spinner fa-spin me-2"></i>Menghapus...');
 
-      // Delete from returnBarang collection
-      await deleteDoc(doc(firestore, "returnBarang", this.currentDeleteData.id));
+      // ✅ Single Source of Truth: Hapus langsung dari stokAksesorisTransaksi
+      // Data ID sudah merujuk ke dokumen di stokAksesorisTransaksi
+      await deleteDoc(doc(firestore, "stokAksesorisTransaksi", this.currentDeleteData.id));
+      console.log(`✅ Return transaction deleted: ${this.currentDeleteData.id}`);
 
-      // Optionally: Reverse stock changes
-      await this.reverseStockChanges(this.currentDeleteData);
-
-      showAlert("Data return berhasil dihapus", "Sukses", "success");
+      showAlert("Data return berhasil dihapus dan stok otomatis dikembalikan", "Sukses", "success");
 
       // Hide modal and refresh data
       $("#modalKonfirmasiHapus").modal("hide");
-      const startDate = $("#filterStartDate").val();
-      const endDate = $("#filterEndDate").val();
-      await this.loadRiwayatReturn(startDate, endDate);
+
+      // Refresh dengan filter tanggal yang aktif
+      const startDateStr = $("#filterStartDate").val();
+      const endDateStr = $("#filterEndDate").val();
+      if (startDateStr && endDateStr) {
+        const startDate = parseDate(startDateStr);
+        const endDate = parseDate(endDateStr);
+        if (startDate && endDate) {
+          const startISO = startDate.toISOString().split("T")[0];
+          const endISO = endDate.toISOString().split("T")[0];
+          await this.loadRiwayatReturn(startISO, endISO);
+        }
+      }
     } catch (error) {
       console.error("Error deleting return data:", error);
       showAlert("Gagal menghapus data return", "Error", "error");
@@ -801,60 +843,10 @@ const returnHandler = {
     }
   },
 
-  // NEW: Reverse stock changes when deleting return
-  async reverseStockChanges(returnData) {
-    try {
-      // Get return date untuk filter transaksi
-      const returnDate = new Date(returnData.tanggal);
-      const startOfDay = new Date(returnDate);
-      startOfDay.setHours(0, 0, 0, 0);
-      const endOfDay = new Date(returnDate);
-      endOfDay.setHours(23, 59, 59, 999);
-
-      for (const item of returnData.detailReturn) {
-        // Step 1: Find and delete the return transaction from stokAksesorisTransaksi
-        const transactionQuery = query(
-          collection(firestore, "stokAksesorisTransaksi"),
-          where("kode", "==", item.kode),
-          where("jenis", "==", "return"),
-          where("timestamp", ">=", Timestamp.fromDate(startOfDay)),
-          where("timestamp", "<=", Timestamp.fromDate(endOfDay)),
-          limit(1)
-        );
-
-        const transactionSnapshot = await getDocs(transactionQuery);
-
-        if (transactionSnapshot.size > 0) {
-          const transactionDoc = transactionSnapshot.docs[0];
-          await deleteDoc(doc(firestore, "stokAksesorisTransaksi", transactionDoc.id));
-          console.log(`✅ Return transaction deleted for ${item.kode}`);
-        } else {
-          console.warn(`⚠️ Return transaction not found for ${item.kode} on ${returnData.tanggal}`);
-        }
-
-        // Step 2: Restore stock by adding back the returned quantity
-        const currentStock = await this.getCurrentStockData(item.kode);
-        if (currentStock) {
-          const currentStokAkhir = currentStock.stokAkhir || 0;
-          const newStokAkhir = currentStokAkhir + item.jumlah; // Kembalikan jumlah yang di-return
-
-          await updateDoc(doc(firestore, "stokAksesoris", currentStock.id), {
-            stokAkhir: newStokAkhir,
-            lastUpdated: serverTimestamp(),
-          });
-
-          console.log(`📦 Stock restored for ${item.kode}: ${currentStokAkhir} → ${newStokAkhir}`);
-        } else {
-          console.warn(`⚠️ Stock data not found for ${item.kode}`);
-        }
-      }
-
-      console.log("✅ All return transactions deleted and stock restored");
-    } catch (error) {
-      console.error("Error reversing stock changes:", error);
-      throw error;
-    }
-  },
+  // ✅ Tidak perlu reverseStockChanges lagi!
+  // Karena menggunakan Single Source of Truth (stokAksesorisTransaksi),
+  // menghapus transaksi return otomatis mengembalikan stok
+  // karena StockService.calculateStockFromTransactions() menghitung dari semua transaksi
 
   // Cleanup
   cleanup() {
